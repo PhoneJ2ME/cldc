@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -323,10 +322,8 @@ void pp(int x) {
     if (o.obj() == (OopDesc*) x) {
 #if ENABLE_ISOLATES
       // We must switch to the context of the task
-      int task_id =  ObjectHeap::owner_task_id(o.obj());
-      if( task_id == MAX_TASKS ) {
-        task_id = TaskContext::current_task_id();
-      }
+      int task_id =  ObjectHeap::contains_live(o.obj()) ?
+        ObjectHeap::owner_task_id(o.obj()) : TaskContext::current_task_id();
       TaskGCContext tmp(task_id);
 #endif
       o().print();
@@ -392,10 +389,6 @@ void paof() {
 
 void poh() {
   ObjectHeap::print();
-}
-
-void ref(int x) {
-  ObjectHeap::find((OopDesc*)x, false);
 }
 #endif
 

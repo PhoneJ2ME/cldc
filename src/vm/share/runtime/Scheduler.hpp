@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -53,7 +52,7 @@ private:
   }
 #endif
 
-  static ReturnOop find_waiting_thread(Oop* obj);
+  static ReturnOop find_condition(Oop* obj);
 
   static bool is_in_list(Thread* thread, Thread* list);
 #if ENABLE_ISOLATES
@@ -164,25 +163,31 @@ private:
   static void add_to_asynchronous(Thread* thread);
   static void remove_from_asynchronous(Thread* thread);
 
-  static ReturnOop add_waiting_thread(Thread* thread, JavaOop *obj);
-  static ReturnOop add_sync_thread(Thread* thread, Thread *pending_waiters,
-                                   JavaOop *obj);
-  static void remove_waiting_thread(Thread* thread);
-  static void remove_sync_thread(Thread* thread);
+  static void add_condition(Condition* condition);
+  static void remove_condition(Condition* condition);
   static void add_to_sleeping(Thread* thread);
   static void wake_up_timed_out_sleepers(JVM_SINGLE_ARG_TRAPS);
   static void check_blocked_threads(jlong timeout);
   static bool wait_for_event_or_timer(bool sleeper_found,
                                       jlong min_wakeup_time);
-  static void notify_wakeup(Thread* thread JVM_TRAPS);
+  static void notify_wakeup(Thread* thread, Condition* condition JVM_TRAPS);
 
   static unsigned char _thread_execute_counts[MAX_TASKS][ThreadObj::NUM_PRIORITY_SLOTS+1];
 #if ENABLE_ISOLATES
 #define TASK_PRIORITY_SCALE_MAX 6
-  const static unsigned int sched_priority[TASK_PRIORITY_SCALE_MAX][Task::PRIORITY_MAX+1];
+  const static int sched_priority[TASK_PRIORITY_SCALE_MAX][Task::PRIORITY_MAX+1];
+  static int get_translated_priority(int task_id) {
+    int priority = Task::get_priority(task_id);
+    return sched_priority[TaskPriorityScale][priority];
+  }
+
   static void add_to_suspend(Thread* thread);
   static void remove_from_suspend(Thread* thread);
+  static ReturnOop find_fair_scheduled_thread(Thread *, bool);
+  static bool _task_desperate;
+  static int _task_token_count;
   static unsigned int _task_execute_counts[];
+
   static void reset_task_counts() {
     for (int i = 0; i < Task::PRIORITY_MAX+1; i++) {
       _task_execute_counts[i] = 0;
@@ -295,7 +300,8 @@ private:
   static void gc_epilogue(void);
 
   // Makes current thread wait for condition
-  static void wait_for(Thread*, jlong timeout = 0);
+  static void wait_for(Thread*, Condition* condition, jlong timeout = 0);
+  static void signal(Condition* condition);
 
   // Forwarded from java.lang.Object
 

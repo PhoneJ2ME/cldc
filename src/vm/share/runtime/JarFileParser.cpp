@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -45,7 +44,7 @@
 //
 //     [a] Automatic reclaimation -- no need for explicit reference 
 //         counting. This is especially important becasue of VM's
-//         TRAPS mechanism. You can easiy forget to decrement a
+//         TRAPS mechanis. You can easiy forget to decrement a
 //         reference count duo to an exception.
 //     [b] Deterministic usage -- OsFile_Handles are scarce on embedded
 //         devices. We want to keep the number of open file handles

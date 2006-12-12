@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -36,4 +35,6 @@
   develop(bool, PrintStackTraceOnCrash, true,                               \
           "print the stack of all Java threads when crashing")              \
   develop(bool, ExitOnCrash, false,                                         \
+          "when crashing, exit with error code 99 and don't call debugger") \
+  develop(bool, CatchExceptions, true,                                      \
           "when crashing, exit with error code 99 and don't call debugger")

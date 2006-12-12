@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -115,7 +114,7 @@ class InterfaceMethodTable {
 	// We generate a thing like an imethodtable for interfaces, too.
 	// But its different enough that I'm treating it separately, here.
 	//
-	// It is complex to share our imethotable with our superclass,
+	// There is no way to share our imethotable with our superclass,
 	// as it must at least include ourselves!
 	//
 	// struct imethodtable { 

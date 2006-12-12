@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Portions Copyright  2003-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -37,7 +36,7 @@
 jint CompiledMethodDesc::total_code = 0;
 jint CompiledMethodDesc::total_items = 0;
 #endif
-#if ENABLE_TRAMPOLINE
+#if ENABLE_TRAMPOLINE && !CROSS_GENERATOR
 
 
 BranchItem* BranchTable::_b_items = NULL;

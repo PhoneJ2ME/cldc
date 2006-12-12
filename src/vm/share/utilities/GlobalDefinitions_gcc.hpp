@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -81,8 +80,8 @@ inline jdouble jdouble_cast(jlong   x)           { return *(jdouble*)&x; }
 
 #if ENABLE_THUMB_VM
 
-#  define BREAKPOINT __asm__ ("swi 0x01")
-#  define panic() __asm__ ("swi 0x01")
+#  define BREAKPOINT
+#  define panic()
 inline unsigned int _rotr(unsigned int x, unsigned int y) {
     int result;
     asm("ror %0, %2"         : "=l" (result) : "0" (x), "l" (y));

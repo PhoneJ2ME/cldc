@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -55,10 +54,7 @@ protected:
   virtual void write_data_block(SourceObjectWriter* obj_writer JVM_TRAPS);
   virtual void write_heap_block(SourceObjectWriter* obj_writer JVM_TRAPS);
   virtual void write_stuff_block(SourceObjectWriter* obj_writer JVM_TRAPS);
-#if ENABLE_PREINITED_TASK_MIRRORS && ENABLE_ISOLATES 
-  virtual void write_tm_body(SourceObjectWriter* obj_writer JVM_TRAPS);
-  virtual void write_tm_block(SourceObjectWriter* obj_writer JVM_TRAPS);
-#endif  
+
   virtual void init_declare_stream();
 
 private:

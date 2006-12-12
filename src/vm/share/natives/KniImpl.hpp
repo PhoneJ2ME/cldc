@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -34,13 +33,6 @@
 
 #define _KNI_CHECK \
           JVM_NO_CHECK); \
-        if (CURRENT_HAS_PENDING_EXCEPTION) { \
-           Thread::clear_current_pending_exception(); \
-           return; \
-        } _KNI_IGNORE_ME_(0
-
-#define _KNI_SINGLE_ARG_CHECK \
-          JVM_SINGLE_ARG_NO_CHECK); \
         if (CURRENT_HAS_PENDING_EXCEPTION) { \
            Thread::clear_current_pending_exception(); \
            return; \

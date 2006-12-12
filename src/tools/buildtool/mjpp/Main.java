@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -31,7 +30,7 @@ import java.util.*;
 import util.*;
 
 /**
- * Java preprocessor --
+ * VM Java preprocessor --
  * Preprocess java source files to reduce footprint.
  *
  * See $(JVMWorkSpace)/internal_doc/BuildSystem.html for more

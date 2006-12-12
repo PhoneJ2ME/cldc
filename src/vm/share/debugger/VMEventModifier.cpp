@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -276,8 +275,8 @@ ReturnOop VMEventModifier::new_modifier(PacketInputStream *in,
 
 jboolean VMEventModifier::match(DebuggerEvent *d_event, bool *should_delete) 
 {
+ 
   *should_delete = false;
-
   if (d_event == NULL)
     return false;
   switch (mod_kind()) {

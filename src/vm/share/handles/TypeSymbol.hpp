@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Portions Copyright  2003-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -58,7 +57,7 @@ public:
   static ReturnOop parse_array_class_name(Symbol *external_name JVM_TRAPS);
 
 #if !defined(PRODUCT) || ENABLE_WTK_PROFILER || ENABLE_PERFORMANCE_COUNTERS \
-     || ENABLE_JVMPI_PROFILE || USE_AOT_COMPILATION
+     || ENABLE_JVMPI_PROFILE
   void print_decoded_on(Stream* st);
   int print_type_at(Stream* st, int index);
 #else
@@ -98,7 +97,28 @@ public:
   }
 
   static BasicType primitive_field_basic_type_for(juint chr) {
-    return (BasicType)(_basic_type_from_literal[chr - 'A']);
+    BasicType type = (BasicType)(_basic_type_from_literal[chr - 'A']);
+
+#ifdef AZZERT
+    BasicType should_be;
+    switch (chr) {
+    case 'B': should_be = T_BYTE;    break;
+    case 'C': should_be = T_CHAR;    break;
+    case 'D': should_be = T_DOUBLE;  break;
+    case 'F': should_be = T_FLOAT;   break;
+    case 'I': should_be = T_INT;     break;
+    case 'J': should_be = T_LONG;    break;
+    case 'S': should_be = T_SHORT;   break;
+    case 'Z': should_be = T_BOOLEAN; break;
+    case 'V': should_be = T_VOID;    break;
+    default: 
+      SHOULD_NOT_REACH_HERE();
+      should_be = T_ILLEGAL;
+    }
+    GUARANTEE(should_be == type, "sanity");
+#endif
+
+    return type;
   }
 
 protected:

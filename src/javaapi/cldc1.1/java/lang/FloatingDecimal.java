@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -25,8 +24,6 @@
  */
 
 package java.lang;
-
-import com.sun.cldchi.jvm.JVM;
 
 class FloatingDecimal{
     boolean	isExceptional;
@@ -133,7 +130,7 @@ class FloatingDecimal{
 	    b5p = new FDBigInt[ p+1 ];
 	}else if (b5p.length <= p ){
 	    FDBigInt t[] = new FDBigInt[ p+1 ];
-	    JVM.unchecked_obj_arraycopy( b5p, 0, t, 0, b5p.length );
+	    System.arraycopy( b5p, 0, t, 0, b5p.length );
 	    b5p = t;
 	}
 	if ( b5p[p] != null )
@@ -381,7 +378,7 @@ class FloatingDecimal{
 	    result = digits;
 	else {
 	    result = new char[ ndigits ];
-	    JVM.unchecked_char_arraycopy( digits, digitno, result, 0, ndigits );
+	    System.arraycopy( digits, digitno, result, 0, ndigits );
 	}
 	this.digits = result;
 	this.decExponent = decExponent+1;
@@ -931,6 +928,7 @@ class FloatingDecimal{
 
     public String
     toString(){
+	// most brain-dead version
 	StringBuffer result = new StringBuffer( nDigits+8 );
 	if ( isNegative ){ result.append( '-' ); }
 	if ( isExceptional ){
@@ -950,18 +948,17 @@ class FloatingDecimal{
 	int  i = 0;
 	if ( isNegative ){ result[0] = '-'; i = 1; }
 	if ( isExceptional ){
-	    JVM.unchecked_char_arraycopy( digits, 0, result, i, nDigits );
+	    System.arraycopy( digits, 0, result, i, nDigits );
 	    i += nDigits;
 	} else {
 	    if ( decExponent > 0 && decExponent < 8 ){
 		// print digits.digits.
 		int charLength = Math.min( nDigits, decExponent );
-		JVM.unchecked_char_arraycopy(digits, 0, result, i, charLength);
+		System.arraycopy( digits, 0, result, i, charLength );
 		i += charLength;
 		if ( charLength < decExponent ){
 		    charLength = decExponent-charLength;
-		    JVM.unchecked_char_arraycopy(zero, 0, 
-                                                 result, i, charLength);
+		    System.arraycopy( zero, 0, result, i, charLength );
 		    i += charLength;
 		    result[i++] = '.';
 		    result[i++] = '0';
@@ -969,8 +966,7 @@ class FloatingDecimal{
 		    result[i++] = '.';
 		    if ( charLength < nDigits ){
 			int t = nDigits - charLength;
-			JVM.unchecked_char_arraycopy( digits, charLength, 
-                                                      result, i, t );
+			System.arraycopy( digits, charLength, result, i, t );
 			i += t;
 		    } else{
 			result[i++] = '0';
@@ -980,19 +976,16 @@ class FloatingDecimal{
 		result[i++] = '0';
 		result[i++] = '.';
 		if ( decExponent != 0 ){
-		    JVM.unchecked_char_arraycopy( zero, 0, 
-                                                  result, i, -decExponent );
+		    System.arraycopy( zero, 0, result, i, -decExponent );
 		    i -= decExponent;
 		}
-		JVM.unchecked_char_arraycopy( digits, 0, 
-                                              result, i, nDigits );
+		System.arraycopy( digits, 0, result, i, nDigits );
 		i += nDigits;
 	    } else {
 		result[i++] = digits[0];
 		result[i++] = '.';
 		if ( nDigits > 1 ){
-		    JVM.unchecked_char_arraycopy( digits, 1, 
-                                                  result, i, nDigits-1 );
+		    System.arraycopy( digits, 1, result, i, nDigits-1 );
 		    i += nDigits-1;
 		} else {
 		    result[i++] = '0';
@@ -1862,7 +1855,7 @@ class FDBigInt {
 
     /* public */ FDBigInt( FDBigInt other ){
 	data = new int[nWords = other.nWords];
-	JVM.unchecked_int_arraycopy( other.data, 0, data, 0, nWords );
+	System.arraycopy( other.data, 0, data, 0, nWords );
     }
 
     private FDBigInt( int [] d, int n ){
@@ -1929,7 +1922,7 @@ class FDBigInt {
 	int src    = nWords-1;
 	if ( bitcount == 0 ){
 	    // special solution, since an anticount of 32 won't go!
-	    JVM.unchecked_int_arraycopy( s, 0, t, wordcount, nWords );
+	    System.arraycopy( s, 0, t, wordcount, nWords );
 	    target = wordcount-1;
 	} else {
 	    t[target--] = s[src]>>>anticount;
@@ -2127,7 +2120,7 @@ class FDBigInt {
 	if ( c != 0L ){
 	    // oops -- carry out -- need longer result.
 	    int s[] = new int[ r.length+1 ];
-	    JVM.unchecked_int_arraycopy( r, 0, s, 0, r.length );
+	    System.arraycopy( r, 0, s, 0, r.length );
 	    s[i++] = (int)c;
 	    return new FDBigInt( s, i );
 	}

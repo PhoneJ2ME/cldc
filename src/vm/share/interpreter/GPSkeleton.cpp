@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -78,7 +77,6 @@ extern "C" {
 
   OopDesc**       _old_generation_end;
   address         _current_stack_limit       = NULL;
-  address         _compiler_stack_limit      = NULL;
   int             _rt_timer_ticks            = 0;
 
   address         _primordial_sp             = NULL;

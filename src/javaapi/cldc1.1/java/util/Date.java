@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -48,6 +47,7 @@ package java.util;
  * @see     java.util.TimeZone
  * @see     java.util.Calendar
  * @version CLDC 1.1 03/13/2002 (Based on JDK 1.3)
+ *          
  */
 
 public class Date {

@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -58,6 +57,16 @@ void OsMemory_free(void *p) {
 }
 
 #if SUPPORTS_ADJUSTABLE_MEMORY_CHUNK
+
+#ifdef SOLARIS
+  // otherwise mmap/munmap has bad signature
+#ifndef  _XPG4_2
+#define _XPG4_2 1
+#endif
+#endif
+
+#include <sys/mman.h>
+#include <unistd.h>
 
 #if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
 #define MAP_ANONYMOUS MAP_ANON

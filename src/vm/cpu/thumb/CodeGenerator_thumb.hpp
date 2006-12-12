@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -148,12 +147,4 @@ public:
    add_imm(jsp, JavaStackDirection * adjustment * BytesPerStackElement);
   }
 
-  void cmp_values(Value& op1, Value& op2, 
-                  BytecodeClosure::cond_op condition) {
-    (void)condition;
-    cmp_values(op1, op2);
-  }
-
-private:
-  void cmp_values(Value& op1, Value& op2);
 #endif /*#if ENABLE_THUMB_COMPILER*/

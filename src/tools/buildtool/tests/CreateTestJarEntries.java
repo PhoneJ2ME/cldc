@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -230,7 +229,7 @@ public class CreateTestJarEntries {
                            ByteArrayOutputStream baos,
                            String name) throws Throwable
     {
-        ZipEntry entry = new ZipEntry("javaapi/com/sun/cldc/io/" + name);
+        ZipEntry entry = new ZipEntry("vm/share/runtime/ClassPathAccess/" + name);
         zout.putNextEntry(entry);
         baos.writeTo(zout);
         zout.closeEntry();

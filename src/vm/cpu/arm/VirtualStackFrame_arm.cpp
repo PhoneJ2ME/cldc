@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -67,15 +66,9 @@ bool VirtualStackFrame::flush_quick() {
     int index = 0;
 
     while (raw_location < end) {
-      BasicType type = raw_location->type();
-      if (is_two_word(type)) {
+      if (is_two_word(raw_location->type())) {
         return false; // uncommon. Just bail out.
       }
-#if ENABLE_ARM_VFP
-      if (type == T_FLOAT) {
-        return false; // TEMP: fsts supports pre-indexing as well
-      }
-#endif
       bool changed = raw_location->is_changed();
       if (index <= current_stack_ptr) {
         if (changed) {

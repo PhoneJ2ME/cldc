@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -29,7 +28,7 @@
 
 void TaskMirrorDesc::variable_oops_do(void do_oop(OopDesc **)) {
 
-  if (_object_size == header_size()) {
+  if (_statics_end_offset == header_size()) {
     // no statics so don't continue.  It may be a size_type_array class which
     // isn't really an instance.  Hence trying to obtain the embedded_oop_map
     // will result in a crash

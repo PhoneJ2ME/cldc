@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -54,19 +53,10 @@ class MemoryAddress: public GenericAddress {
     GUARANTEE(is_two_word(), "sanity check"); 
     return address_2_for(hi_offset());
   }
-  Assembler::Address5 lo_address_5()  { 
-    return address_5_for(lo_offset());
-  }
-  Assembler::Address5 hi_address_5()  { 
-    GUARANTEE(is_two_word(), "sanity check"); 
-    return address_5_for(hi_offset());
-  }
-
 
   private:
     Assembler::Address2 address_2_for(jint addr_offset);
     Assembler::Address3 address_3_for(jint addr_offset);
-    Assembler::Address5 address_5_for(jint addr_offset);
 
  protected:
    // has_fixed_offset returns true iff the field we want is a fixed distance
@@ -202,7 +192,11 @@ class LocationAddress: public MemoryAddress {
 
   // check if the location address is the address of a local (as opposed to
   // an expression stack element) 
-  bool is_local() const;
+#if ENABLE_INLINE 
+  bool       is_local() const ;
+#else
+  bool       is_local()    const { return method()->is_local(index()); }
+#endif
 };
 
 #endif

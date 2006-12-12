@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -131,6 +130,16 @@ public:
   void clear_mods() {
     obj_field_clear(mods_offset());
   }
+  ReturnOop location() {
+    return obj_field(location_offset());
+  }
+  void set_location(Oop *location) {
+    obj_field_put(location_offset(), location);
+  }
+  void clear_location() {
+    obj_field_clear(location_offset());
+  }
+
   int num_modifiers() {
     return int_field(num_modifiers_offset());
   }
@@ -170,6 +179,9 @@ protected:
   }
   static int mods_offset() {
     return FIELD_OFFSET(VMEventDesc, _mods);
+  }
+  static int location_offset() {
+    return FIELD_OFFSET(VMEventDesc, _location_mod);
   }
   static int num_modifiers_offset() {
     return FIELD_OFFSET(VMEventDesc, _num_modifiers);

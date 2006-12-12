@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -48,32 +47,31 @@ KNIEXPORT void KNI_FindClass(const char* name, jclass classHandle) {
 
   // Find the class
   Symbol::Fast class_name = SymbolTable::symbol_for(name  _KNI_CHECK);
-  ArrayClass::Fast ac;
 
   if (FieldType::is_array(&class_name)) {
+    bool is_initialized = true;
     FieldType::Raw ft =
       TypeSymbol::parse_array_class_name(&class_name  _KNI_CHECK);
-    ac = ft().object_type();
+    ArrayClass::Raw ac = ft().object_type();
     JavaClass::Raw jc = ac().obj();
-    while (jc().is_obj_array_class()) {
-      ObjArrayClass::Raw oac = jc().obj();
-      jc = oac().element_class();
-    }
 
-    if (jc().is_instance_class()) {
-      InstanceClass::Raw ic = jc().obj();
-      if (ic.not_null() && !ic().is_fake_class() && ic().is_initialized()) {
-        kni_set_handle(classHandle, ac().java_mirror());
+    while (true) {
+      if (jc().is_obj_array_class()) {
+        ObjArrayClass::Raw oac = jc().obj();
+        jc = oac().element_class();
+      } else if (jc().is_instance_class()) {
+        InstanceClass::Raw ic = jc().obj();
+        is_initialized = !ic().is_fake_class() &&
+                         !ic().is_null() && ic().is_initialized();
+        break;
+      } else {
+        GUARANTEE(jc().is_type_array_class(), "unknown kind class");
+        break;
       }
-    } else {
-      GUARANTEE(jc().is_type_array_class(), "unknown kind class");
-#if ENABLE_ISOLATES
-      JavaClassObj::Raw result =
-        ac().get_or_allocate_java_mirror(_KNI_SINGLE_ARG_CHECK);
-      kni_set_handle(classHandle, result.obj());
-#else
-      kni_set_handle(classHandle, ac().java_mirror());
-#endif
+    }
+    if (is_initialized) {
+      JavaClassObj::Raw m = ac().java_mirror();
+      kni_set_handle(classHandle, m.obj());
     }
   } else {
     LoaderContext top_ctx(&class_name, ErrorOnFailure);
@@ -81,7 +79,7 @@ KNIEXPORT void KNI_FindClass(const char* name, jclass classHandle) {
                                                    /*lookup_only=*/ true,
                                                    /*check_only= */ true
                                                    _KNI_CHECK);
-    if (ic.not_null() && ic().is_initialized()) {
+    if (!ic().is_null() && ic().is_initialized()) {
       kni_set_handle(classHandle, ic().java_mirror());
     }
   }

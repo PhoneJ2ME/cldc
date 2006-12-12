@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -78,22 +77,6 @@ const char *OsMisc_julong_format_specifier() {
 }
 
 #endif // PRODUCT
-
-#if ENABLE_PAGE_PROTECTION
-void OsMisc_page_protect() {
-  DWORD old_mode; // not used but needed by VirtualProtect
-  BOOL result = VirtualProtect(_protected_page, PROTECTED_PAGE_SIZE,
-                               PAGE_NOACCESS, &old_mode);
-  GUARANTEE(result, "must succeed");
-}
-
-void OsMisc_page_unprotect() {
-  DWORD old_mode; // not used but needed by VirtualProtect
-  BOOL result = VirtualProtect(_protected_page, PROTECTED_PAGE_SIZE,
-                               PAGE_READWRITE, &old_mode);
-  GUARANTEE(result, "must succeed");
-}
-#endif // ENABLE_PAGE_PROTECTION
 
 #ifdef __cplusplus
 }

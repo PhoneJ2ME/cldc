@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -37,6 +36,12 @@
 #include "incls/_precompiled.incl"
 #include "incls/_JVM_win32.cpp.incl"
 
+#include <signal.h>
+
+#ifndef PRODUCT
+
+static bool printing_stack = false;
+
 #ifdef CYGWIN
 #define __try
 #define __except(e)
@@ -46,53 +51,11 @@
 #endif
 #endif
 
-#ifndef PRODUCT
-
-#include <signal.h>
-
-static bool printing_stack = false;
-
-// Type Ctrl-break (there's a "break" key on your PC keyboard)
-// to dump stack trace of all Java threads
-static void SigBreakHandler(int junk) {
-  if (!printing_stack) {
-    UNIMPLEMENTED();
-    printing_stack = 1;
-    pss();
-    printing_stack = 0;
-  }
-  signal(SIGBREAK, SigBreakHandler);
-}
-
 #define EXCEPTION_CASE(c) case c: name = #c;
 #define PRINT_REGISTER(x) \
     printf("Register %6s = 0x%8x\n", #x, exptr->ContextRecord->x)
 
-#endif // !PRODUCT
-
-extern "C" void interpreter_timer_tick();
-extern "C" void compiler_timer_tick();
-
 int CheckException(int n_except, LPEXCEPTION_POINTERS exptr) {
-#if ENABLE_PAGE_PROTECTION
-  if (n_except == STATUS_ACCESS_VIOLATION) {
-    const juint offset =
-      (address)exptr->ExceptionRecord->ExceptionInformation[1]-_protected_page;
-    if (TracePageAccess) {
-      TTY_TRACE_CR(("ACCESS_VIOLATION signaled: offset = %d", offset));
-    }
-    switch (offset) {
-    case COMPILER_TIMER_TICK_SLOT:
-      exptr->ContextRecord->Eip = (DWORD)compiler_timer_tick;
-      return EXCEPTION_CONTINUE_EXECUTION;
-    case INTERPRETER_TIMER_TICK_SLOT:
-      exptr->ContextRecord->Eip = (DWORD)interpreter_timer_tick;
-      return EXCEPTION_CONTINUE_EXECUTION;
-    }
-  }
-#endif
-
-#ifndef PRODUCT
   // If we have error inside a pp() call, last_raw_handle, etc, need to be
   // restored.
   DebugHandleMarker::restore();
@@ -145,25 +108,48 @@ int CheckException(int n_except, LPEXCEPTION_POINTERS exptr) {
     printf("Exiting from crash ...\n");
     ::exit(99);
   }
-#endif
 
   return EXCEPTION_CONTINUE_SEARCH;
 }
 
-static int executeVM() {
-#ifndef PRODUCT
+// Type Ctrl-break (there's a "break" key on your PC keyboard)
+// to dump stack trace of all Java threads
+static void SigBreakHandler(int junk) {
+  if (!printing_stack) {
+    UNIMPLEMENTED();
+    printing_stack = 1;
+    pss();
+    printing_stack = 0;
+  }
   signal(SIGBREAK, SigBreakHandler);
-#endif
-  
+}
+
+static int executeVM() {
   int result = 0;
-  __try {
+
+  signal(SIGBREAK, SigBreakHandler);
+
+  if (CatchExceptions) {
+    __try {
+      result = JVM::start();
+    }
+    __except (CheckException(GetExceptionCode(), GetExceptionInformation())) {
+      ;
+    }
+  } else {
     result = JVM::start();
   }
-  __except (CheckException(GetExceptionCode(), GetExceptionInformation())) {
-    ;
-  }
+
   return result;
 }
+
+#endif /* !defined(PRODUCT) */
+
+#ifdef PRODUCT
+static int executeVM() {
+  return JVM::start();
+}
+#endif
 
 extern "C" int JVM_Start(const JvmPathChar *classpath, char *main_class,
                          int argc, char **argv) {

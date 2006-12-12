@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Portions Copyright  2003-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -35,6 +34,7 @@
 #define __USE_GNU
 #endif
 
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -42,20 +42,7 @@
 #include <signal.h>
 #include <sched.h>
 #include <errno.h>
-
-#ifdef SOLARIS
-  // otherwise mmap/munmap has bad signature
-#ifndef  _XPG4_2
-#define _XPG4_2 1
-#endif
-#endif
-
-#include <sys/mman.h>
-
-#if ( ENABLE_NPCE || ( ENABLE_INTERNAL_CODE_OPTIMIZER ) ) && ARM_EXECUTABLE
-enum {
-  not_found = -1,
-};
+#if ( ENABLE_NPCE || ( ENABLE_INTERNAL_CODE_OPTIMIZER && ENABLE_CODE_OPTIMIZER ) ) && ARM && !CROSS_GENERATOR
 #define ucontext asm_ucontext
 extern "C" {
   extern address gp_compiler_throw_NullPointerException_ptr;
@@ -78,7 +65,7 @@ extern "C" {
 #endif
 
 #define NEED_XSCALE_PMU_CYCLE_COUNTER \
-        (ENABLE_XSCALE_PMU_CYCLE_COUNTER && ARM_EXECUTABLE)
+        (ENABLE_XSCALE_PMU_CYCLE_COUNTER && ARM && !CROSS_GENERATOR)
 
 #if NEED_XSCALE_PMU_CYCLE_COUNTER
 #include <sys/ioctl.h>

@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -29,7 +28,6 @@
 class GPTableGenerator: public SourceMacros
 {
 public:
-  void generate_protected_page();
   void generate_bytecode_dispatch_table();
   void generate_constants_table();
 

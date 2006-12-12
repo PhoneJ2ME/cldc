@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -284,7 +283,7 @@ ReturnOop SignatureStream::type_symbol() {
   return klass().name();
 }
 
-#if ENABLE_JAVA_DEBUGGER || ENABLE_COMPILER_TYPE_INFO
+#if ENABLE_JAVA_DEBUGGER
 ReturnOop SignatureStream::type_klass() {
   GUARANTEE(type() == T_OBJECT || type() == T_ARRAY, "sanity");
   return Universe::class_from_id(_current_class_id);

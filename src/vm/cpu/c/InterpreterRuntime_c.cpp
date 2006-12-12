@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -32,7 +31,7 @@ extern "C" {
 OopDesc* _newobject(Thread*thread, OopDesc* raw_klass JVM_TRAPS) {
   UsingFastOops fast_oops;
   InstanceClass::Fast klass = raw_klass;
-  return klass().new_instance(ErrorOnFailure JVM_NO_CHECK_AT_BOTTOM_0);
+  return klass().new_instance(ErrorOnFailure JVM_NO_CHECK_AT_BOTTOM);
 }
 
 jint _instanceof(Thread*thread, OopDesc* raw_object_class,      
@@ -53,7 +52,7 @@ OopDesc* _anewarray(Thread *thread, OopDesc* raw_base_klass, int length
   frame.verify();
 #endif
   JavaClass::Fast base_klass = raw_base_klass;
-  return Universe::new_obj_array(&base_klass, length JVM_NO_CHECK_AT_BOTTOM_0);
+  return Universe::new_obj_array(&base_klass, length JVM_NO_CHECK_AT_BOTTOM);
 }
 
 address setup_stack_asm(address xsp) {

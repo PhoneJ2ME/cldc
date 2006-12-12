@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -44,11 +43,11 @@ import java.io.*;
  * protocols use very different addressing mechanisms.
  * <p>
  * In the sample implementation provided as part of the CLDC
- * implementation, the following addressing scheme
+ * reference implementation, the following addressing scheme
  * is used for UDP datagrams.
  * <p>
  * The parameter string describing the target of a connection
- * in the CLDC implementation takes the following form:
+ * in the CLDC reference implementation takes the following form:
  *
  * <pre>
  * {protocol}://[{host}]:[{port}]

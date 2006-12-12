@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -54,7 +53,6 @@
 
   #define GP_GLOBAL_SYMBOLS_DO_PART1(pointer, value) \
      value(current_stack_limit,           sizeof(OopDesc*))                   \
-     value(compiler_stack_limit,          sizeof(OopDesc*))                   \
      value(rt_timer_ticks,                sizeof(int))
 
   #define GP_GLOBAL_SYMBOLS_DO_PART2(pointer, value) \
@@ -263,10 +261,6 @@
 
 #define GP_INTERNAL_SYMBOLS1_DO(pointer, value) \
     pointer(GP_ASM, native_system_arraycopy_entry) \
-    pointer(GP_ASM, native_jvm_unchecked_byte_arraycopy_entry) \
-    pointer(GP_ASM, native_jvm_unchecked_char_arraycopy_entry) \
-    pointer(GP_ASM, native_jvm_unchecked_int_arraycopy_entry) \
-    pointer(GP_ASM, native_jvm_unchecked_obj_arraycopy_entry) \
     pointer(GP_ASM, native_string_indexof_entry) \
     pointer(GP_ASM, native_string_indexof0_entry)
 
@@ -339,6 +333,11 @@
 // accessed by the compiler using ldr_using_gp()
 
 #if (ENABLE_THUMB_COMPILER || ENABLE_THUMB_REGISTER_MAPPING)
+/*
+ * IMPL_NOTE: we should move _rt-timer_ticks and _current_stack_limit to
+ * the top of the GP table so that they can be accessed with a single
+ * 16-bit instruction.
+ */
 #define GP_SYMBOLS_DO(pointer, value) \
         GP_INTERPRETER_SYMBOLS_DO(pointer, value) \
         GP_GLOBAL_SYMBOLS_DO_PART1(pointer, value) \

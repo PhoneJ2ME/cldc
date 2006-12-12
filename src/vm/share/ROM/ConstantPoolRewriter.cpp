@@ -1,6 +1,5 @@
 /*
  *
- *
  * Portions Copyright  2003-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
@@ -395,10 +394,10 @@ void ConstantPoolRewriter::rewrite_method(Method *method JVM_TRAPS) {
     if (!line_var_table.is_null() && !line_num_table.is_null()) {
       int i;
       int num_entries = line_num_table().count();
-      jushort old_pc, new_pc;
+      jshort old_pc, new_pc;
       for (i = 0; i < num_entries; i++) {
         old_pc = line_num_table().pc(i);
-        new_pc = _new_bytecode_address.ushort_at(old_pc);
+        new_pc = (jshort)_new_bytecode_address.ushort_at(old_pc);
         if (old_pc != new_pc) {
           need_table = true;
           line_num_table().set_pc(i, new_pc);
@@ -431,9 +430,9 @@ void ConstantPoolRewriter::rewrite_method(Method *method JVM_TRAPS) {
     if (!line_var_table.is_null() && !local_var_table.is_null()) {
       int i;
       int num_entries = local_var_table().count();
-      jushort new_code_size = new_method.code_size();
-      jushort old_code_size = method->code_size();
-      jushort start_pc, code_length, new_code_length, new_pc;
+      int new_code_size = new_method.code_size();
+      int old_code_size = method->code_size();
+      jshort start_pc, code_length, new_code_length, new_pc;
       for (i = 0; i < num_entries; i++) {
         start_pc = local_var_table().start_pc(i);
         code_length = local_var_table().code_length(i);
@@ -444,9 +443,8 @@ void ConstantPoolRewriter::rewrite_method(Method *method JVM_TRAPS) {
         }
         if ((start_pc + code_length) == old_code_size) {
           if (old_code_size != new_code_size) {
-            GUARANTEE(new_pc < new_code_size, "Sanity");
-            local_var_table().set_code_length(i, 
-                (jushort)(new_code_size - new_pc));
+            local_var_table().set_code_length(i,
+                              (jshort)(new_code_size - new_pc));
             need_table = true;
           }
         } else {
@@ -622,7 +620,8 @@ ReturnOop ConstantPoolRewriter::copy_method(Method *old_method, int new_size
   new_method().set_stackmaps(&orig_maps);
   new_method().set_holder_id(old_method->holder_id());
   new_method().set_max_locals(old_method->max_locals());
-  new_method().set_method_attributes(old_method->method_attributes());
+  new_method().set_size_of_parameters_and_return_type(
+     old_method->size_of_parameters_and_return_type());
   new_method().set_name_index(old_method->name_index());
   new_method().set_signature_index(old_method->signature_index());
   new_method().set_max_execution_stack_count(
@@ -768,7 +767,7 @@ void ConstantPoolRewriter::replace_method_references(JVM_SINGLE_ARG_TRAPS) {
   }
 #endif
 
-#if USE_AOT_COMPILATION
+#if USE_SOURCE_IMAGE_GENERATOR
   // Replace methods in the ROMOptimizer's list of methods to compile
   ROMVector *vector = _optimizer->precompile_method_list();
   int precompile_size = vector->size();
@@ -1026,8 +1025,8 @@ juint ConstantPoolRewriter::hashcode_for_method_ref(ConstantPool *orig_cp,
   int type = tag.value();
   jint value32 = orig_cp->value32_at(i);  
 
-  jint table_index = extract_low_jushort_from_jint(value32);
-  jint class_id    = extract_high_jushort_from_jint(value32);
+  jint table_index = extract_low_jshort_from_jint(value32);
+  jint class_id    = extract_high_jshort_from_jint(value32);
 
   InstanceClass::Raw klass = Universe::class_from_id(class_id);
   Symbol::Raw klass_name = klass().name();
@@ -1045,8 +1044,8 @@ juint ConstantPoolRewriter::hashcode_for_field_ref(ConstantPool *orig_cp,
 
   int type = tag.value();
   jint value32 = orig_cp->value32_at(i);
-  jint offset   = extract_high_jushort_from_jint(value32);
-  jint class_id = extract_low_jushort_from_jint(value32);
+  jint offset   = extract_high_jshort_from_jint(value32);
+  jint class_id = extract_low_jshort_from_jint(value32);
 
   InstanceClass::Raw klass = Universe::class_from_id(class_id);
   Symbol::Raw klass_name = klass().name();
@@ -1454,13 +1453,8 @@ void ConstantPoolRewriter::account_for_new_entry(ConstantTag new_entry_tag) {
 void ConstantPoolRewriter::init_branch_targets(Method *method JVM_TRAPS) {
   // _branch_targets is an int array. For all bci's in the method that's
   // a branch target, _branch_targets.int_at(bci) is non-zero.
-#if USE_COMPILER_STRUCTURES
-  Method::Attributes attributes;
-  method->compute_attributes(attributes JVM_CHECK);
-  _branch_targets = attributes.entry_counts;
-#else
-  _branch_targets = NULL;
-#endif
+  bool dummy;
+  _branch_targets = BasicBlock::compute_entry_counts(method, dummy JVM_CHECK);
 }
 
 bool ConstantPoolRewriter::is_branch_target(int old_bci) {

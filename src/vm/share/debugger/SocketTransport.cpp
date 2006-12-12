@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -659,23 +658,33 @@ void SocketTransport::flush(Transport *t)
 int
 SocketTransport::read_int(Transport *t, void *buf)
 {
-  return (read_bytes(t, buf, sizeof(int), true));
+  int ret;
+
+  ret = read_bytes(t, buf, sizeof(int), true);
+  *(int *)buf = ntohl(*(int *)buf);
+  return (ret);
 }
 
 short
 SocketTransport::read_short(Transport *t, void *buf)
 {
-  return(read_bytes(t, buf, sizeof(short), true));
+  int ret;
+
+  ret = read_bytes(t, buf, sizeof(short), true);
+  *(short *)buf = ntohs(*(short *)buf);
+  return (ret);
 }
 
 int SocketTransport::write_int(Transport *t, void *buf)
 {
-  return (write_bytes(t, buf, sizeof(int)));
+  int x = htonl(*(int *)buf);
+  return (write_bytes(t, &x, sizeof(int)));
 }
 
 int SocketTransport::write_short(Transport *t, void *buf)
 {
-  return (write_bytes(t, buf, sizeof(short)));
+  short x = htons(*(short *)buf);
+  return (write_bytes(t, &x, sizeof(short)));
 }
 
 //IMPL_NOTE: this is now broken

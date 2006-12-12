@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -189,22 +188,6 @@ bind(need_init);
 }
 
 #endif
-
-#if ENABLE_INLINED_ARRAYCOPY
-bool CodeGenerator::arraycopy(JVM_SINGLE_ARG_TRAPS) { 
-  return false;
-}
-
-bool CodeGenerator::unchecked_arraycopy(BasicType type JVM_TRAPS) {
-  return false;
-}
-#endif
-
-void CodeGenerator::bytecode_prolog() {
-}
-
-void CodeGenerator::flush_epilogue(JVM_SINGLE_ARG_TRAPS) {
-}
 
 extern "C" {
   void indirect_execution_sensor_update();
@@ -452,7 +435,7 @@ void CodeGenerator::array_check(Value& array, Value& index JVM_TRAPS) {
   }
 
   if (index.is_immediate()) {
-    // IMPL_NOTE: need revisit
+    // IMPL_NOTE:
     // CompilerLiteralAccessor cla;
     cmp_imm(length, index.as_int());
   } else {
@@ -967,7 +950,7 @@ void CodeGenerator::idiv_rem(Value& result, Value& op1, Value& op2,
     } 
   }
   
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
   if (!op2.in_register()) {
     op2.assign_register();
     mov_imm(op2.lo_register(), divisor);
@@ -1523,7 +1506,7 @@ void CodeGenerator::larithmetic(Opcode opcode1, Opcode opcode2,
   }
 
   if (op2.is_immediate()) {
-    // // IMPL_NOTE: Optimize moves
+    // IMPL_NOTE: Optimize moves
     TempRegister op2_imm;
     mov_imm(op2_imm.reg(), op2.msw_bits());
     mov_hi(r9, op2_imm.reg());
@@ -1609,6 +1592,13 @@ void CodeGenerator::cmp_values(Value& op1, Value& op2) {
     cmp(op1.lo_register(), reg(op2.lo_register()));
   }
 }
+void CodeGenerator::branch_if_do(BytecodeClosure::cond_op condition,
+                                 Value& op1, Value& op2, int destination JVM_TRAPS)
+{
+  cmp_values(op1, op2);
+  conditional_jump(condition, destination, true JVM_NO_CHECK_AT_BOTTOM);
+}
+
 
 void CodeGenerator::long_cmp(Value& result, Value& op1, Value& op2 JVM_TRAPS) {
   write_literals_if_desperate();
@@ -1728,6 +1718,19 @@ void CodeGenerator::check_cast(Value& object, Value& klass, int class_id
   frame()->clear_literals();
 }
 
+bool CodeGenerator::quick_check_cast(int /*class_id*/, Label& /*stub_label*/, 
+                                     Label& /*return_label*/ JVM_TRAPS) {
+  // IMPL_NOTE: quick checkcast is not yet implemented on the thumb compiler port.
+  JVM_IGNORE_TRAPS;
+  return false;
+}
+
+bool CodeGenerator::quick_instance_of(int /*class_id*/ JVM_TRAPS) {
+  // quick instanceof is not implemented on the Thumb-JIT port.
+  JVM_IGNORE_TRAPS;
+  return false;
+}
+
 void CodeGenerator::instance_of(Value& result, Value& object, Value& klass,
                                 int class_id JVM_TRAPS) {
   (void)class_id;
@@ -1803,29 +1806,6 @@ void CodeGenerator::instance_of(Value& result, Value& object, Value& klass,
   frame()->clear_literals();
 }
 
-void CodeGenerator::check_cast_stub(CompilationQueueElement* cqe JVM_TRAPS) {
-  (void)cqe;
-  call_vm((address) checkcast, T_VOID JVM_NO_CHECK_AT_BOTTOM);
-}
-
-
-void CodeGenerator::instance_of_stub(CompilationQueueElement* cqe JVM_TRAPS) {
-  (void)cqe;
-  call_vm((address) instanceof, T_INT JVM_NO_CHECK_AT_BOTTOM);
-}
-
-#if ENABLE_INLINE_COMPILER_STUBS
-void CodeGenerator::new_object_stub(CompilationQueueElement* cqe JVM_TRAPS) {
-  (void)cqe;
-  UNIMPLEMENTED();
-}
-
-void CodeGenerator::new_type_array_stub(CompilationQueueElement* cqe JVM_TRAPS) {
-  (void)cqe;
-  UNIMPLEMENTED();
-}
-#endif
-
 void CodeGenerator::if_then_else(Value& result,
                                  BytecodeClosure::cond_op condition, 
                                  Value& op1, Value& op2,
@@ -1887,7 +1867,7 @@ void CodeGenerator::new_object(Value& result, JavaClass* klass JVM_TRAPS) {
   GUARANTEE(size.is_fixed(), "Size must be fixed in order to do allocation");
 #endif
   // Do flushing, and remember to unmap.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   // Handle finalization by going slow-case for objects with finalizers.
   if (klass->has_finalizer()) {
@@ -1915,7 +1895,7 @@ void CodeGenerator::new_object_array(Value& result, JavaClass* element_class,
 
 
   // Do flushing, and remember to unmap.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   // Call the allocation routine.
   Value save_reg_for_oop(T_ILLEGAL);
@@ -1933,7 +1913,7 @@ void CodeGenerator::new_basic_array(Value& result, BasicType type,
                                     Value& length JVM_TRAPS) {
   UsingFastOops fast_oops;
   // Do flushing, and remember to unmap.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   TypeArrayClass* array_class = Universe::as_TypeArrayClass(type);
   JavaNear::Fast java_near = array_class->prototypical_near();
@@ -2002,7 +1982,7 @@ void CodeGenerator::new_basic_array(Value& result, BasicType type,
 }
 
 void CodeGenerator::new_multi_array(Value& result JVM_TRAPS) {
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   // Call the runtime system.
   call_vm((address) multianewarray, T_ARRAY JVM_CHECK);
@@ -2014,14 +1994,14 @@ void CodeGenerator::new_multi_array(Value& result JVM_TRAPS) {
 
 void CodeGenerator::monitor_enter(Value& object JVM_TRAPS) {
   // For now we flush before calling the compiler monitor enter stub.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
   mov_reg(r0, object.lo_register());
   call_through_gp(gp_shared_monitor_enter_ptr JVM_NO_CHECK_AT_BOTTOM);
 }
 
 void CodeGenerator::monitor_exit(Value& object JVM_TRAPS) {
   // For now we flush before calling the compiler monitor exit stub.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
   // Make sure the object is in register r0 (tos_val).
   mov_reg(r0, object.lo_register());
   call_through_gp(gp_shared_monitor_exit_ptr JVM_NO_CHECK_AT_BOTTOM);
@@ -2050,7 +2030,7 @@ void CodeGenerator::return_result(Value& result JVM_TRAPS) {
   }
 
   if (TaggedJavaStack) {
-    if (tag && frame()->get_literal(method_return_type) == tag) {
+    if (frame()->has_literal_value(method_return_type, imm32) && imm32 == tag){
       // We can elide setting the stack type.  This happens rather frequently!
 #ifdef AZZERT
       if (!GenerateROMImage) {
@@ -2083,7 +2063,8 @@ void CodeGenerator::return_void(JVM_SINGLE_ARG_TRAPS) {
 
   if (TaggedJavaStack) {
     int imm32;
-    if (uninitialized_tag && frame()->get_literal(method_return_type) == uninitialized_tag) {
+    if (frame()->has_literal_value(method_return_type, imm32)
+           && imm32 == uninitialized_tag) {
       // We can elide setting the stack type.  This happens rather frequently!
 #ifdef AZZERT
       if (!GenerateROMImage) {
@@ -2203,7 +2184,7 @@ void CodeGenerator::unlock_activation(JVM_SINGLE_ARG_TRAPS) {
   GUARANTEE(ROM::is_synchronized_method_allowed(method()), "sanity");
 
   NOT_PRODUCT(comment("Unlock synchronized method"));
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
   call_through_gp(gp_shared_unlock_synchronized_method_ptr
                   JVM_NO_CHECK_AT_BOTTOM);
 }
@@ -2406,8 +2387,7 @@ void CodeGenerator::lookup_switch(Register index, jint table_index,
 
 
 
-void CodeGenerator::invoke(const Method* method, 
-                           bool must_do_null_check JVM_TRAPS) {
+void CodeGenerator::invoke(Method* method, bool must_do_null_check JVM_TRAPS) {
   bool is_native = false;
   int size_of_parameters = method->size_of_parameters();
 
@@ -2435,7 +2415,7 @@ void CodeGenerator::invoke(const Method* method,
     ldr_oop(r0, method);
   }
 
-#if USE_AOT_COMPILATION
+#if CROSS_GENERATOR
   bool try_skip_lookup = true;
   // IMPL_NOTE: this needs to be fixed so that the AOT-compiled code can 
   // directly invoke the method without a look up
@@ -2458,7 +2438,7 @@ void CodeGenerator::invoke(const Method* method,
       address native_code = method->get_quick_native_code();
       // We actually only need to flush the end of the stack containing the
       // arguments, but we don't really have any way of doing that..
-      frame()->flush(JVM_SINGLE_ARG_CHECK);
+      frame()->flush();
       if (size_of_parameters > 0) { 
         add(jsp, jsp,
               size_of_parameters * -JavaStackDirection * BytesPerStackElement);
@@ -2482,7 +2462,7 @@ void CodeGenerator::invoke(const Method* method,
     } else {
       address target = method->execution_entry();
       mov_imm(tmp, target);
-      frame()->flush(JVM_SINGLE_ARG_CHECK);
+      frame()->flush();
       call_from_compiled_code(tmp, 0, size_of_parameters JVM_CHECK);
     }
   } else {
@@ -2503,7 +2483,7 @@ void CodeGenerator::invoke(const Method* method,
           ldr(tmp, tmp);
         }
         weaver.start_alternate(JVM_SINGLE_ARG_CHECK);
-        frame()->flush(JVM_SINGLE_ARG_CHECK);
+        frame()->flush();
         weaver.flush();
     }
     // invoke the method
@@ -2548,7 +2528,6 @@ void CodeGenerator::invoke_virtual(Method* method, int vtable_index,
   {
     GUARANTEE(!frame()->is_mapping_something(tmp), "Must be free");
     GUARANTEE(!frame()->is_mapping_something(r0), "Must be free");
-    TempRegister tmp2;
     CodeInterleaver weaver(this);
 
     ldr(tmp, tmp, JavaNear::class_info_offset());
@@ -2561,6 +2540,7 @@ void CodeGenerator::invoke_virtual(Method* method, int vtable_index,
       ldr(r0, tmp, vtab_offset);
     } else {
       int diff = vtab_offset - 128;
+      TempRegister tmp2;
       mov_imm(tmp2, 0x1);
       lsl_imm(tmp2, tmp2, 7);
       if(diff != 0) add_imm(tmp2, diff);
@@ -2575,7 +2555,7 @@ void CodeGenerator::invoke_virtual(Method* method, int vtable_index,
       ldr(tmp, tmp);
     }
     weaver.start_alternate(JVM_SINGLE_ARG_CHECK);
-    frame()->flush(JVM_SINGLE_ARG_CHECK);
+    frame()->flush();
     weaver.flush();
   }
   call_from_compiled_code(tmp, 0, size_of_parameters JVM_CHECK);
@@ -2610,7 +2590,7 @@ void CodeGenerator::invoke_interface(JavaClass* klass, int itable_index,
   ldr(tmp0, tmp0, 0);
 
   // Flush the virtual stack frame and unmap everything.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   // tmp0: klass of receiver
   // tmp1:
@@ -2998,9 +2978,33 @@ CodeGenerator::convert_condition(BytecodeClosure::cond_op condition)  {
   return nv;
 }
 
-void CodeGenerator::conditional_jump_do(BytecodeClosure::cond_op condition, 
-                                        Label& destination) {
-  b(destination, convert_condition(condition));
+void CodeGenerator::conditional_jump(BytecodeClosure::cond_op condition,
+                                     int destination,
+                                     bool assume_backward_jumps_are_taken JVM_TRAPS)
+{
+  if (assume_backward_jumps_are_taken && destination < bci()) {
+    Label fall_through;
+    b(fall_through, not_cond(convert_condition(condition)));
+    int next = bci() + Bytecodes::length_for(method(), bci());
+    CompilationContinuation::insert(next, fall_through JVM_CHECK);
+#ifndef PRODUCT
+    char buffer[200];
+    jvm_sprintf(buffer, "Creating continuation for fallthrough to bci = %d",
+            bci() + Bytecodes::length_for(method(), bci()));
+    comment(buffer);
+#endif
+    branch(destination JVM_NO_CHECK_AT_BOTTOM);
+  } else {
+    Label branch_taken;
+    b(branch_taken, convert_condition(condition));
+#ifndef PRODUCT
+    char buffer[200];
+    jvm_sprintf(buffer, "Creating continuation for target bci = %d", destination);
+    comment(buffer);
+#endif
+    CompilationContinuation::insert(destination,
+                                    branch_taken JVM_NO_CHECK_AT_BOTTOM);
+  }
   write_literals_if_desperate();
 }
 
@@ -3182,7 +3186,7 @@ void CodeGenerator::assign_register(Value& result, Value& op) {
 #ifndef PRODUCT
 void
 CodeGenerator::verify_location_is_constant(jint index, const Value& constant) {
-  // IMPL_NOTE: need revisit
+  // IMPL_NOTE:
   // CompilerLiteralAccessor cla;
   LocationAddress address(index, constant.type());
   TempRegister tmp;
@@ -3203,7 +3207,7 @@ CodeGenerator::verify_location_is_constant(jint index, const Value& constant) {
 }
 #endif
 
-#if USE_AOT_COMPILATION && !ENABLE_ISOLATES
+#if CROSS_GENERATOR && !ENABLE_ISOLATES
 
 void CodeGenerator::initialize_class(InstanceClass* klass JVM_TRAPS) {
   GUARANTEE(klass->not_null() && !klass->is_initialized(), 
@@ -3211,7 +3215,7 @@ void CodeGenerator::initialize_class(InstanceClass* klass JVM_TRAPS) {
   // initialize_class(Thread&, raw_class);
   NOT_PRODUCT(comment("Initialize class if needed"));
   NOT_PRODUCT(comment("Flush frame"));
-  flush_frame(JVM_SINGLE_ARG_CHECK);
+  flush_frame();
 
   Label class_initialized;
 
@@ -3243,7 +3247,7 @@ void CodeGenerator::init_static_array(Value& result JVM_TRAPS) {
   NOT_PRODUCT(comment("Initialization of static arrays"));
 
   // Flush the virtual stack frame.
-  flush_frame(JVM_SINGLE_ARG_CHECK);  
+  flush_frame();  
 
   const Register src = tos_tag;
   const Register dst = tos_val;

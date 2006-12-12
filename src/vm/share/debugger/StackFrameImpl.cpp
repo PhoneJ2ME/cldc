@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -29,12 +28,7 @@
 
 #if ENABLE_JAVA_DEBUGGER
 
-bool StackFrameImpl::read_local_to_address(PacketInputStream *in,
-                                           PacketOutputStream *out,
-                                           JavaFrame *fr, jint slot, jbyte tag)
-{
-  bool ret = true;
-
+void StackFrameImpl::read_local_to_address(PacketInputStream *in, JavaFrame *fr, jint slot, jbyte tag) {
   switch(tag) { 
   case JDWP_Tag_BYTE:
   case JDWP_Tag_BOOLEAN:
@@ -66,36 +60,29 @@ bool StackFrameImpl::read_local_to_address(PacketInputStream *in,
       fr->local_at(slot + 1)->set_double(d);
       break;
     }
-  case JDWP_Tag_FLOAT:
-    *(jint *)(fr->local_at(slot)->int_addr()) = in->read_int();
-    break;
 #endif
   
   case JDWP_Tag_INT:
+  case JDWP_Tag_FLOAT:
     *(jint *)(fr->local_at(slot)->int_addr()) = in->read_int();
     break;
 
   case JDWP_Tag_VOID: 
     /* do nothing */
     break;
-  case JDWP_Tag_OBJECT:
-    *(Oop *)(fr->local_at(slot)->int_addr()) = in->read_object();
-    break;
 
   default:
-    out->set_error(JDWP_Error_INVALID_TAG);
-    ret = false;
+    *(Oop *)(fr->local_at(slot)->int_addr()) = in->read_object();
     break;
   }
-  return ret;
+  return;
 }
 
-bool StackFrameImpl::write_local_from_address(PacketOutputStream *out,
-                                              JavaFrame *fr, jint slot,
-                                              jbyte tag, jboolean write_tag, 
-                                              jboolean bogus_object) {
-
-  bool ret = true;
+void
+StackFrameImpl::write_local_from_address(PacketOutputStream *out,
+                                         JavaFrame *fr, jint slot,
+                                         jbyte tag, jboolean write_tag, 
+                                         jboolean bogus_object) {
 
   if (!bogus_object && (tag == JDWP_Tag_OBJECT || tag == JDWP_Tag_ARRAY)) {
     Oop::Raw o = fr->local_at(slot)->as_obj();
@@ -160,13 +147,9 @@ bool StackFrameImpl::write_local_from_address(PacketOutputStream *out,
       out->write_object(fr->local_at(slot)->as_oop());
     }
     break;
-  default:
-    out->set_error(JDWP_Error_INVALID_TAG);
-    ret = false;
-    break;
   }
 
-  return ret;
+  return;
 }
 
 #ifdef AZZERT
@@ -189,9 +172,6 @@ StackFrameImpl::print_local_from_address(JavaFrame *fr, jint slot,
     // of the long
     tty->print(" Data: %lf", fr->local_at(slot + 1)->as_double());
     break;
-  case JDWP_Tag_FLOAT:
-    tty->print(" Data: %f", jvm_f2d(fr->local_at(slot)->as_float()));
-    break;
 #endif
   case JDWP_Tag_LONG:
     // we bump up the slot number so we index correctly to the beginning
@@ -210,6 +190,11 @@ StackFrameImpl::print_local_from_address(JavaFrame *fr, jint slot,
   case JDWP_Tag_INT:
     tty->print(" Data: %d", fr->local_at(slot)->as_int());
     break;
+#if ENABLE_FLOAT
+  case JDWP_Tag_FLOAT:
+    tty->print(" Data: %f", jvm_f2d(fr->local_at(slot)->as_float()));
+    break;
+#endif            
   case JDWP_Tag_SHORT:
     tty->print(" Data: %hu", (jshort)(fr->local_at(slot)->as_int()));
     break;
@@ -291,7 +276,6 @@ void StackFrameImpl::stack_frame_getter_setter(PacketInputStream *in,
   }
         
   for (i=0; i < num_values; i++) {
-    bool ret;
     jint slot = in->read_int();
     char tag  = in->read_byte();
     jboolean bogus_object = false;
@@ -299,7 +283,7 @@ void StackFrameImpl::stack_frame_getter_setter(PacketInputStream *in,
     get_frame(fr, frame_id);
     JavaFrame jf = fr.as_JavaFrame();
     if (is_setter) {
-      ret = read_local_to_address(in, out, &jf, slot, tag);
+      read_local_to_address(in, &jf, slot, tag);
     } else {
       switch (tag) {
       case JDWP_Tag_OBJECT:
@@ -331,7 +315,7 @@ void StackFrameImpl::stack_frame_getter_setter(PacketInputStream *in,
         break;
       }
 
-      ret = write_local_from_address(out, &jf, slot, tag, true, bogus_object);
+      write_local_from_address(out, &jf, slot, tag, true, bogus_object);
     }
 
 #ifdef AZZERT            
@@ -344,10 +328,6 @@ void StackFrameImpl::stack_frame_getter_setter(PacketInputStream *in,
         tty->print_cr("");
     }
 #endif
-    if (!ret) {
-      // Had an error of some sort, send the error packet
-      break;
-    }
   }
   out->send_packet();
 }

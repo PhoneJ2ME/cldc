@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -55,7 +54,7 @@ void CodeGenerator::load_task_mirror(Oop*klass, Value& statics_holder,
     Label class_is_initialized, need_init;
     // Can we make the flush conditional for  get/put static ?
     //  see if register usage cross compiled bytecode.
-    frame()->flush(JVM_SINGLE_ARG_CHECK);
+    frame()->flush();
     // The marker is at the start of the heap or in ROM text, so it can be
     // treated as a constant value for the cib test.
     cmpl(statics_holder.lo_register(), (int)_task_class_init_marker);
@@ -89,7 +88,7 @@ void CodeGenerator::check_cib(Oop* klass JVM_TRAPS){
   Label class_is_initialized, need_init;
   // IMPL_NOTE: Cannot make the flush conditionally.
   //  see how this can be made conditional!
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
   
   { // Scope for task_mirror_value. Use destroy explicitly if you remove this.
     Value task_mirror_value(T_OBJECT);
@@ -122,22 +121,6 @@ bind(need_init);
 }
 
 #endif //ENABLE_ISOLATES
-
-#if ENABLE_INLINED_ARRAYCOPY
-bool CodeGenerator::arraycopy(JVM_SINGLE_ARG_TRAPS) { 
-  return false;
-}
-
-bool CodeGenerator::unchecked_arraycopy(BasicType type JVM_TRAPS) {
-  return false;
-}
-#endif
-
-void CodeGenerator::bytecode_prolog() {
-}
-
-void CodeGenerator::flush_epilogue(JVM_SINGLE_ARG_TRAPS) {
-}
 
 void CodeGenerator::save_state(CompilerState *compiler_state) {
   BinaryAssembler::save_state(compiler_state);
@@ -428,7 +411,7 @@ void CodeGenerator::method_entry(Method* method JVM_TRAPS) {
     get_thread(eax);
     testl(Address(eax, Thread::status_offset()), THREAD_STEPPING);
     jcc(zero, not_stepping);
-    frame()->flush(JVM_SINGLE_ARG_CHECK);
+    frame()->flush();
     // Call the runtime system.
     call_vm((address) handle_single_step, T_VOID JVM_CHECK);
     bind(not_stepping);
@@ -500,8 +483,6 @@ void CodeGenerator::call_from_compiled_code(address target,
 }
 
 void CodeGenerator::write_call_info(int parameters_size JVM_TRAPS) {
-  GUARANTEE(!Compiler::is_inlining(),
-            "Call info should not be written during inlining");
   // The actual callinfo on the x86 starts >>after<< the bytecode which
   // encodes "testl eax, ..."
   const jint code_offset = code_size();
@@ -787,7 +768,7 @@ void CodeGenerator::throw_simple_exception(int rte JVM_TRAPS) {
 
 void CodeGenerator::monitor_enter(Value& object JVM_TRAPS) {
   // For now we flush before calling the compiler monitor enter stub.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   // Make sure the object is in register eax.
   if (object.lo_register() != eax) {
@@ -800,7 +781,7 @@ void CodeGenerator::monitor_enter(Value& object JVM_TRAPS) {
 
 void CodeGenerator::monitor_exit(Value& object JVM_TRAPS) {
   // For now we flush before calling the compiler monitor exit stub.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   // Make sure the object is in register eax.
   if (object.lo_register() != eax) {
@@ -817,7 +798,7 @@ void CodeGenerator::unlock_activation(JVM_SINGLE_ARG_TRAPS) {
   GUARANTEE(method()->access_flags().is_synchronized(), "Sanity check");
   GUARANTEE(ROM::is_synchronized_method_allowed(method()), "sanity");
 
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
   call_from_compiled_code((address)shared_unlock_synchronized_method
                           JVM_NO_CHECK_AT_BOTTOM);
 }
@@ -863,6 +844,7 @@ void CodeGenerator::check_monitors(JVM_SINGLE_ARG_TRAPS) {
 
 }
 
+
 void CodeGenerator::cmp_values(Value& op1, Value& op2) {
   GUARANTEE(op1.in_register(), "op1 must be in a register");
   GUARANTEE(op2.is_immediate() || op2.in_register(),
@@ -878,6 +860,14 @@ void CodeGenerator::cmp_values(Value& op1, Value& op2) {
     cmpl(op1.lo_register(), op2.lo_register());
   }
 }
+
+void CodeGenerator::branch_if_do(BytecodeClosure::cond_op condition,
+                                 Value& op1, Value& op2, int destination JVM_TRAPS)
+{
+  cmp_values(op1, op2);
+  conditional_jump(condition, destination, true JVM_NO_CHECK_AT_BOTTOM);
+}
+
 
 void CodeGenerator::if_then_else(Value& result,
                                  BytecodeClosure::cond_op condition, 
@@ -940,7 +930,7 @@ void CodeGenerator::new_object(Value& result, JavaClass* klass JVM_TRAPS) {
   GUARANTEE(size.is_fixed(), "Size must be fixed in order to do allocation");
 
   // Do flushing, and remember to unmap.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   // Handle finalization by going slow-case for objects with finalizers.
   if (klass->has_finalizer()) {
@@ -974,7 +964,7 @@ void CodeGenerator::new_object_array(Value& result, JavaClass* element_class,
   frame()->push(length);
 
   // Flush the virtual stack frame.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   // Get the prototypical near object from the klass and put it into register
   // ebx
@@ -999,7 +989,7 @@ void CodeGenerator::new_basic_array(Value& result, BasicType type,
   frame()->push(length);
 
   // Do flushing, and remember to unmap.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   // Figure out which class to use.
   TypeArrayClass* array_class = Universe::as_TypeArrayClass(type);
@@ -1034,7 +1024,7 @@ void CodeGenerator::new_basic_array(Value& result, BasicType type,
 
 void CodeGenerator::new_multi_array(Value& result JVM_TRAPS) {
   // Do flushing, and remember to unmap.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   // Call the runtime system.
   call_vm((address) multianewarray, T_ARRAY JVM_CHECK);
@@ -1080,6 +1070,17 @@ void CodeGenerator::check_cast(Value& object, Value& klass, int class_id
   CheckCastStub::insert(bci(), class_id, slow_case, done_checking JVM_CHECK);
 
   frame()->pop(object);
+}
+
+bool CodeGenerator::quick_check_cast(int class_id, Label& stub_label, 
+                                     Label& return_label JVM_TRAPS) {
+  // quick checkcast is not implemented on the x86 port.
+  return false;
+}
+
+bool CodeGenerator::quick_instance_of(int class_id JVM_TRAPS) {
+  // quick instanceof is not implemented on the x86 port.
+  return false;
 }
 
 void CodeGenerator::instance_of(Value& result, Value& object, Value& klass,
@@ -1133,29 +1134,6 @@ void CodeGenerator::instance_of(Value& result, Value& object, Value& klass,
 
   frame()->pop(object);
 }
-
-void CodeGenerator::check_cast_stub(CompilationQueueElement* cqe JVM_TRAPS) {
-  (void)cqe;
-  call_vm((address) checkcast, T_VOID JVM_NO_CHECK_AT_BOTTOM);
-}
-
-
-void CodeGenerator::instance_of_stub(CompilationQueueElement* cqe JVM_TRAPS) {
-  (void)cqe;
-  call_vm((address) instanceof, T_INT JVM_NO_CHECK_AT_BOTTOM);
-}
-
-#if ENABLE_INLINE_COMPILER_STUBS
-void CodeGenerator::new_object_stub(CompilationQueueElement* cqe JVM_TRAPS) {
-  (void)cqe;
-  UNIMPLEMENTED();
-}
-
-void CodeGenerator::new_type_array_stub(CompilationQueueElement* cqe JVM_TRAPS) {
-  (void)cqe;
-  UNIMPLEMENTED();
-}
-#endif
 
 void CodeGenerator::type_check(Value& array, Value& index, Value& object JVM_TRAPS){
   Label slow_case, done_checking;
@@ -1761,7 +1739,7 @@ extern "C" {
 
 void CodeGenerator::double_binary_do(Value& result, Value& op1, Value& op2,
                                      BytecodeClosure::binary_op op JVM_TRAPS) {
-  // IMPL_NOTE: Need revisit. Currently add, bub, mul, div, rem jumps into the interpreter we need
+  // IMPL_NOTE: IMPL_NOTE. Currently add, bub, mul, div, rem jumps into the interpreter we need
   // to write the compiled version of this code.
   if (op == BytecodeClosure::bin_add ||
       op == BytecodeClosure::bin_sub ||
@@ -1961,7 +1939,7 @@ void CodeGenerator::imul(Value& result, Value& op1, Value& op2 JVM_TRAPS) {
 
 void CodeGenerator::idiv_helper(Value& result, Value& op1, Value& op2 JVM_TRAPS) {
   // For now we flush before calling the compiler div stub.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   // If eax is the divisor make sure we do not overwrite the value before
   // using it.
@@ -2172,7 +2150,7 @@ void CodeGenerator::lrsb(Value& result, Value& op1, Value& op2 JVM_TRAPS) {
 
 void CodeGenerator::runtime_long_op(Value& result, Value& op1, Value& op2,
                                     bool check_zero, address routine JVM_TRAPS) {
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
   if (check_zero) {
     GUARANTEE(op2.stack_type() == T_LONG, "Sanity");
     if (op2.in_register() || (op2.is_immediate() && op2.as_long() == 0)) {
@@ -2274,9 +2252,23 @@ void CodeGenerator::lxor(Value& result, Value& op1, Value& op2 JVM_TRAPS) {
   }
 }
 
-void CodeGenerator::conditional_jump_do(BytecodeClosure::cond_op condition,
-                                        Label& destination) {
-  jcc(convert_condition(condition), destination);
+void CodeGenerator::conditional_jump(BytecodeClosure::cond_op condition,
+                                     int destination,
+                                     bool assume_backward_jumps_are_taken
+                                     JVM_TRAPS) {
+  if (assume_backward_jumps_are_taken && destination <= bci()) {
+    Label fall_through;
+    jcc(convert_condition(BytecodeClosure::negate(condition)), fall_through);
+    CompilationContinuation::insert(
+                        bci() + Bytecodes::length_for(method(), bci()),
+                        fall_through JVM_CHECK);
+    branch(destination JVM_NO_CHECK_AT_BOTTOM);
+  } else {
+    Label branch_taken;
+    jcc(convert_condition(condition), branch_taken);
+    CompilationContinuation::insert(destination,
+                                    branch_taken JVM_NO_CHECK_AT_BOTTOM);
+  }
 }
 
 void CodeGenerator::table_switch(Value& index, jint table_index,
@@ -2312,14 +2304,13 @@ void CodeGenerator::lookup_switch(Value& index, jint table_index,
 }
 
 
-void CodeGenerator::invoke(const Method* method, 
-                           bool must_do_null_check JVM_TRAPS) {
+void CodeGenerator::invoke(Method* method, bool must_do_null_check JVM_TRAPS) {
   // If the method we are calling is a vanilla constructor we don't have to
   // do anything.
   BinaryAssembler::Address adr(0);
 
   // Flush the virtual stack frame and an unmap everything.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
   verify_fpu();
 
   // Put the method into register ebx.
@@ -2368,7 +2359,7 @@ void CodeGenerator::invoke_virtual(Method* method, int vtable_index,
   int size_of_parameters = method->size_of_parameters();
 
   // Flush the virtual stack frame and unmap everything.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
   verify_fpu();
 
   // Get the receiver.
@@ -2409,7 +2400,7 @@ void CodeGenerator::invoke_interface(JavaClass* klass, int itable_index,
                                      BasicType return_type JVM_TRAPS) {
   UsingFastOops fast_oops;
   // Flush the virtual stack frame and an unmap everything.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
   verify_fpu();
 
   // Load the receiver into register edx.
@@ -2619,18 +2610,15 @@ bind(done);
 
 void CodeGenerator::check_timer_tick(JVM_SINGLE_ARG_TRAPS) {
   Label timer_tick, done;
-  comment("check for clock tick");
 
-#if ENABLE_PAGE_PROTECTION
-  movl(Address((int)&_protected_page[COMPILER_TIMER_TICK_SLOT]), eax);
-#else
+  comment("check for clock tick");
   cmpl(Address((int)&_rt_timer_ticks), 0);
   jcc(not_equal, timer_tick);
-#endif
-  bind(done);
-  
-  TimerTickStub::Raw stub = TimerTickStub::allocate(Compiler::current()->bci(),
-                                                    timer_tick, done JVM_CHECK);
+ bind(done);
+
+  TimerTickStub::Raw stub =
+      TimerTickStub::allocate(Compiler::current()->bci(),
+                              timer_tick, done JVM_CHECK);
   stub().insert();
 }
 
@@ -2679,7 +2667,7 @@ bind(ok2);
 
 void CodeGenerator::init_static_array(Value& array JVM_TRAPS) {  
   // Flush the virtual stack frame.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   movl(edi, array.lo_register());
 

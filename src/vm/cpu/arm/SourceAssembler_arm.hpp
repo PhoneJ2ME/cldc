@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -47,14 +46,6 @@ class SourceAssembler: public Macros {
     return Disassembler::reg_name(reg);
   }
 
-  // If we're generating glue code, we cannot use b or bl instructions
-  static void set_in_glue_code(bool state) {
-    _in_glue_code = state;
-  }
-
-  static bool in_glue_code() {
-    return _in_glue_code;
-  }
  public:
   class Label {
    private:
@@ -313,9 +304,6 @@ class SourceAssembler: public Macros {
   }                                                                \
 
   GP_GLOBAL_SYMBOLS_DO(_xx_pointers, DEFINE_GP_FOR_SOURCE)
-
-private:
-  static bool _in_glue_code;
 #endif // PRODUCT
 };
 

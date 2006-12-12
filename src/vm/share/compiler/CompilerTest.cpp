@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -136,7 +135,7 @@ ReturnOop CompilerTest::load_and_sort_classes(JVM_SINGLE_ARG_TRAPS) {
   JavaClass::Fast klass;
   int num_system_classes = 0;
 
-  ObjArray::Fast classpath = Task::current()->app_classpath();
+  ObjArray::Fast classpath = Task::current()->classpath();
   for (int index = 0; index < classpath().length(); index++) {
     FilePath path = classpath().obj_at(index);
     Universe::load_all_in_classpath_segment(&path JVM_CHECK_0);

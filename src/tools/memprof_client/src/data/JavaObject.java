@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -29,7 +28,6 @@ package com.sun.cldchi.tools.memoryprofiler.data;
 
 import java.util.Collection;
 import java.util.ArrayList;
-import java.util.HashMap;
 
 /**
  * This class is container for Java Object information. It contains all object data.
@@ -46,21 +44,13 @@ public class JavaObject {
   /**
    * unique id of class of the java object
    */  
-  final int class_id;
+  public final int class_id;
 
   /**
    * size of the java object
    */  
   public final int size;
-
-  public final int object_type;
   private int root_distance = -1;
-
-  /**
-   * these fields are used only for stacks
-   */  
-  final int _stack_id;
-  final HashMap _stack_offsets;
 
   /**
    * addresses of the objects which are referenced by this object
@@ -95,20 +85,13 @@ public class JavaObject {
       _referees.add(referee);
   }
 
-  JavaObject(int p_address, int p_class_id, int p_size, int[] references, int p_obj_type) {
-    this(p_address, p_class_id, p_size, references, p_obj_type, null, -1);
-  }
-
-  JavaObject(int p_address, int p_class_id, int p_size, 
-                            int[] references, int p_obj_tp, HashMap offsets, int stack_id) {
+  public JavaObject(int p_address, int p_class_id, int p_size, int[] references) {
     address = p_address;
     class_id = p_class_id;
     size = p_size;
-    object_type = p_obj_tp;
     _references_addresses = references;
-    _stack_offsets = offsets;
-    _stack_id = stack_id;
   }
+
   public String toString() {
     return /*Integer.toString(root_distance) + */"0x" + Integer.toHexString(address);
   }
@@ -117,7 +100,7 @@ public class JavaObject {
    * set the minimal size of a chain of linked objects started from 
    * a root object and finished in this object
    */      
-  void setRootDistance(int dist) {
+  public void setRootDistance(int dist) {
     root_distance = dist;
   }
 

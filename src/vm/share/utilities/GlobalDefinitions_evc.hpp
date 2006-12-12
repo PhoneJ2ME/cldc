@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -37,7 +36,6 @@
 # include <stdarg.h>
 # include <stdlib.h>
 # include <stdio.h> // for va_list
-# include <float.h> // for _isnan
 # include <winbase.h>
 
 // Compiler-specific primitive types
@@ -71,18 +69,6 @@ inline jdouble jdouble_cast(jlong   x)           { return *(jdouble*)&x; }
 void global_breakpoint();
 
 #define BREAKPOINT { global_breakpoint(); }
-
-//----------------------------------------------------------------------------
-// Checking for NaN-ness
-
-inline int g_isnan(jfloat  f)                    { return _isnan(f); }
-inline int g_isnan(jdouble f)                    { return _isnan(f); }
-
-//----------------------------------------------------------------------------
-// Checking for finiteness
-
-inline int g_isfinite(jfloat  f)                 { return _finite(f); }
-inline int g_isfinite(jdouble f)                 { return _finite(f); }
 
 //----------------------------------------------------------------------
 // Constant for jlong (specifying an long long constant is C++

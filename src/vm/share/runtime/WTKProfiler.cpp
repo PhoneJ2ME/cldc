@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -27,7 +26,7 @@
 #include "incls/_precompiled.incl"
 #include "incls/_WTKProfiler.cpp.incl"
 
-/* This profiler originally based on KVM profiler */ 
+/* This profiler originally based on KVM profiler  */ 
 
 #if ENABLE_WTK_PROFILER
 static inline void* wtk_malloc(size_t size) {

@@ -1,6 +1,5 @@
 /*
  *
- *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
@@ -161,7 +160,7 @@ void InterpreterGenerator::generate_interpreter_grow_stack() {
   pushl(edx);
   comment("restore count of parameters");
   movzxw(ecx, Address(ebx, Constant(
-      Method::method_attributes_offset())));
+      Method::size_of_parameters_and_return_type_offset())));
   andl(ecx, Constant(Method::SIZE_OF_PARAMETERS_MASK));
   comment("Get the size of the locals");
   load_unsigned_word(edx, Address(ebx, Constant(Method::max_locals_offset())));
@@ -204,7 +203,7 @@ void InterpreterGenerator::generate_interpreter_method_entry() {
 
   comment("Get the method parameter size");
   movzxw(ecx, Address(ebx, 
-         Constant(Method::method_attributes_offset())));
+         Constant(Method::size_of_parameters_and_return_type_offset())));
   andl(ecx, Constant(Method::SIZE_OF_PARAMETERS_MASK));
   comment("Get the return address");
   popl(eax);
@@ -434,7 +433,7 @@ void InterpreterGenerator::generate_interpreter_fast_method_entry(int extra_loca
 
   comment("Get the size of the parameters");
   load_unsigned_word(ecx, Address(ebx, 
-      Constant(Method::method_attributes_offset())));
+      Constant(Method::size_of_parameters_and_return_type_offset())));
   andl(ecx, Constant(Method::SIZE_OF_PARAMETERS_MASK));
   comment("Pop the return address");
   popl(eax);
@@ -593,7 +592,7 @@ InterpreterGenerator::generate_quick_native_method_entry(BasicType return_type)
 
   comment("Get the method parameter size");
   movzxw(ecx, Address(ebx, 
-      Constant(Method::method_attributes_offset())));
+      Constant(Method::size_of_parameters_and_return_type_offset())));
   andl(ecx, Constant(Method::SIZE_OF_PARAMETERS_MASK));
   
   comment("As we're called using \"call\" one more argument on stack"
@@ -653,7 +652,7 @@ InterpreterGenerator::generate_quick_native_method_entry(BasicType return_type)
 
   comment("Get the number of my parameters and pop them");
   movzxw(ecx, Address(ebx, 
-      Constant(Method::method_attributes_offset())));
+      Constant(Method::size_of_parameters_and_return_type_offset())));
   andl(ecx, Constant(Method::SIZE_OF_PARAMETERS_MASK));
   leal(esp, Address(esp, ecx, times_4));
 

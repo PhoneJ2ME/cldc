@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -34,6 +33,7 @@ int  Universe::_compilation_abstinence_ticks = 0;
 bool Universe::_is_bootstrapping  = true;
 bool Universe::_before_main       = true;
 bool Universe::_is_stopping       = false;
+jint Universe::_number_of_cached_conditions = 0;
 
 #if ENABLE_JVMPI_PROFILE
 jint Universe::_number_of_java_methods = 0;
@@ -58,7 +58,7 @@ void Universe::set_profile_id(const int id) {
   _profile_id = id; 
 } 
 
-int Universe::profile_id_by_name(const char * profile) {
+int Universe::profile_id_by_name(char * profile) {
   const char ** profiles_names = ROM::profiles_names();
   for (int i = 0; i < ROM::profiles_count(); i++) {
     if (jvm_strcmp(profile, profiles_names[i]) == 0) {            
@@ -86,7 +86,7 @@ ReturnOop Universe::new_vector(JVM_SINGLE_ARG_TRAPS) {
   return rom_vector;
 }
 #endif // USE_SOURCE_IMAGE_GENERATOR
-#endif // ENABLE_MULTIPLE_PROFILES_SUPPORT
+
 bool Universe::name_matches_pattern(const char* name, int name_len, 
                                     const char* pattern, int pattern_len) {
 
@@ -116,7 +116,7 @@ bool Universe::name_matches_pattern(const char* name, int name_len,
 
   return false;
 }
-
+#endif // ENABLE_MULTIPLE_PROFILES_SUPPORT
 
 #if ENABLE_DYNAMIC_NATIVE_METHODS
 int Universe::dynamic_lib_count = 0;
@@ -366,7 +366,7 @@ inline void Universe::create_meta(JVM_SINGLE_ARG_TRAPS) {
   // Class initialization marker(s) must be allocated before any InstanceClass
   // object in order for the invariant 
   //   klass < klass->mirror => not initialized to hold.
-  *task_class_init_marker() = Universe::new_task_mirror(0, 0 JVM_NO_CHECK);
+  *task_class_init_marker() = Universe::new_task_mirror(0 JVM_NO_CHECK);
 #endif
   
   create_type_array_classes(JVM_SINGLE_ARG_CHECK);
@@ -386,21 +386,6 @@ inline void Universe::create_meta(JVM_SINGLE_ARG_TRAPS) {
   // Allocate Symbol nears that mark if a Symbol is a FieldType or Signature
   *field_type_near()  = allocate_near(symbol_class() JVM_NO_CHECK);
   *method_signature_near() = allocate_near(symbol_class() JVM_NO_CHECK);
-#if ENABLE_HEAP_NEARS_IN_HEAP && USE_SOURCE_IMAGE_GENERATOR
-  *rom_meta_class() = meta_class();
-  *rom_type_array_class_class() = type_array_class_class();
-  *rom_obj_array_class_class() = obj_array_class_class();
-  *rom_instance_class_class() = instance_class_class();
-  
-  *rom_bool_array_class() = bool_array_class(); 
-  *rom_char_array_class() = char_array_class(); 
-  *rom_float_array_class() = float_array_class();
-  *rom_double_array_class() = double_array_class();
-  *rom_byte_array_class() = byte_array_class();
-  *rom_short_array_class() = short_array_class();
-  *rom_int_array_class() = int_array_class();
-  *rom_long_array_class() = long_array_class();
-#endif
 }
 
 void Universe::create_type_array_classes(JVM_SINGLE_ARG_TRAPS) {
@@ -537,6 +522,7 @@ bool Universe::bootstrap(const JvmPathChar* classpath) {
   Task::initialize();
 #endif
 
+  _number_of_cached_conditions = 0;
 
   ObjectHeap::initialize();
   JarFileParser::initialize();
@@ -605,7 +591,12 @@ bool Universe::bootstrap(const JvmPathChar* classpath) {
     RemoteTracer::initialize();
   }
 #endif
-
+#if ENABLE_INLINE && ARM
+Universe::overridden_class_ids = (jushort*) jvm_malloc(Universe::overridden_Limit * sizeof(jshort));
+GUARANTEE(Universe::overridden_class_ids, "sanity");
+Universe:: inlined_class_ids = (juint*) jvm_malloc(Universe::inlined_limit * sizeof(jint));
+GUARANTEE(Universe::inlined_class_ids, "sanity");
+#endif
   return true;
 }
 
@@ -631,11 +622,6 @@ bool Universe::bootstrap_with_rom(const JvmPathChar* classpath) {
   // NOTE: last <NUM_HANDLES_SKIP> handles not ROMIZED.
   {
     int num_rom_handles = __number_of_persistent_handles - NUM_HANDLES_SKIP;
-#if ENABLE_HEAP_NEARS_IN_HEAP
-    //num_rom_handles is number of handles in PERS_HANDLES_BLOCK of ROM Image
-    //last NUM_DUPLICATE_ROM_HANDLES are in other block and must be treated differently
-    num_rom_handles -= NUM_DUPLICATE_ROM_HANDLES;
-#endif
     bool status = ROM::link_static(persistent_handles, num_rom_handles);
     *Universe::system_mirror_list() = *Universe::mirror_list();
     if (!status) {
@@ -659,7 +645,7 @@ bool Universe::bootstrap_with_rom(const JvmPathChar* classpath) {
     set_current_task(Task::FIRST_TASK);
     {
       ObjArray::Raw cp = setup_classpath(&path JVM_OZCHECK(cp));
-      Task::current()->set_app_classpath(cp());
+      Task::current()->set_classpath(cp());
     }
 #if ENABLE_ISOLATES
     Task::init_first_task(JVM_SINGLE_ARG_CHECK_0);
@@ -678,17 +664,6 @@ bool Universe::bootstrap_with_rom(const JvmPathChar* classpath) {
   
   Scheduler::start(Thread::current() JVM_MUST_SUCCEED);
   Thread::current()->initialize_main(JVM_SINGLE_ARG_MUST_SUCCEED);
-
-  *(OopDesc**)scheduler_waiting() = ObjectHeap::allocate(ThreadDesc::allocation_size()
-                                         JVM_MUST_SUCCEED);  
-  GUARANTEE(*scheduler_waiting() != NULL, "can't fail here");
-  Thread *waiting = scheduler_waiting();
-  setup_thread(waiting);
-  // Set sleep queue to point to head of list
-  waiting->clear_next();
-  waiting->clear_previous();
-  waiting->clear_next_waiting();
-  waiting->set_global_next(waiting);
 
   if (VerifyGC) {
     // The heap should be consistent now.
@@ -808,10 +783,6 @@ bool Universe::bootstrap_without_rom(const JvmPathChar* classpath) {
   }
 #endif
 
-#if ENABLE_MEMORY_PROFILER
-  *mp_stack_list() = Universe::new_obj_array(16 JVM_CHECK_0);
-#endif
-
   // lock table for interned Strings
   *lock_obj_table() = Universe::new_obj_array(4 JVM_CHECK_0);
 
@@ -845,13 +816,6 @@ bool Universe::bootstrap_without_rom(const JvmPathChar* classpath) {
   }
 
   update_relative_pointers();
-
-#if ENABLE_COMPILER_TYPE_INFO
-  // Need java/lang/Object to be the first on class list
-  GUARANTEE(number_of_java_classes() == 0, "Sanity");
-  Symbol::Raw symbol = TypeSymbol::parse("Ljava/lang/Object;" JVM_CHECK_0);
-  GUARANTEE(number_of_java_classes() == 1, "Sanity");
-#endif
 
   // We need to register the class for [java/lang/Object; if we want
   // signature including it in the initialized symbol table.
@@ -888,7 +852,7 @@ bool Universe::bootstrap_without_rom(const JvmPathChar* classpath) {
     TypeArray path = FilePath::convert_to_unicode(classpath, 
                                             fn_strlen(classpath) JVM_CHECK_0);
     ObjArray::Raw cp = setup_classpath(&path JVM_CHECK_0);
-    current_task_obj()->set_app_classpath(cp());
+    current_task_obj()->set_classpath(cp());
   }
 
   // Load java.lang.Object class.
@@ -938,16 +902,7 @@ bool Universe::bootstrap_without_rom(const JvmPathChar* classpath) {
 #if ENABLE_CLDC_11
   WeakReference::verify_fields();
 #endif
-  *(OopDesc**)scheduler_waiting() = ObjectHeap::allocate(ThreadDesc::allocation_size()
-                                         JVM_MUST_SUCCEED);  
-  GUARANTEE(*scheduler_waiting() != NULL, "can't fail here");
-  Thread *waiting = scheduler_waiting();
-  setup_thread(waiting);
-  // Set sleep queue to point to head of list
-  waiting->clear_next();
-  waiting->clear_previous();
-  waiting->clear_next_waiting();
-  waiting->set_global_next(waiting);
+  *scheduler_waiting() = allocate_condition(JVM_SINGLE_ARG_CHECK_0);
 
   // load java.lang.throwable
   load_root_class(throwable_class(), Symbols::java_lang_Throwable());
@@ -989,7 +944,7 @@ bool Universe::bootstrap_without_rom(const JvmPathChar* classpath) {
   // Now we have loaded java.lang.Class update the existing classes with
   // java_mirror
 #if ENABLE_ISOLATES
-  load_root_class(isolate_class(), Symbols::com_sun_cldc_isolate_Isolate());  
+  load_root_class(isolate_class(), Symbols::com_sun_cldc_isolate_Isolate());
   Task::init_first_task(JVM_SINGLE_ARG_CHECK_0);
   Task::setup_mirrors(JVM_SINGLE_ARG_CHECK_0);
 #else
@@ -1152,7 +1107,7 @@ int Universe::load_next_in_classpath_segment(FilePath* path,
   if (OsFile_exists(file_name)) {
     return JarFileParser::do_next_entries(file_name, suffix, true, 
                (JarFileParser::do_entry_proc)load_jar_entry, entry_id, 
-               chunk_size JVM_NO_CHECK_AT_BOTTOM_0);
+               chunk_size JVM_NO_CHECK_AT_BOTTOM);
   } else {
     // Either the jarfile does not exist or the openJarFile() failed
     // due to corruption or other problem.  Loading non-JarFile is
@@ -1164,28 +1119,11 @@ int Universe::load_next_in_classpath_segment(FilePath* path,
 // Used by the romizer
 void Universe::load_all_in_classpath(JVM_SINGLE_ARG_TRAPS) {
   UsingFastOops fast_oops;
-  ObjArray::Fast classpath = Task::current()->app_classpath();
-
-  GUARANTEE(classpath().not_null(), "Sanity");
-  
-  int index = 0;
-  for (; index < classpath().length(); index++) {
+  ObjArray::Fast classpath = Task::current()->classpath();
+  for (int index = 0; index < classpath().length(); index++) {
     FilePath path = classpath().obj_at(index);
     load_all_in_classpath_segment(&path JVM_CHECK);
   }
-  
-  GUARANTEE(Task::current()->sys_classpath() == NULL ||
-            ENABLE_ISOLATES, "sys_classpath should be null in SVM");
-
-#if ENABLE_ISOLATES
-  classpath = Task::current()->sys_classpath();
-  GUARANTEE(classpath().not_null(), "Sanity");
-
-  for (index = 0; index < classpath().length(); index++) {
-    FilePath path = classpath().obj_at(index);
-    load_all_in_classpath_segment(&path JVM_CHECK);
-  }
-#endif
 }
 
 // Used by the romizer and TestCompiler
@@ -1210,7 +1148,7 @@ int Universe::load_next_and_verify(FilePath* path, int entry_id,
   GlobalSaver verify_saver(&UseVerifier);
 
   UseVerifier = 1;
-  AZZERT_ONLY(ObjArray::Raw classpath = Task::current()->app_classpath());
+  AZZERT_ONLY(ObjArray::Raw classpath = Task::current()->classpath());
   GUARANTEE(classpath().length() == 1, 
     "We should have the only item in classpath");
 
@@ -1230,7 +1168,7 @@ int Universe::load_next_and_verify(FilePath* path, int entry_id,
 
   // Load and verify the next chunk of class files from the JAR.
   return load_next_in_classpath_segment(path, entry_id, 
-                                         chunk_size JVM_NO_CHECK_AT_BOTTOM_0);
+                                         chunk_size JVM_NO_CHECK_AT_BOTTOM);
 }
 #endif
 
@@ -1310,6 +1248,18 @@ ReturnOop Universe::new_type_array(TypeArrayClass* klass, jint length JVM_TRAPS)
   return allocate_array(klass, length, klass->scale() JVM_NO_CHECK_AT_BOTTOM);
 }
 
+#if ENABLE_INLINE && ARM
+jushort* Universe::overridden_class_ids = NULL;
+jint Universe::overridden_count = 0;
+jint Universe::overridden_Limit = 64;
+juint* Universe::inlined_class_ids = NULL;
+jint Universe::inlined_count = 0;
+jint Universe:: inlined_limit = 64;
+#if ENABLE_INTEL_INLINE_DEBUG 
+int Universe::new_inliner_count;  
+#endif
+
+#endif
 ReturnOop Universe::new_method(int code_length, AccessFlags &access_flags
                                JVM_TRAPS)
 {
@@ -1387,15 +1337,14 @@ ReturnOop Universe::new_instance_class(int vtable_length,
 
   // (2) Allocate the InstanceClass
   size_t object_size =
-      InstanceClassDesc::allocation_size(static_field_size, oop_map_size,
-                                         vtable_length);
+      InstanceClassDesc::allocation_size(static_field_size, oop_map_size);
   InstanceClassDesc* raw = (InstanceClassDesc*)
         ObjectHeap::allocate(object_size JVM_ZCHECK(raw));
   raw->initialize(instance_class_class()->prototypical_near(), object_size,
       instance_size, NULL);
   InstanceClass::Fast result = ReturnOop(raw);
   result().set_embedded_oop_map_start(
-    InstanceClassDesc::allocation_size(static_field_size, 0, 0));
+       InstanceClassDesc::allocation_size(static_field_size,0));
   result().set_class_info(&info);
 
   {
@@ -1554,7 +1503,7 @@ ReturnOop Universe::new_obj_array(int length JVM_TRAPS) {
 ReturnOop Universe::new_obj_array(JavaClass* klass, int length JVM_TRAPS) {
   UsingFastOops fast_oops;
   FarClass::Fast f = klass->get_array_class(1 JVM_OZCHECK(f));
-  return allocate_array(&f, length, sizeof(OopDesc*) JVM_NO_CHECK_AT_BOTTOM_0);
+  return allocate_array(&f, length, sizeof(OopDesc*) JVM_NO_CHECK_AT_BOTTOM);
 }
 
 ReturnOop Universe::interned_string_from_utf8(Oop *oop JVM_TRAPS) {
@@ -1607,23 +1556,23 @@ ReturnOop Universe::interned_string_from_utf8(Oop *oop JVM_TRAPS) {
 slow:
   if (is_symbol) {
     SymbolStream stream((Symbol*)oop);
-    return Universe::interned_string_for(&stream JVM_NO_CHECK_AT_BOTTOM_0);
+    return Universe::interned_string_for(&stream JVM_NO_CHECK_AT_BOTTOM);
   } else {
     ByteStream stream((TypeArray*)oop);
-    return Universe::interned_string_for(&stream JVM_NO_CHECK_AT_BOTTOM_0);
+    return Universe::interned_string_for(&stream JVM_NO_CHECK_AT_BOTTOM);
   }
 }
 
 ReturnOop Universe::interned_string_for(CharacterStream *stream JVM_TRAPS) {
 
   // This function is called to intern Strings defined in classfiles.
-  // Need revisit : We rarely have duplications --  the same String is
+  // We rarely have duplications -- it's unlikely the same String is
   // defined in multiple classfiles in the same Midlet. So we always
   // create the String at the beginning to make things go faster.
   UsingFastOops fast_oops;
   String::Fast string = Universe::new_string(stream JVM_OZCHECK(string));
 
-  return Universe::interned_string_for(&string JVM_NO_CHECK_AT_BOTTOM_0);
+  return Universe::interned_string_for(&string JVM_NO_CHECK_AT_BOTTOM);
 }
 
 // Unfortunately we duplicated some code here and in SymbolTable.cpp,
@@ -1725,6 +1674,50 @@ ReturnOop Universe::new_mixed_oop_in_compiler_area(int type, size_t size,
 }
 #endif
 
+ReturnOop Universe::allocate_condition(JVM_SINGLE_ARG_TRAPS) {
+  // In MVM move, we need to disable caching of condition
+  // objects, because otherwise it's very easy for them to migrate from
+  // one task to another through locking or invoking synchronized
+  // methods in shared objects.
+  if (ENABLE_ISOLATES || condition_cache()->is_null()) {
+    return new_mixed_oop(MixedOopDesc::Type_Condition,
+                         ConditionDesc::allocation_size(),
+                         ConditionDesc::pointer_count()
+                         JVM_NO_CHECK_AT_BOTTOM);
+  } else {
+    GUARANTEE(_number_of_cached_conditions > 0, "sanity");
+    Condition::Raw result = condition_cache()->obj();
+    condition_cache()->set_obj(condition_cache()->next());
+    _number_of_cached_conditions --;
+
+    result().clear_next();
+    return result;
+  }
+}
+
+void Universe::free_condition(Condition *condition) {
+  if (!ENABLE_ISOLATES && _number_of_cached_conditions < 16) {
+    condition->clear_wait_object();
+    condition->clear_waiters_head();
+    condition->clear_waiters_tail();
+    condition->set_next(condition_cache());
+
+    condition_cache()->set_obj(condition->obj());
+    _number_of_cached_conditions ++;
+  }
+}
+
+bool Universe::flush_caches() {
+  if (_number_of_cached_conditions > 0) {
+    GUARANTEE(condition_cache()->not_null(), "sanity");
+     _number_of_cached_conditions = 0;
+    condition_cache()->set_null();
+    return true;
+  } else {
+    return false;
+  }
+}
+
 #if ENABLE_JAVA_DEBUGGER
 
 ReturnOop Universe::new_refnode(JVM_SINGLE_ARG_TRAPS)
@@ -1766,7 +1759,7 @@ ReturnOop Universe::new_task(int id JVM_TRAPS) {
   enum { pad = 20 }; // pad it a little to avoid immediate expansion
   const int num = UseROM ?
     _rom_number_of_java_classes : number_of_java_classes();
-  
+
   {
     ObjArray::Raw cl = Universe::new_obj_array(num + pad JVM_CHECK_0);
     ObjArray::Raw cl_src  = Universe::system_class_list();
@@ -1775,30 +1768,13 @@ ReturnOop Universe::new_task(int id JVM_TRAPS) {
     task().set_class_list(cl);
   }
   { 
-    ObjArray::Raw ml = (OopDesc*)NULL; 
-    ObjArray old_class_list = class_list()->obj();
-#if ENABLE_PREINITED_TASK_MIRRORS && ENABLE_ISOLATES
-    //we MUST HAVE SYSTEM CLASSES ALREADY LOADED to resolve references to them!!
-    class_list()->set_obj(system_class_list()->obj()); 
-    update_relative_pointers(); 
-    //we do not check OOM here. If we get it, we will try to create task 
-    //normally! 
-    ml = ROM::link_static_mirror_list(JVM_SINGLE_ARG_NO_CHECK);     
-    class_list()->set_obj(old_class_list.obj()); 
-    update_relative_pointers(); 
-    if (ml.is_null()) 
-      Thread::clear_current_pending_exception();
-    if (ml.is_null()) 
-#endif
-    {
-      ml = Universe::new_obj_array(num + pad JVM_CHECK_0);          
-      const int len = ml().length();
-      TaskMirror::Raw t = task_class_init_marker();
-      for (int i = 0; i < len; i++) {
-        ml().obj_at_put(i, t);
-      }
-    }
+    ObjArray::Raw ml = Universe::new_obj_array(num + pad JVM_CHECK_0);
     task().set_mirror_list(ml);
+    const int len = ml().length();
+    TaskMirror::Raw t = task_class_init_marker();
+    for (int i = 0; i < len; i++) {
+      ml().obj_at_put(i, t);
+    }
   } 
   {
     ObjArray::Raw task_dictionary = Universe::new_obj_array(64 JVM_CHECK_0);
@@ -1825,10 +1801,8 @@ ReturnOop Universe::new_task(int id JVM_TRAPS) {
   return task;
 }
 
-ReturnOop Universe::new_task_mirror(int statics_size, 
-                                    int vtable_length JVM_TRAPS) {
-  return allocate_task_mirror(statics_size, 
-                              vtable_length JVM_NO_CHECK_AT_BOTTOM);
+ReturnOop Universe::new_task_mirror(int statics_size JVM_TRAPS) {
+  return allocate_task_mirror(statics_size JVM_NO_CHECK_AT_BOTTOM);
 }
 #endif
 
@@ -1999,15 +1973,13 @@ ReturnOop Universe::allocate_task(JVM_SINGLE_ARG_TRAPS) {
 }
 
 #if ENABLE_ISOLATES
-ReturnOop Universe::allocate_task_mirror(int statics_size,
-                                         int vtable_length JVM_TRAPS) {
-  size_t size = TaskMirrorDesc::allocation_size(statics_size, vtable_length);
+ReturnOop Universe::allocate_task_mirror(int statics_size JVM_TRAPS) {
+  size_t size = TaskMirrorDesc::allocation_size(statics_size);
   TaskMirrorDesc *result = 
       (TaskMirrorDesc*)ObjectHeap::allocate(size JVM_NO_CHECK);
   if (result) {
     // IMPL_NOTE: result should be placed in a Fast oop!
-    result->initialize(task_mirror_class()->prototypical_near(), 
-                       statics_size, vtable_length);
+    result->initialize(task_mirror_class()->prototypical_near(), statics_size);
   }
   return result;
 }
@@ -2107,7 +2079,7 @@ ReturnOop Universe::new_obj_array_class(JavaClass* element_class JVM_TRAPS) {
     result().set_super(object_class());
     result().initialize_vtable();
 #if ENABLE_ISOLATES
-    result().setup_task_mirror(0, 0, false JVM_CHECK_0);
+    result().setup_task_mirror(0, false JVM_CHECK_0);
 #else
     result().setup_java_mirror(JVM_SINGLE_ARG_CHECK_0);
 #endif
@@ -2120,21 +2092,6 @@ ReturnOop Universe::new_obj_array_class(JavaClass* element_class JVM_TRAPS) {
   return result;
 }
 
-void Universe::fill_heap_gap(address ptr, size_t size_to_fill) {
-  GUARANTEE(size_to_fill >= 0, "sanity");
-  GUARANTEE(!(size_to_fill & 0x3), "alignment");
-  OopDesc* filler = (OopDesc*)ptr;
-  if (size_to_fill == sizeof(OopDesc*)) {
-    // Shrink by one word only, allocate dummy java.lang.Object
-    filler->reinitialize(object_class()->prototypical_near());
-  } else {
-    // Shrink by multiple words, allocate dummy byte array
-    DIRTY_HEAP(filler, size_to_fill);
-    ((ArrayDesc*) filler)->reinitialize(
-                           byte_array_class()->prototypical_near(),
-                           size_to_fill - ArrayDesc::header_size());
-  }
-}
 ReturnOop Universe::shrink_object(Oop* m, size_t new_size, bool down) {
   size_t diff = m->object_size() - new_size;
   if (diff == 0) {
@@ -2157,7 +2114,16 @@ ReturnOop Universe::shrink_object(Oop* m, size_t new_size, bool down) {
     result = (OopDesc*) (((address) filler) + diff);
     result->reinitialize(m->klass());
   }
-  fill_heap_gap((address)filler, diff);
+  if (diff == sizeof(OopDesc*)) {
+    // Shrink by one word only, allocate dummy java.lang.Object
+    filler->reinitialize(object_class()->prototypical_near());
+  } else {
+    // Shrink by multiple words, allocate dummy byte array
+    AZZERT_ONLY(jvm_memset(filler, BadHeapValue, diff));
+    ((ArrayDesc*) filler)->reinitialize(
+                           byte_array_class()->prototypical_near(),
+                           diff - ArrayDesc::header_size());
+  }
   return result;
 }
 
@@ -2219,13 +2185,7 @@ void Universe::init_task_list(JVM_SINGLE_ARG_TRAPS) {
   }
 
 #if USE_BINARY_IMAGE_LOADER
-  *global_binary_images() = new_obj_array(MAX_TASKS JVM_MUST_SUCCEED);
-#if ENABLE_LIB_IMAGES
-  *global_binary_persistante_handles() = new_obj_array(MAX_TASKS JVM_MUST_SUCCEED);
-#if USE_IMAGE_MAPPING
-  *global_image_handles() = new_int_array(MAX_TASKS JVM_MUST_SUCCEED);
-#endif  
-#endif
+  *binary_images() = new_obj_array(MAX_TASKS JVM_MUST_SUCCEED);
 #endif
 
   Thread* thread = Thread::current();
@@ -2258,35 +2218,6 @@ void Universe::init_task_list(JVM_SINGLE_ARG_TRAPS) {
 void Universe::set_current_task(int task_id) {
   TaskContext::set_current_task(task_id);
 }
-#if ENABLE_ISOLATES
-ReturnOop Universe::copy_strings_to_symbols(OopDesc* strings JVM_TRAPS) {
-  UsingFastOops fastoops;
-  ObjArray::Fast string_array = strings;
-  const int new_len = string_array.is_null() ? 0 : string_array().length();  
-  ObjArray::Fast symbol_names = Universe::new_obj_array(new_len JVM_CHECK_0);
-  String::Fast str;
-  for( int i = 0; i < new_len; i++ ) {
-    str = string_array().obj_at(i);
-    Symbol::Raw sym = SymbolTable::symbol_for(&str JVM_CHECK_0);
-    symbol_names().obj_at_put(i, sym);
-  }
-  return symbol_names.obj();
-}
-
-ReturnOop Universe::copy_strings_to_byte_arrays(OopDesc* strings JVM_TRAPS) {
-  UsingFastOops fastoops;
-  ObjArray::Fast string_array = strings;
-  const int new_len = string_array.is_null() ? 0 : string_array().length();  
-  ObjArray::Fast result = Universe::new_obj_array(new_len JVM_CHECK_0);
-  for( int i = 0; i < new_len; i++ ) {
-    String::Raw str = string_array().obj_at(i);
-    TypeArray::Raw sym = Symbol::copy_string_to_byte_array(str.obj(), false JVM_CHECK_0);
-    result().obj_at_put(i, sym);
-  }
-  return result.obj();
-}
-
-#endif
 
 #ifndef PRODUCT
 // Checks whether handle is inside block of persistent handles
@@ -2350,4 +2281,3 @@ void Universe::print_persistent_handle_definitions() {
   UNIVERSE_HANDLES_DO(UNIVERSE_HANDLES_DUMP);
 }
 #endif // USE_DEBUG_PRINTING
-

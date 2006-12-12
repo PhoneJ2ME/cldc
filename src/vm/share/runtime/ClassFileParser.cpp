@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Portions Copyright  2003-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -254,7 +253,7 @@ void ClassFileParser::parse_constant_pool_entries(ConstantPool* cp JVM_TRAPS) {
           // and name_and_type_at_put.
           cp->tag_at_put(index, t);
           cp->int_field_put(cp->offset_from_index(index), 
-              construct_jint_from_jushorts(index2, index1));
+              construct_jint_from_jshorts((jshort)index2, (jshort)index1));
         }
         break;
       case JVM_CONSTANT_Utf8 :
@@ -578,7 +577,7 @@ void ClassFileParser::check_for_duplicate_fields(ConstantPool* cp,
     int imax = fields.length() - Field::NUMBER_OF_SLOTS;
     int jmax = fields.length();
     int step = Field::NUMBER_OF_SLOTS;
-    const jushort* const field_base = (jushort*)fields.base_address();
+    const jshort* const field_base = (jshort*)fields.base_address();
     OopDesc **cp_base = (OopDesc**)cp->base_address();
 
     //
@@ -587,10 +586,10 @@ void ClassFileParser::check_for_duplicate_fields(ConstantPool* cp,
     OopDesc * name_i, * name_j;
     OopDesc * type_i, * type_j;
     for (int i = 0; i < imax; i += step) {
-      const jushort* ibase = field_base + i;
+      const jshort* ibase = field_base + i;
 
       for (int j = i + step; j < jmax; j += step) {
-        const jushort* jbase = field_base + j;
+        const jshort* jbase = field_base + j;
 
         name_i = cp_base[ibase[Field::NAME_OFFSET]];
         name_j = cp_base[jbase[Field::NAME_OFFSET]];
@@ -725,7 +724,7 @@ bool ClassFileParser::are_valid_method_access_flags(
       if ((flags & JVM_ACC_STRICT) != 0) {
         if (state->major_version() == 45 && state->minor_version() == 3) {
           // The class is built with JDK 1.1 and this combination
-          // is deemed OK. See CR 6363911
+          // is deemed OK. See bug 6363911
         } else {
           return false;
         }
@@ -1223,10 +1222,10 @@ ReturnOop ClassFileParser::parse_code_attributes(ConstantPool* cp,
     // See if this is a line number table If so, then read in the table
     if (GenerateROMImage &&
         attribute_name_sym.equals(Symbols::tag_line_number_table())) {
-      jushort line_number_entries = get_u2(JVM_SINGLE_ARG_CHECK_0);
-      jushort start_pc, line_number;
-      cpf_check_0((((line_number_entries * 2 * sizeof(jushort)) +
-              sizeof(jushort)) == attribute_length), invalid_attribute);
+      jshort line_number_entries = get_u2(JVM_SINGLE_ARG_CHECK_0);
+      jshort start_pc, line_number;
+      cpf_check_0((((line_number_entries * 2 * sizeof(jshort)) +
+              sizeof(jshort)) == attribute_length), invalid_attribute);
       if (line_number_entries > 0) {
         UsingFastOops fast_oops2;
         // 2 shorts per entry
@@ -1247,10 +1246,10 @@ ReturnOop ClassFileParser::parse_code_attributes(ConstantPool* cp,
       }
     } else if (GenerateROMImage &&
                attribute_name_sym.equals(Symbols::tag_local_var_table())) {
-      jushort local_var_entries = get_u2(JVM_SINGLE_ARG_CHECK_0);
-      jushort start_pc, code_length, slot_index;
-      cpf_check_0((((local_var_entries * 5 * sizeof(jushort)) +
-            sizeof(jushort)) == attribute_length), invalid_attribute);
+      jshort local_var_entries = get_u2(JVM_SINGLE_ARG_CHECK_0);
+      jshort start_pc, code_length, slot_index;
+      cpf_check_0((((local_var_entries * 5 * sizeof(jshort)) +
+            sizeof(jshort)) == attribute_length), invalid_attribute);
       if (local_var_entries > 0) {
         UsingFastOops fast_oops3;
         if (line_var_table->is_null()) {
@@ -1567,9 +1566,6 @@ bool ClassFileParser::is_package_restricted(Symbol *class_name) {
       is_restricted |= JVMSPI_IsRestrictedPackage(ptr, pkg_length);
     }
 #endif
-#if ENABLE_ISOLATES
-    is_restricted |= Task::current()->is_restricted_package(ptr, pkg_length);
-#endif
 
     return is_restricted;
   }
@@ -1785,14 +1781,7 @@ ReturnOop ClassFileParser::parse_class_internal(ClassParserState *stack JVM_TRAP
   if (has_finalizer) {
     access_flags.set_has_finalizer();
   }
-#if ENABLE_ISOLATES
-  if (Task::current()->is_hidden_class(&class_name)) {
-    access_flags.set_is_hidden();
-  }
-#endif
-  if (_loader_ctx->is_system_class) {
-    access_flags.set_is_preloaded();
-  }
+
   // Iterate over fields again and compute correct offsets.  The
   // relative offset (starting at zero) was temporarily stored in the
   // offset slot.
@@ -1848,6 +1837,50 @@ ReturnOop ClassFileParser::parse_class_internal(ClassParserState *stack JVM_TRAP
   // Update static field offsets and static oop map
   update_fields(&cp, &fields, true, first_static_offset, prev_static_oop_offset,
                 &static_map, static_map_size, static_map_index);
+
+#if ENABLE_INLINE && ARM && !CROSS_GENERATOR
+  if (super_class.not_null()) {
+    if ( !super_class().is_overridden()) {
+      super_class().set_is_overridden();
+      int i;
+
+      //search the code cache and de-compilation the 
+      //inlined method.
+      
+      for( i = 0 ; i < Universe::inlined_count ; i++) {
+       if ((Universe::inlined_class_ids[i] >> INLINED_CLASS_BITS)
+        == super_class().class_id()) 
+      {
+          break;
+      }         
+     }
+     int dst = i;
+     int decompiled = 0;
+     for (i; i < Universe::inlined_count; i++)
+     {
+        if ((Universe::inlined_class_ids[i] >> INLINED_CLASS_BITS) 
+          == super_class().class_id()) 
+        {
+          CompiledMethodDesc* cm = 
+            CompiledMethodCache::get_item(Universe::inlined_class_ids[i] 
+            & METHOD_INDEX_MASK);
+          Method::Raw mm = cm->method();
+          mm().unlink_compiled_code();
+          decompiled++;
+        }else
+        {
+          Universe::inlined_class_ids[dst] = Universe::inlined_class_ids[i];
+          dst++;
+        }
+     }
+     
+    Universe::inlined_count -= decompiled;
+    }
+
+    
+  }
+
+#endif
 
   // We can now create the basic InstanceClass.
   InstanceClass::Fast this_class = Universe::new_instance_class(vtable_length,
@@ -2056,7 +2089,7 @@ void ClassFileParser::print_on(Stream *st) {
   _name->print_symbol_on(tty);
   tty->print_cr("  _previous = 0x%x", _previous);
 
-  // IMPL_NOTE: Need revisit LoaderContext*   _loader_ctx;
+  // IMPL_NOTE: LoaderContext*   _loader_ctx;
 #endif
 }
 

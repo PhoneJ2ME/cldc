@@ -82,17 +82,12 @@ CPP_DEF_FLAGS_debug	= -D_DEBUG -DAZZERT
 CPP_DEF_FLAGS_release	=
 CPP_DEF_FLAGS_product	= -DPRODUCT
 
-ifndef TARGET_CPU
-TARGET_CPU = ARM10200E
-endif
-
 ifeq ($(ENABLE_RVDS), true)
     #
     # RealView Developer Suite (version	2.x)
     #
     EXTRA_DASH		= -
     ASM_FLAGS		+= --checkreglist --32 
-    ASM_FLAGS           += --cpu $(TARGET_CPU)
     LINKER_OUTPUT	= -o
 
     # Temp: supress #111-D: statement is unreachable
@@ -116,11 +111,7 @@ ifeq ($(ENABLE_RVDS), true)
 
     ASM_FLAGS		+= --predefine "SETUP_UNDEF_STACK SETL {TRUE}" 
     ASM_FLAGS		+= --predefine "PATCH_UNDEF_VECTOR SETL {TRUE}"
-    ASM_FLAGS           += --fpu VFP
-    endif
-
-    ifeq ($(ENABLE_THUMB_VM), true)
-    ASM_FLAGS           += --thumb
+    ASM_FLAGS           += --fpu VFP --cpu ARM10200E
     endif
 
 else
@@ -181,7 +172,7 @@ ASM_FLAGS_release      += -G
 ASM_FLAGS_product      +=
 ASM_FLAGS	       += $(ASM_FLAGS_$(BUILD))	$(APCS_FLAGS)
 
-Interpreter_$(arch).o: Interpreter_$(arch).asm
+Interpreter_arm.o: Interpreter_arm.asm
 	$(A)echo "ASMing $<"
 	$(A)rm -f $@
 	$(A)$(ASM) $(ASM_FLAGS)	-o Interpreter_$(arch).o Interpreter_$(arch).asm

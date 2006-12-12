@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -61,16 +60,13 @@ public:
   INT_FIELD( saved_exit_code,   4 )
   OBJ_FIELD( main_class,        5, ObjArray   )
   OBJ_FIELD( main_args,         6, ObjArray   )
-  OBJ_FIELD( app_classpath,         7, ObjArray   )  
-  OBJ_FIELD( hidden_packages,   8, ObjArray   )
-  OBJ_FIELD( restricted_packages, 9, ObjArray   )
-  OBJ_FIELD( sys_classpath,  10, ObjArray   )
-  INT_FIELD( memory_reserve,    11 )
-  INT_FIELD( memory_limit,      12 )
-  INT_FIELD( api_access_init,  13 )
-  INT_FIELD( connect_debugger, 14)
-  INT_FIELD( use_verifier,     15)
-  INT_FIELD( profile_id,       16 )  
+  OBJ_FIELD( classpath,         7, ObjArray   )
+  INT_FIELD( memory_reserve,    8 )
+  INT_FIELD( memory_limit,      9 )
+  INT_FIELD( api_access_init,  10 )
+  INT_FIELD( connect_debugger, 11)
+  INT_FIELD( use_verifier,     12)
+  INT_FIELD( profile_id,       13 )  
 
   STATIC_INT_FIELD( api_access, 0 )
 

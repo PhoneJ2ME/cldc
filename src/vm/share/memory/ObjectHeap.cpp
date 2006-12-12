@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Portions Copyright  2003-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -34,13 +33,9 @@
 // Static variables
 #if USE_IMAGE_PRELOADING
 size_t    ObjectHeap::_preallocated_space_size;
-#endif
-#if ENABLE_COMPILER
-size_t    ObjectHeap::_glue_code_size;
+address   ObjectHeap::_preallocated_space;
 #endif
 
-address   ObjectHeap::_preallocated_space;
-address   ObjectHeap::_glue_code;
 address   ObjectHeap::_heap_chunk = NULL;
 address   ObjectHeap::_bitv_chunk = NULL;
 address   ObjectHeap::_bitvector_start;
@@ -63,15 +58,8 @@ OopDesc* (*ObjectHeap::temp_allocator) (size_t size JVM_TRAPS)
   = &ObjectHeap::allocate;
 #endif
 
-#if ENABLE_INTERNAL_CODE_OPTIMIZER
+#if ENABLE_INTERNAL_CODE_OPTIMIZER && ARM && ENABLE_CODE_OPTIMIZER
 OopDesc** ObjectHeap::_saved_compiler_area_top_quick;
-void ObjectHeap::save_compiler_area_top_fast() {
-  _saved_compiler_area_top_quick = _compiler_area_top;
-}
-
-void ObjectHeap::update_compiler_area_top_fast() {
-  _compiler_area_top = _saved_compiler_area_top_quick;
-}
 #endif 
 
 #define CACHE_QUICK_VAR(v) _quick_vars.v = _ ## v
@@ -360,18 +348,45 @@ void ObjectHeap::on_task_termination ( OopDesc* p ) {
   dead_task = p;
   {
     ObjArray::Raw images = task().binary_images();
-    
 #if ENABLE_LIB_IMAGES
-    task().remove_shared_images();
-    _dead_task_images = images;    
-#else //ENABLE_LIB_IMAGES
     if( images.not_null() ) {
+      //here we are assuming that images are loading 
+      //consequently!!!!
+      OopDesc* dead_range_beg_tmp = NULL;
+      OopDesc* dead_range_end_tmp = NULL;      
+      for (int i = 0; i < images().length(); i++) {
+        const ROMBundle* bundle = (ROMBundle*)images().obj_at(i);
+        const LargeObject* hed = LargeObject::head(bundle);                
+        if (bundle == NULL) {
+          continue;
+        }
+#ifdef AZZERT 
+        if (i > 0) { //not the first bundle
+          OopDesc* end = (OopDesc*)hed + (hed->size() / sizeof(OopDesc*));        
+          GUARANTEE(end <= dead_range_beg_tmp, "previous bundle is after current \
+                           in the Large object area!");
+          GUARANTEE(dead_range_beg_tmp - end <= LargeObject::alignment, "previous bundle is \
+             !IMMEDIATELY! after current in the Large object area!");
+        }
+#endif          
+        dead_range_beg_tmp = (OopDesc*)hed;
+        if (i == 0) { //first bundle
+          dead_range_end_tmp = (OopDesc*)hed + (hed->size() / sizeof(OopDesc*));        
+        }
+      }
+      
+      dead_range_beg = dead_range_beg_tmp;
+      dead_range_end = dead_range_end_tmp;
+    }
+#else
+    if( images.not_null() ) {
+      GUARANTEE(!ENABLE_LIB_IMAGES, "unimplemented");
       GUARANTEE(images().length() == 1, "sanity");
       const ROMBundle* bundle = (ROMBundle*)images().obj_at(0);
       dead_range_beg = (const OopDesc*)bundle;
       dead_range_end = (const OopDesc*)bundle->symbol_table();
     }
-#endif //ENABLE_LIB_IMAGES
+#endif
   }
 #endif
 
@@ -385,23 +400,6 @@ void ObjectHeap::on_task_termination ( OopDesc* p ) {
   _some_tasks_terminated = true;
   reset_task_memory_usage( task_id );
 }
-
-#if ENABLE_ISOLATES && ENABLE_MONET && ENABLE_LIB_IMAGES
-  bool ObjectHeap::in_dead_bundles ( const OopDesc* obj ) {    
-    if (_dead_task_images == NULL) return false;
-    ObjArray::Raw images = (OopDesc*)_dead_task_images;
-    for (int i = 0; i < images().length(); i++) {
-      const ROMBundle* bundle = (ROMBundle*)images().obj_at(i);
-      if (bundle == NULL) continue;
-      const OopDesc* image_beg = (const OopDesc*)bundle;
-      const OopDesc* image_end = (const OopDesc*)bundle->symbol_table();
-      if (obj < image_end && obj >= image_beg) 
-        return true;
-    }        
-    return false;
-  }
-#endif
-
 
 void ObjectHeap::reset_task_memory_usage( const int task ) {
   TaskMemoryInfo& task_info = get_task_info( task );
@@ -431,7 +429,6 @@ void ObjectHeap::set_task_memory_quota( const int task_id,
     {      
       OopDesc** const allocation_end = disable_allocation_trap();
       collect( reserve JVM_NO_CHECK );
-      clear_inline_allocation_area();
       set_collection_area_boundary( 0, false );
       enable_allocation_trap( allocation_end );
     }
@@ -507,53 +504,28 @@ void ObjectHeap::print_max_memory_usage ( void ) {
 void ObjectHeap::safe_collect(size_t min_free_after_collection JVM_TRAPS) {
   OopDesc** const allocation_end = disable_allocation_trap();
   collect( min_free_after_collection JVM_NO_CHECK );
-  clear_inline_allocation_area();
   enable_allocation_trap( allocation_end );
 }
 
-
-int ObjectHeap::owner_task_id( const OopDesc* const object ) {
-  if( contains( object ) ) {
-    GUARANTEE( contains_live( object ), "applicable to live heap objects only" );
-    BoundaryDesc* p = *get_boundary_list();
-    if (p < object) {
-      return _previous_task_id;
-    }
-
-    BoundaryDesc* prev;
-    do {
-      prev = p;
-      p = p->_next;
-    } while (p >= object);
-
-    return get_owner(prev, get_boundary_classes());
+int ObjectHeap::owner_task_id( OopDesc* object ) {
+  GUARANTEE( contains_live( object ), "applicable to live heap objects only" );
+  BoundaryDesc* p = *get_boundary_list();
+  if (p < object) {
+    return _previous_task_id;
   }
-#if USE_BINARY_IMAGE_LOADING
-  ForTask( task_if ) {
-    Task::Raw task = Task::get_task( task_id );
-    if( task.not_null() ) {
-      ObjArray::Raw images = task().binary_images();
-      if( images.not_null() ) {
-        for( int i = images().length(); --i >= 0; ) {
-          const ROMBundle* bundle = (const ROMBundle*)images().obj_at(i);
-          if( bundle->contains( obj ) ) {
-            return task_id;
-          }
-        }
-      }
-    }
-  }
-#endif
-  return MAX_TASKS;
+
+  BoundaryDesc* prev;
+  do {
+    prev = p;
+    p = p->_next;
+  } while (p >= object);
+
+  return get_owner(prev, get_boundary_classes());
 }
 
 #if USE_IMAGE_MAPPING || USE_LARGE_OBJECT_AREA
-#if ENABLE_LIB_IMAGES
-const OopDesc* ObjectHeap::_dead_task_images;
-#else
 const OopDesc* ObjectHeap::dead_range_beg;
 const OopDesc* ObjectHeap::dead_range_end;
-#endif
 OopDesc* ObjectHeap::dead_task;
 #endif // USE_IMAGE_MAPPING || USE_LARGE_OBJECT_AREA
 
@@ -853,7 +825,7 @@ OopDesc* ObjectHeap::clone(OopDesc* source JVM_TRAPS) {
   jvm_memcpy(result, source_handle.obj(), size);
   return result;
 }
-  
+
 OopDesc* ObjectHeap::allocate(size_t size JVM_TRAPS) {
   AZZERT_ONLY(nuke_raw_handles());
 
@@ -937,16 +909,12 @@ OopDesc* ObjectHeap::allocate(size_t size JVM_TRAPS) {
         size -= sizeof(BoundaryDesc);        
       }
 #endif
-#if !ENABLE_ZERO_YOUNG_GENERATION
-      jvm_memset(inline_top, 0, size);
-#endif
-      return (OopDesc*)inline_top;
+      return (OopDesc*)jvm_memset(inline_top, 0, size);
     }
 #if ENABLE_ISOLATES
     _inline_allocation_end = _real_inline_allocation_end;
 #endif
     collect(size JVM_NO_CHECK);
-    clear_inline_allocation_area();
 #if ENABLE_ISOLATES
     _inline_allocation_end = current_task_allocation_end();
 #endif
@@ -963,6 +931,16 @@ OopDesc* ObjectHeap::allocate(size_t size JVM_TRAPS) {
 }
 
 #if ENABLE_COMPILER
+
+#if ENABLE_INTERNAL_CODE_OPTIMIZER && ARM && ENABLE_CODE_OPTIMIZER
+void ObjectHeap::save_compiler_area_top_fast() {
+  _saved_compiler_area_top_quick = _compiler_area_top;
+}
+
+void ObjectHeap::update_compiler_area_top_fast() {
+  _compiler_area_top = _saved_compiler_area_top_quick;
+}
+#endif
 
 // Layout of the compiler area:
 //
@@ -1159,10 +1137,6 @@ bool ObjectHeap::create() {
   CompilerAreaPercentage = 0;
   CompilerAreaSlack = 0;
 #else
-  /*
-   * UseCompiler is false for source romizer, but we still need compiler area
-   * for AOT compilation. See 6432131.
-   */
   if( !UseCompiler && !GenerateROMImage ) {
     CompilerAreaPercentage = 0;
     CompilerAreaSlack = 0;
@@ -1223,26 +1197,6 @@ bool ObjectHeap::create() {
   }
 #endif
 
-#if USE_COMPILER_GLUE_CODE
-  //  GUARANTEE(size_t(&compiler_glue_code_end)>=size_t(&compiler_glue_code_start), "sanity");
-  // Using newer GCC 4.1 and 'C' interpreter these labels are backwards
-  if (size_t(&compiler_glue_code_end) <= size_t(&compiler_glue_code_start)) {
-    _glue_code_size = 0;
-  } else {
-    _glue_code_size = align_up(size_t(&compiler_glue_code_end) -
-                               size_t(&compiler_glue_code_start));
-  }
-  if (_glue_code_size < (size_t)_heap_capacity) {
-    _heap_capacity -= (int)_glue_code_size;
-  } else {
-    _glue_code_size = 0;
-  }
-#endif
-
-  if (_heap_min > _heap_capacity) {
-    _heap_min = _heap_capacity;
-  }
-
   int min_heap_size = 0;
 #if ENABLE_ISOLATES
   const int reserved = align_up( ReservedMemory );
@@ -1262,11 +1216,7 @@ bool ObjectHeap::create() {
     // Note: in SVM mode we use the class_list in the ROM, so we don't need
     // to allocate it.
     min_size_for_rom += _rom_number_of_java_classes * 4; // class_list
-#if ENABLE_PREINITED_TASK_MIRRORS
-    min_size_for_rom += _rom_task_mirrors_size; 
-#else
     min_size_for_rom += _rom_number_of_java_classes * 4; // mirror_list
-#endif
 #endif
 
 #if ENABLE_JAVA_DEBUGGER
@@ -1336,21 +1286,9 @@ bool ObjectHeap::create() {
   GUARANTEE_R(DISTANCE(_heap_start, _inline_allocation_end)>= regular_space_min,
             "bad initial heap size calculation");
 
-  _preallocated_space = address(_heap_chunk);
-  _glue_code = DERIVED(address, _preallocated_space, _preallocated_space_size);
-
-#if USE_COMPILER_GLUE_CODE
-  if (_glue_code_size > 0) {
-    size_t copy_size = size_t(&compiler_glue_code_end) -
-                       size_t(&compiler_glue_code_start);
-    jvm_memcpy(_glue_code, address(&compiler_glue_code_start), copy_size);
-    OsMisc_flush_icache(_glue_code, copy_size);
-  }
+#if USE_IMAGE_PRELOADING
+  _preallocated_space = _preallocated_space_size > 0 ? address(_heap_chunk):NULL;
 #endif
-#if USE_SET_HEAP_LIMIT
-  GUARANTEE(HeapMin <= HeapCapacity, "sanity check");
-  HeapMin = HeapCapacity;
-#endif 
 
   return true;
 }
@@ -1434,9 +1372,8 @@ bool ObjectHeap::adjust_heap_size(size_t target_heap_size) {
   const size_t max_slices_size = update_slices_size(_heap_capacity);
   const size_t slices_size = update_slices_size(target_heap_size);
 
-  const size_t extra_size = _preallocated_space_size + _glue_code_size;
-  const size_t heap_chunk_size = 
-     extra_size + target_heap_size + minimum_marking_stack_size;
+  const size_t heap_chunk_size =
+    _preallocated_space_size + target_heap_size + minimum_marking_stack_size;
   const size_t bitv_chunk_size = bitvector_size + slices_size;
 
   const bool is_new_heap = (_heap_chunk == NULL);
@@ -1451,7 +1388,8 @@ bool ObjectHeap::adjust_heap_size(size_t target_heap_size) {
       // only reserving virtual address space. If you OS doesn't have a
       // distinction between 'reserving' and 'committing' memory, you should
       // always set HeapMin=_heap_capacity.
-      max_heap = extra_size + _heap_capacity + minimum_marking_stack_size;
+      max_heap =
+        _preallocated_space_size + _heap_capacity + minimum_marking_stack_size;
       max_bitv = _heap_capacity/BitsPerWord + max_slices_size;
 
       // This should always hold up, unless the calculation for
@@ -1502,7 +1440,7 @@ bool ObjectHeap::adjust_heap_size(size_t target_heap_size) {
   must_be_aligned( unsigned(_bitv_chunk));
 
   _heap_size       = target_heap_size;
-  _heap_start      = DERIVED(OopDesc**, _heap_chunk, extra_size);
+  _heap_start      = DERIVED(OopDesc**, _heap_chunk, _preallocated_space_size);
 
   OopDesc** const heap_top = _heap_start + _heap_size/BytesPerWord;
   _heap_top         = heap_top;
@@ -1540,8 +1478,8 @@ bool ObjectHeap::adjust_heap_size(size_t target_heap_size) {
     clear_bit_range(_heap_start, compiler_area_end());
 
     NOT_PRODUCT(_heap_start_bitvector_verify = _inline_allocation_top;)
-    DIRTY_HEAP(_heap_start, DISTANCE(_heap_start, _heap_top));
-    clear_inline_allocation_area();
+    AZZERT_ONLY(
+      jvm_memset(_heap_start, BadHeapValue, DISTANCE(_heap_start, _heap_top)));
 
     LargeObjectDummy::create();
   } else {
@@ -1773,7 +1711,7 @@ void ObjectHeap::roots_do_to( void do_oop(OopDesc**), const bool young_only,
 #endif
   Scheduler::oops_do( do_oop );
 #if ENABLE_COMPILER
-  if( GenerateROMImage && USE_AOT_COMPILATION ) {
+  if( GenerateROMImage && USE_SOURCE_IMAGE_GENERATOR ) {
     // We ignore the only_young flag here -- all pointers from
     // the compiled methods are scanned. This is safe, just not the fastest.
     CompiledMethodDesc* cm  = (CompiledMethodDesc*)_compiler_area_start;
@@ -1832,8 +1770,8 @@ inline void ObjectHeap::mark_objects( const bool is_full_collect ) {
     upb = -1;
 #endif
 #if USE_IMAGE_MAPPING || USE_LARGE_OBJECT_AREA
-    binary_images = Universe::global_binary_images()->obj(); 
-    Universe::global_binary_images()->set_null(); 
+    binary_images = Universe::binary_images()->obj();
+    Universe::binary_images()->set_null();
 #endif
   }
 #endif
@@ -1898,21 +1836,15 @@ inline void ObjectHeap::mark_objects( const bool is_full_collect ) {
                   ((OopDesc**)binary_images) < mark_area_end() &&
                   test_bit_for( (OopDesc**)binary_images ) ),
       "Universe::binary_images must be unreachable" );
+    Universe::binary_images()->set_obj( binary_images );
 
     GUARANTEE(dead_task && !test_bit_for((OopDesc**)dead_task),
               "Dead task must be unreachable");
-    Universe::global_binary_images()->set_obj(binary_images); 
-#if !ENABLE_LIB_IMAGES
     Task::Raw task( dead_task );
     task().free_binary_images();
-#endif
 
     dead_task = NULL;
-#if ENABLE_LIB_IMAGES
-    _dead_task_images = NULL;
-#else
     dead_range_end = NULL;
-#endif
     mark_root_and_stack( &binary_images );
 #endif
   }
@@ -1995,7 +1927,7 @@ inline OopDesc** ObjectHeap::mark_forward_pointers() {
   }
   return p;
 }
-#if !ENABLE_HEAP_NEARS_IN_HEAP 
+
 inline size_t ObjectHeap::rom_offset_of(OopDesc* obj) {
   size_t offset_plus_flag;
 
@@ -2008,6 +1940,7 @@ inline size_t ObjectHeap::rom_offset_of(OopDesc* obj) {
 
   return offset_plus_flag;
 }
+
 inline OopDesc* ObjectHeap::rom_oop_from_offset(size_t offset,
                                                 const QuickVars& qv) {
   if ((offset & 0x1) == 0) {
@@ -2030,7 +1963,7 @@ inline OopDesc* ObjectHeap::rom_oop_from_offset(size_t offset) {
     return (OopDesc*)(int(&_rom_data_block[0]) + offset);
   }
 }
-#endif // !ENABLE_HEAP_NEARS_IN_HEAP 
+
 inline void ObjectHeap::compute_new_object_locations() {
   OopDesc** this_slice = NULL;
   OopDesc** this_slice_destination = NULL;
@@ -2095,11 +2028,6 @@ inline void ObjectHeap::compute_new_object_locations() {
       GUARANTEE(slice_offset < _slice_size, "sanity check");
 
       size_t near_offset;
-#if ENABLE_HEAP_NEARS_IN_HEAP 
-      GUARANTEE(contains(obj_near), "check");
-      // Compute near pointer relative to heap start
-      near_offset = ((OopDesc**)(obj_near) - heap_start);
-#else
       if (contains(obj_near)) {
         // Compute near pointer relative to heap start
         near_offset = ((OopDesc**)(obj_near) - heap_start);
@@ -2109,8 +2037,8 @@ inline void ObjectHeap::compute_new_object_locations() {
         GUARANTEE((offset & ~(_near_mask)) == 0, "offset too large");
         // Add flag to distinguish from the case above
         near_offset = (offset | 0x80000000);
-      }    
-#endif  
+      }
+
       obj->_klass = (OopDesc*) ((slice_offset << slice_shift) | near_offset);
 
       if (last_dead != NULL) {
@@ -2584,15 +2512,17 @@ inline void ObjectHeap::compact_objects(bool reuse_young_generation) {
       _inline_allocation_top = _end_fixed_objects;
     }
   }
+#ifdef AZZERT
   if (split && reuse_young_generation) {
-    DIRTY_HEAP(_old_generation_end, 
+    jvm_memset(_old_generation_end, BadHeapValue,
                DISTANCE(_old_generation_end, _young_generation_start));
-    DIRTY_HEAP(_inline_allocation_top,
+    jvm_memset(_inline_allocation_top, BadHeapValue,
                DISTANCE(_inline_allocation_top, _collection_area_end));
   } else {
-    DIRTY_HEAP(_inline_allocation_top,
+    jvm_memset(_inline_allocation_top, BadHeapValue,
                DISTANCE(_inline_allocation_top, _collection_area_end));
   }
+#endif
 }
 
 void ObjectHeap::full_collect(JVM_SINGLE_ARG_TRAPS) {
@@ -2710,29 +2640,33 @@ void ObjectHeap::try_to_grow(int requested_free_memory,
   const size_t new_heap_size = 
       OsMemory_heap_expansion_target(_heap_size, required_heap_size,
                                      (size_t)_heap_capacity, is_full_collect);
-  const int heap_size_deficit = int(required_heap_size - new_heap_size);
-  if( heap_size_deficit > 0 ) {    
-    if( !is_full_collect ) {
-      // The Os doesn't want to grow
-      return; 
-    }
+  {
+    const int heap_size_deficit = int(required_heap_size - new_heap_size);
+    if( heap_size_deficit > 0 ) {    
+      if( !is_full_collect ) {        
+        return; // The Os doesn't want to grow
+      }
 #if ENABLE_COMPILER
-    if( heap_size_deficit > compiler_area_size() ) {
-      // Shrinking the compiler area is not enough memory
-      return; 
-    }
+      if( heap_size_deficit > compiler_area_size() ) {        
+        return; // Shrinking the compiler area cannot free enough memory
+      }
 
-    // IMPL_NOTE: We should enter this block even if we're not doing a full 
-    // collect. Currently, we might have excessive YG collection while
-    // the compiler_area is relatvely empty.
-    const int compiler_area_reduction = ObjectHeap::compiler_area_size() >> 1;
-    if( required_free_memory > compiler_area_reduction ) {
-      required_free_memory = compiler_area_reduction;
-    }
-    if( required_free_memory > 0 ) {
-      reduce_compiler_usage(align_allocation_size(required_free_memory));
-    }
+      if( heap_size_deficit > compiler_area_size() || !is_full_collect ) {
+        // The Os doesn't want to grow, shrinking the compiler area is not enough
+        return; 
+      }
+      // IMPL_NOTE: We should enter this block even if we're not doing a full 
+      // collect. Currently, we might have excessive YG collection while
+      // the compiler_area is relatvely empty.
+      const int compiler_area_reduction = ObjectHeap::compiler_area_size() >> 1;
+      if( required_free_memory > compiler_area_reduction ) {
+        required_free_memory = compiler_area_reduction;
+      }
+      if( required_free_memory > 0 ) {
+        reduce_compiler_usage(align_allocation_size(required_free_memory));
+      }
 #endif
+    }
   }
 
   GUARANTEE(new_heap_size <= (size_t)_heap_capacity, "sanity");
@@ -2769,7 +2703,7 @@ void ObjectHeap::try_to_grow(int requested_free_memory,
 #if ENABLE_COMPILER
 // Returns the actual number of bytes freed from compiler usage.
 size_t ObjectHeap::reduce_compiler_usage(size_t requested) {
-  if (GenerateROMImage && USE_AOT_COMPILATION) {
+  if (GenerateROMImage && USE_SOURCE_IMAGE_GENERATOR) {
     // Never evict compiled methods when doing AOT
     return 0;
   }
@@ -2947,6 +2881,7 @@ void ObjectHeap::collect(size_t min_free_after_collection JVM_TRAPS) {
     bool more_free_space = false;
     more_free_space |= Thread::shrink_execution_stacks();
     more_free_space |= Verifier::flush_cache();
+    more_free_space |= Universe::flush_caches();
 
     if (!more_free_space) {
       if (VerboseGC) {
@@ -3318,22 +3253,10 @@ bool ObjectHeap::internal_collect(size_t min_free_after_collection JVM_TRAPS) {
 #if ENABLE_ISOLATES
   if( !GenerateROMImage ) {
     if( is_full_collect ) {
-      ForTask( task ) {
-        unsigned estimate = 0;
-#if USE_LARGE_OBJECT_AREA
-        Task::Raw t = Task::get_task(task);
-        if( t.not_null() ) {
-          ObjArray::Raw binary_images = t().binary_images();
-          if( binary_images.not_null() ) {
-            for( int i = binary_images().length(); --i >= 0; ) {
-              const ROMBundle* bun = (const ROMBundle*)binary_images().obj_at( i );
-              estimate += bun->heap_used();
-            }
-          }
-        }
-#endif
-        _task_info[ task ].estimate = estimate;
+      ForTask(task) {
+        _task_info[ task ].estimate = 0;
       }
+      LargeObject::accumulate_task_memory_usage();
       accumulate_memory_usage( _heap_start + 1, _inline_allocation_top );
     } else {
       // old_generation_end may be below _old_generation_end
@@ -3380,11 +3303,7 @@ OopDesc* ObjectHeap::decode_near(OopDesc* obj, const QuickVars& qv ) {
   const OopDesc* klass = obj->klass();
   const size_t near_offset = (size_t) klass & qv.near_mask;
   OopDesc* n;
-#if ENABLE_HEAP_NEARS_IN_HEAP 
-    GUARANTEE((int) klass >= 0, "optimization check");
-    n = (OopDesc*)((OopDesc**) qv.heap_start + near_offset);
-    GUARANTEE(contains(n), "must be in heap");
-#else
+
   if (((int) klass) >= 0) {
     // bit 31 is not set -- this means we're in heap
 
@@ -3396,7 +3315,6 @@ OopDesc* ObjectHeap::decode_near(OopDesc* obj, const QuickVars& qv ) {
     n = rom_oop_from_offset(near_offset, qv);
     GUARANTEE(ROM::system_contains(n), "must be valid ROM near");
   }
-#endif
   return n;
 }
 
@@ -3411,11 +3329,7 @@ inline OopDesc* ObjectHeap::decode_near(OopDesc* obj, OopDesc **heap_start,
   const OopDesc* klass = obj->klass();
   const size_t near_offset = (size_t) klass & near_mask;
   OopDesc* n;
-#if ENABLE_HEAP_NEARS_IN_HEAP 
-    GUARANTEE((int) klass >= 0, "optimization check");
-    n = (OopDesc*)((OopDesc**) heap_start + near_offset);
-    GUARANTEE(contains(n), "must be in heap");
-#else
+
   if (((int) klass) >= 0) {
     // bit 31 is not set -- this means we're in heap
 
@@ -3427,7 +3341,6 @@ inline OopDesc* ObjectHeap::decode_near(OopDesc* obj, OopDesc **heap_start,
     n = rom_oop_from_offset(near_offset);
     GUARANTEE(ROM::system_contains(n), "must be valid ROM near");
   }
-#endif
   return n;
 }
 
@@ -3483,7 +3396,7 @@ inline OopDesc* ObjectHeap::decode_destination(OopDesc* obj,
   GUARANTEE(slice_offset < _slice_size, "invalid slice offset");
   // Destination is base + relative offset
   OopDesc* destination = (OopDesc*) (slice_start + slice_offset);
-  GUARANTEE(contains(destination), "must be in heap");  
+  GUARANTEE(contains(destination), "must be in heap");
   return destination;
 }
 
@@ -3603,7 +3516,6 @@ size_t ObjectHeap::compiler_area_soft_collect(size_t min_free_after_collection){
     // New number of free bytes in the compiler area
     free_bytes = compiler_area_free();
   }
-  clear_inline_allocation_area();
 
   enable_allocation_trap( allocation_end );
   return free_bytes;
@@ -3611,12 +3523,6 @@ size_t ObjectHeap::compiler_area_soft_collect(size_t min_free_after_collection){
 
 inline int
 ObjectHeap::compiler_area_compute_new_locations ( CompiledMethodDesc* dst ) {
-  // We don't insert compiled methods into the cache when generating ROM image,
-  // so references from methods to compiled methods will not be updated.
-  // Something went wrong if we get here during image generation.
-  GUARANTEE(!GenerateROMImage, 
-            "Shouldn't get here when generating ROM image");
-
   if (TraceGC || TraceCompilerGC) {
     TTY_TRACE_CR(("TraceGC: compute compiled method new locations"));
   }
@@ -3633,7 +3539,7 @@ ObjectHeap::compiler_area_compute_new_locations ( CompiledMethodDesc* dst ) {
       }
       // Change all relative offsets inside code
       if( p->code_size() > 0 ) {
-        // need revisit : if code_size() == 0
+        // IMPL_NOTE: there seems to be a bug if code_size() == 0
         p->update_relative_offsets(delta);
       }
       address entry = dst->entry();
@@ -3642,16 +3548,7 @@ ObjectHeap::compiler_area_compute_new_locations ( CompiledMethodDesc* dst ) {
       // THUMB mode.
       entry += 1;
 #endif
-      {
-        MethodDesc* m = p->method();
-        GUARANTEE((m->has_compiled_code() &&
-                   p == Method::Raw( m )().compiled_code()) ==
-                  Method::Raw( m )().has_compiled_code( p ), "Sanity");
-
-        if( Method::Raw( m )().has_compiled_code( p ) ) {
-          m->set_execution_entry(entry);
-        }
-      }
+      p->_method->set_execution_entry(entry);
     }
 
     // Store delta in _klass to relocate frames.
@@ -3688,18 +3585,6 @@ inline void ObjectHeap::compiler_area_compact( const int last_moving_up ) {
     Universe::compiled_method_class()->prototypical_near();
 #if ENABLE_TRAMPOLINE && !CROSS_GENERATOR 
    BranchTable::remove();  
-#endif
-
-#if ENABLE_CODE_PATCHING && USE_PATCHED_METHOD_CACHE
-  {
-    const CompiledMethodDesc* const cache = 
-      CompiledMethodCache::patched_method();
-    if (cache != NULL) {
-      CompiledMethodDesc* const dst =
-        DERIVED(CompiledMethodDesc*, cache, (int)cache->_klass);
-      CompiledMethodCache::set_patched_method(dst);
-    }
-  }
 #endif  
 
   {
@@ -3829,7 +3714,9 @@ inline void ObjectHeap::compiler_area_update_pointers( void ) {
   #undef compiler_area_contains
 }
 
-CompiledMethodDesc* ObjectHeap::method_contain_instruction_of(void* pc){
+#if ( ENABLE_NPCE ||ENABLE_INLINE || ENABLE_TRAMPOLINE|| \
+  ( ENABLE_INTERNAL_CODE_OPTIMIZER && ENABLE_CODE_OPTIMIZER ) ) && ARM
+CompiledMethodDesc* ObjectHeap::getThrowedMethod(void* pc){
   CompiledMethodDesc * p   = (CompiledMethodDesc *)_compiler_area_start;
   CompiledMethodDesc * end = (CompiledMethodDesc *)_compiler_area_top;
   while (p < end) {
@@ -3841,7 +3728,7 @@ CompiledMethodDesc* ObjectHeap::method_contain_instruction_of(void* pc){
   }   
   return NULL;
 }
-
+#endif
 
 #ifndef PRODUCT
 int ObjectHeap::count_compiled_methods(void) {
@@ -4014,9 +3901,11 @@ void ObjectHeap::compact_and_move_compiler_area(const int compiler_area_shift) {
   }
   EventLogger::log(EventLogger::COMPILER_GC_END);
 
-  DIRTY_HEAP(_inline_allocation_top,
+#ifdef AZZERT
+  jvm_memset(_inline_allocation_top, BadHeapValue,
              DISTANCE(_inline_allocation_top, _compiler_area_start));
-  DIRTY_HEAP(_compiler_area_top, compiler_area_free());
+  jvm_memset(_compiler_area_top, BadHeapValue, compiler_area_free());
+#endif
 
   if (VerifyGC) {
     verify();
@@ -4036,11 +3925,7 @@ void ObjectHeap::compact_and_move_compiler_area(const int compiler_area_shift) {
 }
 
 #if USE_SET_HEAP_LIMIT || USE_LARGE_OBJECT_AREA
-#if !USE_LARGE_OBJECT_AREA
-inline 
-#endif
-
-void ObjectHeap::shrink_with_compiler_area( const int size ) {
+inline void ObjectHeap::shrink_with_compiler_area( const int size ) {
 #if ENABLE_COMPILER
   Compiler::abort_suspended_compilation();
 #endif
@@ -4075,7 +3960,6 @@ void ObjectHeap::shrink_with_compiler_area( const int size ) {
       deficit = gap;
     }
     compact_and_move_compiler_area( -int(deficit) );  
-    clear_inline_allocation_area();
   }
 
   ObjectHeap::enable_allocation_trap( saved_allocation_end );
@@ -4253,14 +4137,14 @@ public:
       OopDesc *n = obj->klass();
       for (int i=0; i<MAX_TASKS; i++) {
         if (n == Universe::boundary_near_list()->obj_at(i)) {
-          _st->print("^^^^^^^^^^^^^^^^^^[task %d]^^^^^^^^^^^^^^^ ", i);
+          _st->print("^^^^^^^^^^^^^^^^^^[task %d]^^^^^^^^^^^^^^^", i);
           break;
         }
       }
     }
 #endif
     int size = obj->object_size();
-    _st->print("0x%x (%d) ", obj->obj(), size);
+    _st->print("%x (%d) ", obj->obj(), size);
     obj->print_value_on(_st);
     _st->cr();
   }
@@ -4422,12 +4306,9 @@ void ObjectHeap::verify_near_oop(OopDesc** p) {
     GUARANTEE_R(contains_live(obj) || ROM::system_contains(obj),
               "invalid near obj or far class");
   }
-#if AZZERT && !ENABLE_HEAP_NEARS_IN_HEAP 
   // We should be at meta class now.
-  // but there are cloned meta class in case of ENABLE_HEAP_NEARS_IN_HEAP 
   OopDesc* the_meta_class = Universe::meta_class()->obj();
   GUARANTEE_R(obj == the_meta_class, "invalid meta class");
-#endif
 }
 
 void ObjectHeap::verify_other_oop(OopDesc** p) {
@@ -4610,7 +4491,6 @@ int ObjectHeap::jvm_garbage_collect(int flags, int requested_free_bytes) {
       internal_collect(requested_free_bytes JVM_NO_CHECK);
     }
   }
-  clear_inline_allocation_area();
 
   Thread::clear_current_pending_exception();
 
@@ -4631,7 +4511,7 @@ extern "C" int JVM_GarbageCollect(int flags, int requested_free_bytes) {
 inline void* ObjectHeap::set_heap_limit( void* new_heap_limit ) {
   // Some implementation of malloc() may inadvertently recurse into
   // ObjectHeap::set_heap_limit() -- e.g., if a finalizer is called
-  // which calls free(). This check makes it more robust. See CR 4969013.
+  // which calls free(). This check makes it more robust. See bug 4969013.
   static bool in_use = false;
   if( !in_use && _heap_min == _heap_capacity ) {
     in_use = true;
@@ -4699,7 +4579,6 @@ void ObjectHeap::get_heap_info(void **heap_start, void **heap_limit,
     const size_t requested_bytes = free_memory() + 
                               ((size_t)_heap_capacity - _heap_size);
     try_to_grow(requested_bytes, true);
-    clear_inline_allocation_area();
     GUARANTEE((int)_heap_size >= _heap_capacity, "Heap must be fully expanded");
     _heap_min = _heap_capacity;
   }

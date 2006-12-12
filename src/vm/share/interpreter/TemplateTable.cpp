@@ -1,6 +1,5 @@
 /*
  *
- *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
@@ -1044,13 +1043,10 @@ void TemplateTable::initialize_duplicates() {
   _duplicates[Bytecodes::_if_acmpne]   = Bytecodes::_if_icmpne;
   _duplicates[Bytecodes::_ifnull]      = Bytecodes::_ifeq;
   _duplicates[Bytecodes::_ifnonnull]   = Bytecodes::_ifne;
-
-#if !USE_FP_RESULT_IN_VFP_REGISTER
-  _duplicates[Bytecodes::_freturn]     = Bytecodes::_ireturn; 
-  _duplicates[Bytecodes::_dreturn]     = Bytecodes::_lreturn;
-#endif
-     
+  
+  _duplicates[Bytecodes::_freturn]     = Bytecodes::_ireturn;
   _duplicates[Bytecodes::_areturn]     = Bytecodes::_ireturn;
+  _duplicates[Bytecodes::_dreturn]     = Bytecodes::_lreturn;
 
   _duplicates[Bytecodes::_fast_fputfield] = Bytecodes::_fast_iputfield;
   _duplicates[Bytecodes::_fast_dputfield] = Bytecodes::_fast_lputfield;

@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -205,7 +204,7 @@ protected:
 
   // If compiler_area is enabled, move the relocation data to higher
   // address to make room for more compiled code.
-  void ensure_compiled_method_space(int delta = 0);
+  void ensure_compiled_method_space();
 
   // branch support
 
@@ -349,14 +348,14 @@ public:
     ReturnOop next() const  {
       return obj_field(next_offset());
     }
-    void set_next(const Oop* oop) {
+    void set_next(Oop* oop) {
       obj_field_put(next_offset(), oop);
     }
 
     ReturnOop literal_oop() const {
       return obj_field(literal_oop_offset());
     }
-    void set_literal_oop(const Oop *oop) {
+    void set_literal_oop(Oop *oop) {
       obj_field_put(literal_oop_offset(), oop);
     }
     
@@ -365,7 +364,7 @@ public:
     }
 
   public:
-    static ReturnOop allocate(const Oop* oop, int imm32 JVM_TRAPS);
+    static ReturnOop allocate(Oop* oop, int imm32 JVM_TRAPS);
     void iterate(OopVisitor* /*visitor*/) PRODUCT_RETURN;
   };
 
@@ -410,9 +409,8 @@ public:
       access_literal_pool(rd, lpe, cond, true);
   }
 
-  void ldr_literal(Register rd, const Oop* oop, 
-                   int offset, Condition cond = al);
-  void ldr_oop (Register r, const Oop* obj, Condition cond = al);
+  void ldr_literal(Register rd, Oop* oop, int offset, Condition cond = al);
+  void ldr_oop (Register r, Oop* obj, Condition cond = al);
 
   // miscellaneous helpers
   void get_thread(Register reg);
@@ -426,7 +424,7 @@ public:
   }
 
   void emit_osr_entry(jint bci) { 
-    _relocation.emit(Relocation::osr_stub_type, _code_offset, bci); 
+      _relocation.emit_osr_entry(_code_offset, bci); 
   }
   static int ic_check_code_size() { 
     // no inline caches for ARM (yet)
@@ -475,7 +473,7 @@ public:
 
   GP_GLOBAL_SYMBOLS_DO(pointers_not_used, DEFINE_GP_FOR_BINARY)
 
-  ReturnOop find_literal(const Oop* oop, int offset JVM_TRAPS);
+  ReturnOop find_literal(Oop* oop, int offset JVM_TRAPS);
 
   void append_literal(LiteralPoolElement *literal);
   void append_branch_literal(int branch_pos JVM_TRAPS);

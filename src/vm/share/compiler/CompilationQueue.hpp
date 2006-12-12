@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Portions Copyright  2003-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -80,17 +79,14 @@ class CompilationQueueElement: public MixedOop {
     type_check_stub,
     check_cast_stub,
     instance_of_stub,
-#if ENABLE_INLINE_COMPILER_STUBS
-    new_object_stub,
-    new_type_array_stub,
-#endif
     osr_stub,
     stack_overflow_stub,
     timer_tick_stub,
     quick_catch_stub
-#if ENABLE_INTERNAL_CODE_OPTIMIZER
+#if ENABLE_INTERNAL_CODE_OPTIMIZER && ARM
     , entry_stub
 #endif
+
   };
 
 #if ENABLE_LOOP_OPTIMIZATION && ARM
@@ -109,10 +105,6 @@ class CompilationQueueElement: public MixedOop {
   void generic_compile(address addr JVM_TRAPS);
   void generic_compile(address addr,
                        const Assembler::Register stack_ptr JVM_TRAPS);
-
-  typedef void (CodeGenerator::*custom_compile_func)
-    (CompilationQueueElement* element  JVM_TRAPS);
-  void custom_compile(custom_compile_func producer JVM_TRAPS);
 
 public:
   BinaryAssembler::Label entry_label() {
@@ -144,7 +136,14 @@ public:
  private:
   // Pool of recycled elements, MUST BE RESET BEFORE GC
   static CompilationQueueElementDesc* _pool;
+#if ENABLE_INLINE && ARM
+  static CompilationQueueElementDesc* saved_pool;
+#endif
  public:
+#if ENABLE_INLINE && ARM
+  static void save_pool ( void ) { saved_pool = _pool; }
+  static void load_pool (void ) { _pool = saved_pool;}
+#endif
   static void reset_pool ( void ) { _pool = NULL; }
 
   // Recycled elements are kept live in the pool until
@@ -194,7 +193,7 @@ public:
   }
 
   jint info() {
-    return int_field(info_offset());
+    return (Assembler::Register) int_field(info_offset());
   }
   void set_info(jint value) {
     int_field_put(info_offset(), value);
@@ -321,6 +320,9 @@ public:
     return (ThrowExceptionStub*) value;
   }
 #if ENABLE_NPCE  
+#if ENABLE_INTERNAL_CODE_OPTIMIZER && ARM
+  static int npe_count;
+#endif
   friend class CodeGenerator;
 #endif  
 #if ENABLE_INTERNAL_CODE_OPTIMIZER || ENABLE_NPCE
@@ -364,24 +366,22 @@ class NullCheckStub: public ThrowExceptionStub {
                                                  JVM_NO_CHECK_AT_BOTTOM);
   }
 #if ENABLE_NPCE
-  //the stub related with a byte code which will emit two LDR instrs
+#if ENABLE_CODE_OPTIMIZER && !ENABLE_THUMB_COMPILER
   bool is_two_words() {
     return int_field(return_label_offset()) != 0;
   }
-
-  //the offset from the first LDR to the second LDR in words
-  jint offset_of_second_instr_in_words() {
+  jint high_word() {
     return int_field(return_label_offset());
   }
-
-  //set the offset from the second LDR to the first LDR in words.
-  //we mark the offset(offset from the first ldr/str) of 
-  //second inst on the stub,
-  //so we will generate another npce relation item 
-  //for the second ldr/str.
-  void set_is_two_instr(int offset = 1) {
+  void set_two_words(int offset = 1) {
     int_field_put(return_label_offset(), offset);
+#if ENABLE_INTERNAL_CODE_OPTIMIZER
+    ThrowExceptionStub::npe_count++;
+#endif
   }
+
+
+#endif
 #endif
 };
 
@@ -434,27 +434,28 @@ class TypeCheckStub: public CompilationQueueElement {
 };
 
 class InstanceOfStub: public CompilationQueueElement {
- public:
-  HANDLE_DEFINITION(InstanceOfStub, CompilationQueueElement);
-
-  Assembler::Register result_register() {
+ private:
+  BinaryAssembler::Register return_register() {
     return register_0();
   }
   int class_id() {
     return info();
   }
-  void set_result_register(Assembler::Register value) {
+  void set_return_register(BinaryAssembler::Register value) {
     set_register_0(value);
   }
   void set_class_id(int class_id) {
     set_info(class_id);
   }
 
+ public:
+  HANDLE_DEFINITION(InstanceOfStub, CompilationQueueElement);
+
   // ^InstanceOfStub
   static ReturnOop allocate(jint bci, jint class_id,
                             BinaryAssembler::Label& entry_label,
                             BinaryAssembler::Label& return_label, 
-                            BinaryAssembler::Register result_register
+                            BinaryAssembler::Register return_register
                             JVM_TRAPS) {
     InstanceOfStub::Raw stub =
         CompilationQueueElement::allocate(instance_of_stub, bci
@@ -462,7 +463,7 @@ class InstanceOfStub: public CompilationQueueElement {
     if (stub.not_null()) {
       stub().set_entry_label(entry_label); 
       stub().set_return_label(return_label);
-      stub().set_result_register(result_register);
+      stub().set_return_register(return_register);
       stub().set_class_id(class_id);
     }
     return stub;
@@ -481,13 +482,6 @@ class CheckCastStub: public CompilationQueueElement {
  public:
   HANDLE_DEFINITION(CheckCastStub, CompilationQueueElement);
 
-  int class_id() {
-    return info();
-  }
-  void set_class_id(int class_id) {
-    set_info(class_id);
-  }
-
   void compile(JVM_SINGLE_ARG_TRAPS);
 
   static void insert(int bci, int class_id,
@@ -499,6 +493,10 @@ class CheckCastStub: public CompilationQueueElement {
     return (CheckCastStub*) value;
   }
 
+ private:
+  int get_class_id() {
+    return register_0();
+  }
 };
 
 class StackOverflowStub: public CompilationQueueElement {
@@ -537,28 +535,14 @@ class TimerTickStub: public CompilationQueueElement {
 
   void compile(JVM_SINGLE_ARG_TRAPS);
 
-  enum {
-    invalid_code_offset   = -1
-  };
-
+  // ^TimerTickStub
   static ReturnOop allocate(jint bci,
                             BinaryAssembler::Label& entry_label,
-                            BinaryAssembler::Label& return_label
-                            JVM_TRAPS) {
-    return allocate(bci, invalid_code_offset, 
-                    entry_label, return_label JVM_NO_CHECK_AT_BOTTOM);
-  }
-
-  // ^TimerTickStub
-  static ReturnOop allocate(jint bci, jint code_offset,
-                            BinaryAssembler::Label& entry_label,
-                            BinaryAssembler::Label& return_label                            
-                            JVM_TRAPS) {
+                            BinaryAssembler::Label& return_label JVM_TRAPS) {
     TimerTickStub::Raw stub =
         CompilationQueueElement::allocate(timer_tick_stub, bci
                                           JVM_NO_CHECK);
     if (stub.not_null()) {
-      stub().set_info(code_offset);
       stub().set_entry_label(entry_label); 
       stub().set_return_label(return_label);
     }
@@ -619,105 +603,7 @@ class OSRStub: public CompilationQueueElement {
  
 };
 
-#if ENABLE_INLINE_COMPILER_STUBS
-class NewObjectStub: public CompilationQueueElement {
- public:
-  HANDLE_DEFINITION(NewObjectStub, CompilationQueueElement);
-
-  Assembler::Register result_register() {
-    return register_0();
-  }
-  Assembler::Register java_near() {
-    return register_1();
-  }
-  void set_result_register(Assembler::Register value) {
-    set_register_0(value);
-  }
-  void set_java_near(Assembler::Register value) {
-    set_register_1(value);
-  }
-
-  void compile(JVM_SINGLE_ARG_TRAPS);
-
-  // ^NewObjectStub
-  static ReturnOop allocate(jint bci,
-                            const Assembler::Register obj,
-                            const Assembler::Register jnear,
-                            BinaryAssembler::Label& entry_label,
-                            BinaryAssembler::Label& return_label JVM_TRAPS) {
-    NewObjectStub::Raw stub =
-        CompilationQueueElement::allocate(new_object_stub, bci
-                                          JVM_NO_CHECK);
-    if (stub.not_null()) {
-      stub().set_result_register(obj);
-      stub().set_java_near(jnear);
-      stub().set_entry_label(entry_label); 
-      stub().set_return_label(return_label);
-    }
-    return stub;
-  }
-
-  static NewObjectStub* cast(CompilationQueueElement* value) {
-    GUARANTEE(value->type() == new_object_stub, "Type check");
-    return (NewObjectStub*) value;
-  }
- 
-};
-
-class NewTypeArrayStub: public CompilationQueueElement {
- public:
-  HANDLE_DEFINITION(NewTypeArrayStub, CompilationQueueElement);
-
-  Assembler::Register result_register() {
-    return register_0();
-  }
-  Assembler::Register java_near() {
-    return register_1();
-  }
-  Assembler::Register length() {
-    return (Assembler::Register)info();
-  }
-  void set_result_register(Assembler::Register value) {
-    set_register_0(value);
-  }
-  void set_java_near(Assembler::Register value) {
-    set_register_1(value);
-  }
-  void set_length(Assembler::Register value) {
-    set_info((int)value);
-  }
-
-  void compile(JVM_SINGLE_ARG_TRAPS);
-
-  // ^NewTypeArrayStub
-  static ReturnOop allocate(jint bci,
-                            const Assembler::Register obj,
-                            const Assembler::Register jnear,
-                            const Assembler::Register length,
-                            BinaryAssembler::Label& entry_label,
-                            BinaryAssembler::Label& return_label JVM_TRAPS) {
-    NewTypeArrayStub::Raw stub =
-        CompilationQueueElement::allocate(new_type_array_stub, bci
-                                          JVM_NO_CHECK);
-    if (stub.not_null()) {
-      stub().set_result_register(obj);
-      stub().set_java_near(jnear);
-      stub().set_length(length);
-      stub().set_entry_label(entry_label); 
-      stub().set_return_label(return_label);
-    }
-    return stub;
-  }
-
-  static NewTypeArrayStub* cast(CompilationQueueElement* value) {
-    GUARANTEE(value->type() == new_type_array_stub, "Type check");
-    return (NewTypeArrayStub*) value;
-  }
- 
-};
-#endif // ENABLE_INLINE_COMPILER_STUBS
-
-#if ENABLE_INTERNAL_CODE_OPTIMIZER
+#if ENABLE_INTERNAL_CODE_OPTIMIZER && ARM
 class EntryStub:  public CompilationQueueElement  {
  public:
 
@@ -726,7 +612,8 @@ class EntryStub:  public CompilationQueueElement  {
   static ReturnOop allocate(jint bci, 
                           BinaryAssembler::Label& entry_label JVM_TRAPS) {
     EntryStub::Raw stub =
-          CompilationQueueElement::allocate(entry_stub, bci JVM_NO_CHECK);
+          CompilationQueueElement::allocate(entry_stub, bci 
+                                                             JVM_NO_CHECK);
     if (stub.not_null()) {
       stub().set_entry_label(entry_label);
     }

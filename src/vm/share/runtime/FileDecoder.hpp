@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -27,8 +26,7 @@
 enum {
   MUST_CLOSE_FILE     = 1,
   LAST_BLOCK          = 2,
-  INCREMENTAL_INFLATE = 4,
-  SYSTEM_CLASSPATH    = 8
+  INCREMENTAL_INFLATE = 4
 };
 
 class FileDecoder : public MixedOop {
@@ -104,11 +102,6 @@ public:
   void set_flags(int value) {
     int_field_put(flags_offset(), value);
   }
-
-  void add_flags(juint mask) {
-    set_flags(flags() | mask);    
-  }
-
 
   ReturnOop read_completely(JVM_SINGLE_ARG_TRAPS);
   int get_bytes(ArrayPointer* destination, int count JVM_TRAPS);

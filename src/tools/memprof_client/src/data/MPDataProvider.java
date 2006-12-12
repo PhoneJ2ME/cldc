@@ -1,5 +1,4 @@
 /*
- *   
  *
  * Copyright  1990-2006 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
@@ -50,12 +49,6 @@ import com.sun.cldchi.tools.memoryprofiler.jdwp.VMConnection;
  */
 public interface MPDataProvider {
 
-
-  //internal VM object types
-  public static final int JAVA_OBJECT  = 0;
-  public static final int STATICS_OBJECT = 1;
-  public static final int STACK_OBJECT   = 2;
-  public static final int VM_OBJECT      = 3;
 
   /**
    * Connects to the KDP running on hostName:port using <code>VMConnection</code>, which should 
@@ -226,19 +219,4 @@ public interface MPDataProvider {
    * @see #connect(String hostName, int port)
    */  
   public ClassStatistics[] calculateStatistics();  
-
-  /**
-   * Returns stacktrace of an address on java stack
-   * The provider must be connected to a KDP, see interface description.
-   * The function will throw <code>SocketException</code> unless communication with VM is successful
-   *
-   * @param stackObject - JavaObject of stack type
-   * @param ptrAddress - address of the pointer on stack
-   *
-   * @return String.
-   *
-   * @see #connect(String hostName, int port)
-   */  
-  public String getStackTrace(JavaObject stackObject, int ptrAddress) throws SocketException;;  
-
 }
