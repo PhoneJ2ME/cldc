@@ -254,7 +254,7 @@ void ClassFileParser::parse_constant_pool_entries(ConstantPool* cp JVM_TRAPS) {
           // and name_and_type_at_put.
           cp->tag_at_put(index, t);
           cp->int_field_put(cp->offset_from_index(index), 
-              construct_jint_from_jushorts(index2, index1));
+              construct_jint_from_jshorts((jshort)index2, (jshort)index1));
         }
         break;
       case JVM_CONSTANT_Utf8 :
@@ -578,7 +578,7 @@ void ClassFileParser::check_for_duplicate_fields(ConstantPool* cp,
     int imax = fields.length() - Field::NUMBER_OF_SLOTS;
     int jmax = fields.length();
     int step = Field::NUMBER_OF_SLOTS;
-    const jushort* const field_base = (jushort*)fields.base_address();
+    const jshort* const field_base = (jshort*)fields.base_address();
     OopDesc **cp_base = (OopDesc**)cp->base_address();
 
     //
@@ -587,10 +587,10 @@ void ClassFileParser::check_for_duplicate_fields(ConstantPool* cp,
     OopDesc * name_i, * name_j;
     OopDesc * type_i, * type_j;
     for (int i = 0; i < imax; i += step) {
-      const jushort* ibase = field_base + i;
+      const jshort* ibase = field_base + i;
 
       for (int j = i + step; j < jmax; j += step) {
-        const jushort* jbase = field_base + j;
+        const jshort* jbase = field_base + j;
 
         name_i = cp_base[ibase[Field::NAME_OFFSET]];
         name_j = cp_base[jbase[Field::NAME_OFFSET]];
@@ -1063,9 +1063,6 @@ ReturnOop ClassFileParser::parse_method(ClassParserState *state, ConstantPool* c
   // All sizing information for a Method is finally available, now create it.
   Method::Fast m = Universe::new_method(code_length, access_flags JVM_CHECK_0);
 
-  // set to an illegal value to catch accesses
-  m().set_holder_id(0xFFFF);
-
   // Fill in information from fixed part (access_flags already set)
   m().set_constants(cp);
   m().set_name_index(name_index);
@@ -1074,6 +1071,8 @@ ReturnOop ClassFileParser::parse_method(ClassParserState *state, ConstantPool* c
 #if ENABLE_ROM_JAVA_DEBUGGER
   m().set_line_var_table(&line_var_table);
 #endif
+  // set to an illegal value to catch accesses
+  m().set_holder_id(0xFFFF);
 
 #if  ENABLE_JVMPI_PROFILE 
   // Set the current compiled method ID. 
@@ -1224,10 +1223,10 @@ ReturnOop ClassFileParser::parse_code_attributes(ConstantPool* cp,
     // See if this is a line number table If so, then read in the table
     if (GenerateROMImage &&
         attribute_name_sym.equals(Symbols::tag_line_number_table())) {
-      jushort line_number_entries = get_u2(JVM_SINGLE_ARG_CHECK_0);
-      jushort start_pc, line_number;
-      cpf_check_0((((line_number_entries * 2 * sizeof(jushort)) +
-              sizeof(jushort)) == attribute_length), invalid_attribute);
+      jshort line_number_entries = get_u2(JVM_SINGLE_ARG_CHECK_0);
+      jshort start_pc, line_number;
+      cpf_check_0((((line_number_entries * 2 * sizeof(jshort)) +
+              sizeof(jshort)) == attribute_length), invalid_attribute);
       if (line_number_entries > 0) {
         UsingFastOops fast_oops2;
         // 2 shorts per entry
@@ -1248,10 +1247,10 @@ ReturnOop ClassFileParser::parse_code_attributes(ConstantPool* cp,
       }
     } else if (GenerateROMImage &&
                attribute_name_sym.equals(Symbols::tag_local_var_table())) {
-      jushort local_var_entries = get_u2(JVM_SINGLE_ARG_CHECK_0);
-      jushort start_pc, code_length, slot_index;
-      cpf_check_0((((local_var_entries * 5 * sizeof(jushort)) +
-            sizeof(jushort)) == attribute_length), invalid_attribute);
+      jshort local_var_entries = get_u2(JVM_SINGLE_ARG_CHECK_0);
+      jshort start_pc, code_length, slot_index;
+      cpf_check_0((((local_var_entries * 5 * sizeof(jshort)) +
+            sizeof(jshort)) == attribute_length), invalid_attribute);
       if (local_var_entries > 0) {
         UsingFastOops fast_oops3;
         if (line_var_table->is_null()) {

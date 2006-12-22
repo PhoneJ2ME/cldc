@@ -327,9 +327,6 @@ public:
   bool unchecked_arraycopy(BasicType array_element_type JVM_TRAPS);  
 #endif
 
-  void bytecode_prolog();
-  void flush_epilogue(JVM_SINGLE_ARG_TRAPS);
-
  protected:
   // Generic binary operations.
   // NOTE: result must be uninitialized when this routine is called;
@@ -452,7 +449,7 @@ public:
     return jvm_fast_globals.compiler_method;
   }
 
-  void flush_frame(JVM_SINGLE_ARG_TRAPS);
+  static void flush_frame(void);
 
 #if ENABLE_APPENDED_CALLINFO
   void append_callinfo_record(const int code_offset JVM_TRAPS);

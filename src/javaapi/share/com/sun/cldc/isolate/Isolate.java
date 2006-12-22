@@ -29,7 +29,6 @@ import java.util.Vector;
 import java.util.Hashtable;
 import java.util.Enumeration;
 import java.io.IOException;
-import com.sun.cldchi.jvm.JVM;
 
 /**
  * <blockquote>
@@ -230,10 +229,10 @@ public final class Isolate {
     private Isolate         _next;
 
     /**
-     * A number that uniquely identifies the task represented by this
+     * A String that uniquely identifies the task represented by this
      * Isolate object.
      */
-    private long            _uniqueId;
+    private String          _uniqueId;
 
     /**
      * Called by native code when the task corresponding to this Isolate
@@ -253,33 +252,35 @@ public final class Isolate {
     /**
      * Saves the mainClass parameter passed to Isolate() constructor.
      */
-    private String          _mainClass;
+    private String           _mainClass;
 
     /**
      * Saves the mainArgs parameter passed to Isolate() constructor.
      */
-    private String[]        _mainArgs;
+    private String []        _mainArgs;
 
     /**
-     * Saves app_classpath[] parameter passed to Isolate() constructor.
+     * Saves app_classpath[] parameter passed to Isolate() constructor (and
+     * convert to char[][] for easy processing inside VM).
      */
-    private String[]        _app_classpath;
-
-    /**
-     * Saves sys_classpath[] parameter passed to Isolate() constructor.
-     */
-    private String[]        _sys_classpath;
+    private Object[]        _app_classpath;
 
     /**
      * Packages we want to be hidden in this Isolate. See definition of hidden package in 
      * doc/misc/Romizer.html
      */
-    private String[]        _hidden_packages;
+    private String []        _hidden_packages;
     /**
      * Packages we want to be restricted in this Isolate. See definition of restricted package in 
      * doc/misc/Romizer.html
      */
-    private String[]        _restricted_packages;
+    private String []        _restricted_packages;
+
+    /**
+     * Saves sys_classpath[] parameter passed to Isolate() constructor (and
+     * convert to char[][] for easy processing inside VM).
+     */
+    private Object[]        _sys_classpath;
 
     /**
      * Amount of memory reserved for this isolate
@@ -428,19 +429,41 @@ public final class Isolate {
      *         invalid.
      **/
     public Isolate(String mainClass, String[] mainArgs, 
-                   String[] app_classpath, String[] sys_classpath)
-        throws IsolateStartupException
-    {
+                   String [] app_classpath, String [] sys_classpath)
+        throws IsolateStartupException {
         securityCheck();
+        _priority = NORM_PRIORITY;
+        addToSeenIsolates();
         if (mainClass == null) {
             throw new IllegalArgumentException("specified class name is null");
         }
-        registerNewIsolate();
-        _priority = NORM_PRIORITY;
+        _uniqueId = _generateUID();
         _mainClass = mainClass;
-        _mainArgs = argCopy(mainArgs);
-        _app_classpath = argCopy(app_classpath);
-        _sys_classpath = argCopy(sys_classpath);
+        if (mainArgs == null) {
+            _mainArgs = new String[0];
+        } else {
+            // Copy mainArgs
+            _mainArgs  = new String[mainArgs.length];
+            for (int i = 0; i < mainArgs.length; i++) {
+                _mainArgs[i] = mainArgs[i];
+            }
+        }
+
+        // convert app_classpath to array of char[] for easier processing 
+        // inside VM.
+        int len = (app_classpath == null) ? 0 : app_classpath.length;
+        _app_classpath = new Object[len];
+        for (int i=0; i<len; i++) {
+            _app_classpath[i] = app_classpath[i].toCharArray();
+        }
+
+        // convert sys_classpath to array of char[] for easier processing 
+        // inside VM.
+        len = (sys_classpath == null) ? 0 : sys_classpath.length;
+        _sys_classpath = new Object[len];
+        for (int i=0; i<len; i++) {
+            _sys_classpath[i] = sys_classpath[i].toCharArray();
+        }
 
         /*
          * <p>WARNING: DO NOT REMOVE THIS MESSAGE UNLESS YOU HAVE READ AND
@@ -739,20 +762,15 @@ public final class Isolate {
         return getStatus() <= NEW;
     }
 
-    private String[] argCopy(String[] args) {
-        if (args == null) {
-            return new String[0];
-        }
-        String[] result = new String[args.length];
-        JVM.unchecked_obj_arraycopy(args, 0, result, 0, args.length);
-        return result;
+    private static synchronized String _generateUID() {
+        return new String("");
     }
 
     /**
      * Add this Isolate to the TaskDesc::_seen_isolates list of the
-     * current task and return the globally unique isolate identifier.
+     * current task.
      */
-    private native void registerNewIsolate();
+    private native void addToSeenIsolates();
 
     /**
      * Stopping execution of an Isolate. Used by implementation of exit
@@ -899,7 +917,12 @@ public final class Isolate {
      *         Isolate constructor
      */
     public String[] getClassPath() {
-        return argCopy(_app_classpath);
+        int len = _app_classpath.length;
+        String[] result = new String[len];
+        for (int i = 0; i < len; i++) {
+            result[i] = new String((char[]) _app_classpath[i]);
+        }
+        return result;
     }
 
     /**

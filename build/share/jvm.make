@@ -185,20 +185,10 @@ ROM_GEN_ARG         += -romconfig $(ROM_CONFIG_FILE)
 ROM_GEN_ARG         += -romincludepath $(WorkSpace)/src/vm
 ROM_GEN_ARG         += +RewriteROMConstantPool
 
-ROM_GEN_ARG         += +EnableAllROMOptimizations
-ifeq ($(ENABLE_JAVA_DEBUGGER), true)
 ifeq ($(ENABLE_SYSTEM_CLASSES_DEBUG), true)
-  ROM_GEN_ARG       += +MakeROMDebuggable
-  JAVAC_DEBUG       =
-else
-  # For debugging application classes -CompactROMMethodTables   
-  # is the only optimization which is incompatible with the Java debugger.
-  # For debugging Monet bundle the +MakeROMDebuggable is reduced
-  # to -CompactROMMethodTables (all the other optimizations are
-  # disabled for binary image generator)
-  ROM_GEN_ARG       += -CompactROMMethodTables
+ROM_GEN_ARG         += +MakeROMDebuggable
+JAVAC_DEBUG         =
 endif
-endif 
 
 # While building VM with C interpreter (arch = c)
 # target_arch may be different, e.g. target_arch = mips
@@ -353,6 +343,12 @@ BUILD_VERSION_CFLAGS = -DJVM_RELEASE_VERSION='"$(RELEASE_VERSION)"' \
     -DJVM_NAME='"$(PRODUCT_NAME)"'
 
 # in alphabetical order:
+
+ifeq ($(ENABLE_SYSTEM_CLASSES_DEBUG), true)
+# nothing
+else
+ROM_GEN_ARG   += +EnableAllROMOptimizations
+endif
 
 ifeq ($(ENABLE_JAZELLE),true)
 export ENABLE_CPU_VARIANT     := true
@@ -1508,13 +1504,7 @@ CPP_OPT_FLAGS_product   = -O2 -Wuninitialized \
   ifneq ($(PROFILING), true)
   CPP_OPT_FLAGS_product+= -fomit-frame-pointer
   endif
-endif
 
-ifeq ($(USE_GCOV), true)
-   CPP_OPT_FLAGS_debug   = -O0 -fprofile-arcs -ftest-coverage -g
-   CPP_OPT_FLAGS_release = -O0 -fprofile-arcs -ftest-coverage
-   CPP_OPT_FLAGS_product = -O0 -fprofile-arcs -ftest-coverage
-   LINK_FLAGS	      	+= -lgcov
 endif
 
 # here C++ specific optimization flags

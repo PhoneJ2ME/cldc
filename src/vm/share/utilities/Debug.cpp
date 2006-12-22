@@ -395,7 +395,6 @@ void poh() {
 }
 
 void ref(int x) {
-  ObjectHeap::check_reach_root((OopDesc*)x, NULL, -1);
   ObjectHeap::find((OopDesc*)x, false);
 }
 #endif

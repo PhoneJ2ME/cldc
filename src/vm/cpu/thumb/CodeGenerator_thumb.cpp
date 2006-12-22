@@ -200,12 +200,6 @@ bool CodeGenerator::unchecked_arraycopy(BasicType type JVM_TRAPS) {
 }
 #endif
 
-void CodeGenerator::bytecode_prolog() {
-}
-
-void CodeGenerator::flush_epilogue(JVM_SINGLE_ARG_TRAPS) {
-}
-
 extern "C" {
   void indirect_execution_sensor_update();
 }
@@ -967,7 +961,7 @@ void CodeGenerator::idiv_rem(Value& result, Value& op1, Value& op2,
     } 
   }
   
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
   if (!op2.in_register()) {
     op2.assign_register();
     mov_imm(op2.lo_register(), divisor);
@@ -1887,7 +1881,7 @@ void CodeGenerator::new_object(Value& result, JavaClass* klass JVM_TRAPS) {
   GUARANTEE(size.is_fixed(), "Size must be fixed in order to do allocation");
 #endif
   // Do flushing, and remember to unmap.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   // Handle finalization by going slow-case for objects with finalizers.
   if (klass->has_finalizer()) {
@@ -1915,7 +1909,7 @@ void CodeGenerator::new_object_array(Value& result, JavaClass* element_class,
 
 
   // Do flushing, and remember to unmap.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   // Call the allocation routine.
   Value save_reg_for_oop(T_ILLEGAL);
@@ -1933,7 +1927,7 @@ void CodeGenerator::new_basic_array(Value& result, BasicType type,
                                     Value& length JVM_TRAPS) {
   UsingFastOops fast_oops;
   // Do flushing, and remember to unmap.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   TypeArrayClass* array_class = Universe::as_TypeArrayClass(type);
   JavaNear::Fast java_near = array_class->prototypical_near();
@@ -2002,7 +1996,7 @@ void CodeGenerator::new_basic_array(Value& result, BasicType type,
 }
 
 void CodeGenerator::new_multi_array(Value& result JVM_TRAPS) {
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   // Call the runtime system.
   call_vm((address) multianewarray, T_ARRAY JVM_CHECK);
@@ -2014,14 +2008,14 @@ void CodeGenerator::new_multi_array(Value& result JVM_TRAPS) {
 
 void CodeGenerator::monitor_enter(Value& object JVM_TRAPS) {
   // For now we flush before calling the compiler monitor enter stub.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
   mov_reg(r0, object.lo_register());
   call_through_gp(gp_shared_monitor_enter_ptr JVM_NO_CHECK_AT_BOTTOM);
 }
 
 void CodeGenerator::monitor_exit(Value& object JVM_TRAPS) {
   // For now we flush before calling the compiler monitor exit stub.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
   // Make sure the object is in register r0 (tos_val).
   mov_reg(r0, object.lo_register());
   call_through_gp(gp_shared_monitor_exit_ptr JVM_NO_CHECK_AT_BOTTOM);
@@ -2203,7 +2197,7 @@ void CodeGenerator::unlock_activation(JVM_SINGLE_ARG_TRAPS) {
   GUARANTEE(ROM::is_synchronized_method_allowed(method()), "sanity");
 
   NOT_PRODUCT(comment("Unlock synchronized method"));
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
   call_through_gp(gp_shared_unlock_synchronized_method_ptr
                   JVM_NO_CHECK_AT_BOTTOM);
 }
@@ -2458,7 +2452,7 @@ void CodeGenerator::invoke(const Method* method,
       address native_code = method->get_quick_native_code();
       // We actually only need to flush the end of the stack containing the
       // arguments, but we don't really have any way of doing that..
-      frame()->flush(JVM_SINGLE_ARG_CHECK);
+      frame()->flush();
       if (size_of_parameters > 0) { 
         add(jsp, jsp,
               size_of_parameters * -JavaStackDirection * BytesPerStackElement);
@@ -2482,7 +2476,7 @@ void CodeGenerator::invoke(const Method* method,
     } else {
       address target = method->execution_entry();
       mov_imm(tmp, target);
-      frame()->flush(JVM_SINGLE_ARG_CHECK);
+      frame()->flush();
       call_from_compiled_code(tmp, 0, size_of_parameters JVM_CHECK);
     }
   } else {
@@ -2503,7 +2497,7 @@ void CodeGenerator::invoke(const Method* method,
           ldr(tmp, tmp);
         }
         weaver.start_alternate(JVM_SINGLE_ARG_CHECK);
-        frame()->flush(JVM_SINGLE_ARG_CHECK);
+        frame()->flush();
         weaver.flush();
     }
     // invoke the method
@@ -2575,7 +2569,7 @@ void CodeGenerator::invoke_virtual(Method* method, int vtable_index,
       ldr(tmp, tmp);
     }
     weaver.start_alternate(JVM_SINGLE_ARG_CHECK);
-    frame()->flush(JVM_SINGLE_ARG_CHECK);
+    frame()->flush();
     weaver.flush();
   }
   call_from_compiled_code(tmp, 0, size_of_parameters JVM_CHECK);
@@ -2610,7 +2604,7 @@ void CodeGenerator::invoke_interface(JavaClass* klass, int itable_index,
   ldr(tmp0, tmp0, 0);
 
   // Flush the virtual stack frame and unmap everything.
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   // tmp0: klass of receiver
   // tmp1:
@@ -3211,7 +3205,7 @@ void CodeGenerator::initialize_class(InstanceClass* klass JVM_TRAPS) {
   // initialize_class(Thread&, raw_class);
   NOT_PRODUCT(comment("Initialize class if needed"));
   NOT_PRODUCT(comment("Flush frame"));
-  flush_frame(JVM_SINGLE_ARG_CHECK);
+  flush_frame();
 
   Label class_initialized;
 
@@ -3243,7 +3237,7 @@ void CodeGenerator::init_static_array(Value& result JVM_TRAPS) {
   NOT_PRODUCT(comment("Initialization of static arrays"));
 
   // Flush the virtual stack frame.
-  flush_frame(JVM_SINGLE_ARG_CHECK);  
+  flush_frame();  
 
   const Register src = tos_tag;
   const Register dst = tos_val;
