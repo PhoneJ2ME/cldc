@@ -442,20 +442,14 @@ public:
   void conditional_jump_do(BytecodeClosure::cond_op condition, 
                            Label& destination);
 
-  static VirtualStackFrame* frame ( void ) {
+  static inline VirtualStackFrame* frame ( void ) {
     return jvm_fast_globals.compiler_frame;
   }
-  static jint bci ( void ) {
+  static inline jint bci ( void ) {
     return jvm_fast_globals.compiler_bci;
   }
-  static Method* method ( void ) {
+  static inline Method* method ( void ) {
     return jvm_fast_globals.compiler_method;
-  }
-  static jint next_bci ( const jint bci ) {
-    return method()->next_bci( bci );
-  }
-  static jint next_bci ( void ) {
-    return next_bci( bci() );
   }
 
   void flush_frame(JVM_SINGLE_ARG_TRAPS);
