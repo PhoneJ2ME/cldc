@@ -382,7 +382,7 @@ void ConstantPoolRewriter::rewrite_line_number_tables(Method *old_method,
     LineNumberTable::Fast line_num_table;
     LocalVariableTable::Fast local_var_table;
     bool can_compress = compress_if_possible;
-    bool need_table = !compress_if_possible;
+    bool need_table = !compress_if_possible;;
     if (!line_var_table.is_null()) {
       line_num_table = line_var_table().line_number_table();
     }
@@ -421,7 +421,7 @@ void ConstantPoolRewriter::rewrite_line_number_tables(Method *old_method,
       local_var_table = line_var_table().local_variable_table();
     }
     can_compress = compress_if_possible;
-    need_table = !compress_if_possible;
+    need_table = !compress_if_possible;;
     if (!line_var_table.is_null() && !local_var_table.is_null()) {
       int i;
       int num_entries = local_var_table().count();
@@ -1544,8 +1544,8 @@ bool ConstantPoolRewriter::shall_create_new_method(Method *method, int* p_new_si
   for (old_bci = 0, new_bci=0; old_bci != method->code_size();) {
     GUARANTEE(old_bci < method->code_size(), "invalid bytecode");
 
-    const Bytecodes::Code code = method->bytecode_at(old_bci);
-    const int old_len = method->bytecode_length_for(old_bci);
+    Bytecodes::Code code = method->bytecode_at(old_bci);
+    int old_len = Bytecodes::length_for(method, old_bci);
     int new_len = old_len;
 
     switch (code) {
@@ -1627,8 +1627,8 @@ void ConstantPoolRewriter::correct_cp_indices(Method *method JVM_TRAPS) {
   ConstantPool orig_cp = method->constants();
   for (int bci = 0; bci != method->code_size();) {    
     // (1) determine the length of this bytecode
-    const Bytecodes::Code code = method->bytecode_at(bci);
-    const int len = method->bytecode_length_for(bci);
+    Bytecodes::Code code = method->bytecode_at(bci);
+    int len = Bytecodes::length_for(method, bci);
     jushort old_index;
     jushort new_index;
     
@@ -1739,13 +1739,15 @@ void ConstantPoolRewriter::stream_bytecodes(Method *old_method,
                                             Method *new_method JVM_TRAPS) {
   bool ignore_one_pop = false;
   for (int old_bci = 0, new_bci = 0; old_bci != old_method->code_size();) {
+    int old_len, new_len;
+
     // (1) determine the length of this bytecode
-    const Bytecodes::Code code = old_method->bytecode_at(old_bci);
+    Bytecodes::Code code = old_method->bytecode_at(old_bci);
     GUARANTEE(old_bci < old_method->code_size(), "sanity");
     GUARANTEE(new_bci < new_method->code_size() || code == Bytecodes::_nop, "sanity");
 
-    const int old_len = old_method->bytecode_length_for(old_bci);
-    int new_len = old_len;
+    old_len = Bytecodes::length_for(old_method, old_bci);
+    new_len = old_len;
 
     // (2) Stream the bytecode, using new CP index and branch offsets
     //     if necessary
@@ -1966,7 +1968,7 @@ void ConstantPoolRewriter::stream_invokeinterface(Method *old_method,
                                                   int old_bci, int new_bci
                                                   JVM_TRAPS) {
   // the bytecode
-  const Bytecodes::Code bc = old_method->bytecode_at(old_bci);
+  Bytecodes::Code bc = old_method->bytecode_at(old_bci);
   new_method->bytecode_at_put_raw(new_bci, bc);
 
   // the CP index
@@ -1988,10 +1990,9 @@ void ConstantPoolRewriter::stream_invokeinterface(Method *old_method,
 void ConstantPoolRewriter::stream_multianewarray(Method *old_method,
                                                  Method *new_method,
                                                  int old_bci, int new_bci
-                                                 JVM_TRAPS)
-{
+                                                 JVM_TRAPS) {
   // the bytecode
-  const Bytecodes::Code bc = old_method->bytecode_at(old_bci);
+  Bytecodes::Code bc = old_method->bytecode_at(old_bci);
   new_method->bytecode_at_put_raw(new_bci, bc);
 
   // the CP index
@@ -2012,7 +2013,7 @@ void ConstantPoolRewriter::stream_java_cp_index(Method *old_method,
                                                 Method *new_method,
                                                 int old_bci, int new_bci
                                                 JVM_TRAPS) {
-  const Bytecodes::Code bc = old_method->bytecode_at(old_bci);
+  Bytecodes::Code bc = old_method->bytecode_at(old_bci);
   new_method->bytecode_at_put_raw(new_bci, bc);
 
   jushort old_index = old_method->get_java_ushort(old_bci+1);
@@ -2026,7 +2027,7 @@ void ConstantPoolRewriter::stream_java_cp_index(Method *old_method,
 void ConstantPoolRewriter::stream_branch2(Method *old_method,
                                           Method *new_method,
                                           int old_bci, int new_bci) {
-  const Bytecodes::Code bc = old_method->bytecode_at(old_bci);
+  Bytecodes::Code bc = old_method->bytecode_at(old_bci);
   new_method->bytecode_at_put_raw(new_bci, bc);
 
   int old_target = old_bci + old_method->get_java_short(old_bci + 1);
@@ -2042,7 +2043,7 @@ void ConstantPoolRewriter::stream_branch2(Method *old_method,
 void ConstantPoolRewriter::stream_branch4(Method *old_method,
                                           Method *new_method,
                                           int old_bci, int new_bci) {
-  const Bytecodes::Code bc = old_method->bytecode_at(old_bci);
+  Bytecodes::Code bc = old_method->bytecode_at(old_bci);
   new_method->bytecode_at_put_raw(new_bci, bc);
 
   update_branch4(old_method, new_method, old_bci, new_bci,
@@ -2055,7 +2056,7 @@ int ConstantPoolRewriter::stream_tableswitch(Method *old_method,
                                              Method *new_method,
                                              int old_bci, int new_bci)
 {
-  const Bytecodes::Code bc = old_method->bytecode_at(old_bci);
+  Bytecodes::Code bc = old_method->bytecode_at(old_bci);
   new_method->bytecode_at_put_raw(new_bci, bc);
 
   int old_aligned = align_size_up(old_bci + 1, sizeof(jint));
@@ -2086,7 +2087,7 @@ int ConstantPoolRewriter::stream_lookupswitch(Method *old_method,
                                               Method *new_method,
                                               int old_bci, int new_bci)
 {
-  const Bytecodes::Code bc = old_method->bytecode_at(old_bci);
+  Bytecodes::Code bc = old_method->bytecode_at(old_bci);
   new_method->bytecode_at_put_raw(new_bci, bc);
 
   int old_aligned = align_size_up(old_bci + 1, sizeof(jint));

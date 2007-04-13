@@ -1122,7 +1122,11 @@
 // USE_FP_RESULT_IN_VFP_REGISTER      Return floating point retult in VFP 
 //                                    registers. 
 //
-#define USE_FP_RESULT_IN_VFP_REGISTER (ENABLE_ARM_VFP)
+#if ENABLE_ARM_VFP
+#define USE_FP_RESULT_IN_VFP_REGISTER 1
+#else
+#define USE_FP_RESULT_IN_VFP_REGISTER 0
+#endif
 
 //
 // ENABLE_ARM9_VFP_BUG_WORKAROUND  Workaround for ARM9 + VFP hardware bugs
@@ -1139,4 +1143,8 @@
 //                                 one bit per virtual method to mark
 //                                 overridden methods
 //
-#define USE_EMBEDDED_VTABLE_BITMAP (ENABLE_COMPILER && ENABLE_INLINE)
+#if ENABLE_COMPILER && ENABLE_INLINE
+#define USE_EMBEDDED_VTABLE_BITMAP 1
+#else
+#define USE_EMBEDDED_VTABLE_BITMAP 0
+#endif
