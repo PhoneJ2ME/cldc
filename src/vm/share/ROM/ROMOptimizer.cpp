@@ -1040,8 +1040,13 @@ void ROMOptimizer::fill_interface_implementation_cache(JVM_SINGLE_ARG_TRAPS) {
     interface_implementation_cache()->int_at_put(i, NOT_IMPLEMENTED); 
     direct_interface_implementation_cache()->int_at_put(i, NOT_IMPLEMENTED); 
   }
-
-  for (i = 0; i < Universe::number_of_java_classes(); i++) {
+  //return;
+#if USE_SOURCE_IMAGE_GENERATOR
+  i = 0;
+#else
+  i = ROM::number_of_system_classes();
+#endif
+  for (; i < Universe::number_of_java_classes(); i++) {
     UsingFastOops fast;
     JavaClass::Fast java_cls = Universe::class_from_id(i);
 
@@ -1650,7 +1655,7 @@ public:
 
   virtual void bytecode_prolog(JVM_SINGLE_ARG_TRAPS) {
     JVM_IGNORE_TRAPS;
-    _code = current_bytecode();
+    _code = method()->bytecode_at(bci());
   }
 
   virtual void handle_exception(JVM_SINGLE_ARG_TRAPS) {
