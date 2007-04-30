@@ -240,7 +240,7 @@ void BytecodeCompileClosure::store_array(BasicType kind JVM_TRAPS) {
     // Type check
     if (kind == T_OBJECT && !value.must_be_null()) {
       bool skip_type_check = false;
-#if ENABLE_COMPILER_TYPE_INFO
+#if ENABLE_COMPILER_TYPE_INFO      
       const jushort array_class_id = array.class_id();
       // If there is type info available for the array.
       if (array_class_id > 0) {
@@ -351,15 +351,18 @@ void BytecodeCompileClosure::convert(BasicType from, BasicType to JVM_TRAPS) {
 
   // If this is an i2{bsc}, and the next instruction is
   // a {bsc}astore, we can treat the current instruction as an no-op
-  const Bytecodes::Code bc = current_bytecode();
+  Bytecodes::Code bc = method()->bytecode_at(bci());
   switch (bc) {
   case Bytecodes::_i2b:
   case Bytecodes::_i2s:
   case Bytecodes::_i2c:
     {
-      const int nextbci = get_next_bci();
-      if( nextbci > 0 ) {
-        const Bytecodes::Code nextbc = bytecode_at(nextbci);
+      int len = method()->code_size();
+      int nextbci = bci() + 1;
+      // Must check that nextbci is not a branch target.
+      if (nextbci < len && 
+          Compiler::current()->entry_count_for(nextbci) == 1) {
+        Bytecodes::Code nextbc = method()->bytecode_at(nextbci);
         if ((bc - nextbc) == (Bytecodes::_i2b - Bytecodes::_bastore)) {
           if (GenerateCompilerComments) {
             gen->comment("narrowing opcode is safely skipped");
@@ -373,7 +376,7 @@ void BytecodeCompileClosure::convert(BasicType from, BasicType to JVM_TRAPS) {
     break;
   }
 
-  switch( current_bytecode() ) {
+  switch (method()->bytecode_at(bci())) {
   case Bytecodes::_i2b:
     if (is_immediate) {
       result.set_int((jbyte)value.as_int());
@@ -751,14 +754,20 @@ void BytecodeCompileClosure::instance_of(int index JVM_TRAPS) {
   //      ...
   //      ((aClass)anObject).aMethod();
   //      ...
-  const int nextbci = get_next_bci();
-  if( nextbci > 0 ) {
-    const Bytecodes::Code nextbc = bytecode_at(nextbci);
+  const int nextbci = bci() + Bytecodes::length_for(method(), bci());
+  const int len = method()->code_size();
+
+  if (nextbci < len && 
+      Compiler::current()->entry_count_for(nextbci) == 1 &&
+      next_bytecode_index() == nextbci) {
+    const Bytecodes::Code nextbc = method()->bytecode_at(nextbci);
     if (nextbc == Bytecodes::_ifeq) {
-      const int fallthrough_bci = next_bci(nextbci);
+      const int fallthrough_bci = 
+        nextbci + Bytecodes::length_for(method(), nextbci);
+
       Compiler::set_bci(nextbci);
       // Recursive invocation to find out if the compiler takes the branch
-      compile(JVM_SINGLE_ARG_CHECK);
+      this->compile(JVM_SINGLE_ARG_CHECK);
       if (next_bytecode_index() == fallthrough_bci) {
         frame()->set_value_class(object, &klass);
       }
@@ -1112,7 +1121,7 @@ void BytecodeCompileClosure::get_static(int index JVM_TRAPS) {
 
   UsingFastOops fast_oops;
 
-  const Bytecodes::Code bc = current_bytecode();
+  Bytecodes::Code bc = method()->bytecode_at(bci());
   if (bc == Bytecodes::_getstatic) {
     // Always need to call ConstantPool::field_type_at(). See
     // src/tests/vm/share/handles/ConstantPool/field_type_at7 
@@ -1219,7 +1228,9 @@ void BytecodeCompileClosure::get_static(int index JVM_TRAPS) {
 void BytecodeCompileClosure::put_static(int index JVM_TRAPS) {
   COMPILER_PERFORMANCE_COUNTER_IN_BLOCK(put_static);
 
-  const Bytecodes::Code bc = current_bytecode();
+  UsingFastOops fast_oops;
+
+  Bytecodes::Code bc = method()->bytecode_at(bci());
   if (bc == Bytecodes::_putstatic) {
     // Always need to call ConstantPool::field_type_at().
     bool resolved = try_resolve_static_field(index, /*is_get=*/false
@@ -1241,7 +1252,6 @@ void BytecodeCompileClosure::put_static(int index JVM_TRAPS) {
     kind = T_INT;
   }
 
-  UsingFastOops fast_oops;
 #if ENABLE_ISOLATES
   // We never issue an uncommon trap here because class initialization
   // must always be tested because of code sharing across isolates.
@@ -1662,6 +1672,7 @@ void BytecodeCompileClosure::do_direct_invoke(Method * callee,
           
         if (must_do_null_check) {
           Value receiver(T_OBJECT);
+          Assembler::Condition cond;
           frame()->receiver(receiver, callee->size_of_parameters());
           // IMPL_NOTE: use maybe_null_check_1/2 on ARM
           code_generator()->maybe_null_check(receiver JVM_CHECK);
@@ -2206,47 +2217,43 @@ void BytecodeCompileClosure::init_static_array(JVM_SINGLE_ARG_TRAPS) {
 #endif //!ENABLE_CPU_VARIANT
 #undef __
 
-inline void
-BytecodeCompileClosure::set_default_next_bytecode_index(const jint bci) {
-  const Bytecodes::Code bc = bytecode_at(bci);
+void BytecodeCompileClosure::set_default_next_bytecode_index(Method* method,
+                                                             jint bci) {
+  Bytecodes::Code bc = method->bytecode_at(bci);
   if (Bytecodes::can_fall_through(bc)) {
-    set_next_bytecode_index( next_bci(bci) );
+    set_next_bytecode_index(bci + Bytecodes::length_for(method, bci));
   } else {
     terminate_compilation();
   }
 }
 
 bool BytecodeCompileClosure::compile(JVM_SINGLE_ARG_TRAPS) {
-  const int bci = Compiler::bci();
-  GUARANTEE( bci >= 0 && bci < method_size(),
+  GUARANTEE(Compiler::bci() >= 0 &&
+            Compiler::bci() < Compiler::current()->method()->code_size(),
             "Bytecode index must be within bounds");
-    code_generator()->ensure_compiled_method_space();
+  Method * const method = Compiler::current()->method();
+
+  code_generator()->ensure_compiled_method_space();
 
   // Set the next bytecode index to be the default one - this can be
   // overwritten during the compilation.
-  set_default_next_bytecode_index(bci);
+  set_default_next_bytecode_index(method, Compiler::bci());
 
-  const Bytecodes::Code code = bytecode_at(bci);
-  if( !code_eliminate_prologue(code) ) {
-    // Compile current bytecode
-    // Must use Compiler::bci() because bci could change
-    method()->iterate_bytecode(Compiler::bci(), this, code JVM_CHECK_(false));
-
-    code_eliminate_epilogue(code);
-    // Update current bytecode index
-    Compiler::set_bci(next_bytecode_index());
+  Bytecodes::Code code = method->bytecode_at(Compiler::bci());
+  bool can_be_eliminated = code_eliminate_prologue(code);
+  if (can_be_eliminated) {
+    return !is_compilation_done();
   }
+  // Compile the current bytecode.
+  method->iterate_bytecode(Compiler::bci(), this, code
+                                       JVM_CHECK_(false));
+
+  code_eliminate_epilogue(code);
+  // Update the current bytecode index.
+  Compiler::set_bci(next_bytecode_index());
 
   // Return whether or not the compilation should continue.
   return !is_compilation_done();
-}
-
-// If next bytecode can be read ahead, returns its index, otherwise -1
-int BytecodeCompileClosure::get_next_bci( void ) const {
-  const int nextbci = next_bci( bci() );
-  return nextbci < method_size() &&
-         Compiler::current()->entry_count_for(nextbci) == 1
-         ? nextbci : -1;
 }
 
 #if USE_DEBUG_PRINTING
