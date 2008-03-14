@@ -139,6 +139,10 @@ void CodeGenerator::bytecode_prolog() {
 void CodeGenerator::flush_epilogue(JVM_SINGLE_ARG_TRAPS) {
 }
 
+void CodeGenerator::save_state(CompilerState *compiler_state) {
+  BinaryAssembler::save_state(compiler_state);
+}
+
 void CodeGenerator::load_from_address(Value& result, BasicType type,
                                       MemoryAddress& address, Condition cond) {
   // illegal types do not require any loading
@@ -379,9 +383,9 @@ void CodeGenerator::method_entry(Method* method JVM_TRAPS) {
     if (method->access_flags().is_static()) {
       comment("Static method. Synchronize on the class");
 
+      UsingFastOops fast_oops;
       // Get the class mirror object.
 #if ENABLE_ISOLATES
-      UsingFastOops fast_oops;
       InstanceClass::Fast klass = method->holder();
       Value klass_value(T_OBJECT);
       klass_value.set_obj(&klass);
@@ -394,8 +398,8 @@ void CodeGenerator::method_entry(Method* method JVM_TRAPS) {
       movl(eax, Address(klass_value.lo_register(),
                         TaskMirror::real_java_mirror_offset()));
 #else
-      JavaClass::Raw klass = method->holder();
-      Instance::Raw mirror = klass().java_mirror();
+      JavaClass::Fast klass = method->holder();
+      Instance::Fast mirror = klass().java_mirror();
       comment("Static method. Synchronize on the class mirror object");
       movl(eax, &mirror);
 #endif
@@ -495,12 +499,12 @@ void CodeGenerator::call_from_compiled_code(address target,
 }
 
 void CodeGenerator::write_call_info(int parameters_size JVM_TRAPS) {
+  GUARANTEE(!Compiler::is_inlining(),
+            "Call info should not be written during inlining");
   // The actual callinfo on the x86 starts >>after<< the bytecode which
   // encodes "testl eax, ..."
   const jint code_offset = code_size();
 #if ENABLE_EMBEDDED_CALLINFO
-  GUARANTEE(!Compiler::is_inlining(), 
-            "Not tested: need to write root bci in the callinfo");
   const jint callinfo_start = code_offset + 1;
   comment("Embedded call information");
   if (CallInfo::fits_compiled_compact_format(bci(),
@@ -649,6 +653,7 @@ void CodeGenerator::move(Assembler::Register dst, Assembler::Register src,
 }
 
 void CodeGenerator::array_check(Value& array, Value& index JVM_TRAPS) {
+  UsingFastOops fast_oops;
   FieldAddress length_address(array, Array::length_offset(), T_INT);
 
   maybe_null_check(array JVM_CHECK);
@@ -660,16 +665,17 @@ void CodeGenerator::array_check(Value& array, Value& index JVM_TRAPS) {
   }
 
   // insert stub to handle uncommon case where the index is out of bounds
-  IndexCheckStub* check_stub =
-    IndexCheckStub::allocate_or_share(JVM_SINGLE_ARG_ZCHECK(check_stub));
-  jcc(below_equal, check_stub);
+  IndexCheckStub::Fast check_stub =
+      IndexCheckStub::allocate_or_share(JVM_SINGLE_ARG_CHECK);
+  jcc(below_equal, &check_stub);
 }
 
 void CodeGenerator::null_check( const Value& object JVM_TRAPS) {
-  testl( object.lo_register(), object.lo_register() );
-  NullCheckStub* check_stub = 
-    NullCheckStub::allocate_or_share(JVM_SINGLE_ARG_ZCHECK(check_stub));
-  jcc(zero, check_stub);
+  UsingFastOops fast_oops;
+  testl(object.lo_register(), object.lo_register());
+  NullCheckStub::Fast check_stub = 
+      NullCheckStub::allocate_or_share(JVM_SINGLE_ARG_CHECK);
+  jcc(zero, &check_stub);
 }
 
 void CodeGenerator::return_error(Value& value JVM_TRAPS) {
@@ -816,6 +822,7 @@ void CodeGenerator::unlock_activation(JVM_SINGLE_ARG_TRAPS) {
 }
 
 void CodeGenerator::check_monitors(JVM_SINGLE_ARG_TRAPS) {
+  UsingFastOops fast_oops;
 #if ENABLE_FLOAT
   // Since this code may call a stub that then returns here, we must make sure
   // that the x86 fpu stack is empty
@@ -833,15 +840,15 @@ void CodeGenerator::check_monitors(JVM_SINGLE_ARG_TRAPS) {
   movl(last_stack_lock, Address(ebp, JavaFrame::stack_bottom_pointer_offset()));
 
   NearLabel loop, entry;
-  UnlockExceptionStub* unlock_exception_stub = 
-    UnlockExceptionStub::allocate_or_share(JVM_SINGLE_ARG_ZCHECK(unlock_exception_stub));
+  UnlockExceptionStub::Fast unlock_exception_stub = 
+      UnlockExceptionStub::allocate_or_share(JVM_SINGLE_ARG_CHECK);
 
   Label unlock_exception_done;
   jmp(entry);
 
   bind(loop);
   cmpl(Address(last_stack_lock, StackLock::size()), 0);
-  jcc(not_equal, unlock_exception_stub);
+  jcc(not_equal, &unlock_exception_stub);
   bind(unlock_exception_done);
   addl(last_stack_lock, (4 + StackLock::size()));
 
@@ -1118,10 +1125,11 @@ void CodeGenerator::instance_of(Value& result, Value& object, Value& klass,
 
   bind(done_checking);
 
-  InstanceOfStub* stub =
-    InstanceOfStub::allocate( bci(), class_id, slow_case, done_checking,
-                               result.lo_register() JVM_ZCHECK(stub) );
-  stub->insert();
+  InstanceOfStub::Raw stub =
+      InstanceOfStub::allocate(bci(), class_id, slow_case, done_checking,
+                               result.lo_register() JVM_CHECK);
+  stub().insert();
+
   frame()->pop(object);
 }
 
@@ -1193,9 +1201,9 @@ void CodeGenerator::type_check(Value& array, Value& index, Value& object JVM_TRA
   // Cache hit.
   bind(done_checking);
 
-  TypeCheckStub* stub =
-    TypeCheckStub::allocate( bci(), slow_case, done_checking JVM_ZCHECK(stub) );
-  stub->insert();
+  TypeCheckStub::Raw stub =
+      TypeCheckStub::allocate(bci(), slow_case, done_checking JVM_CHECK);
+  stub().insert();
   frame()->pop(object);
   frame()->pop(index);
   frame()->pop(array);
@@ -1483,7 +1491,7 @@ void CodeGenerator::long_cmp(Value& result, Value& op1, Value& op2 JVM_TRAPS) {
 void CodeGenerator::fpu_cmp_helper(Value& result, Value& op1, Value& op2, bool cond_is_less) {
   { // This is a somewhat simplified version of fpu_prepare_binary(), as we won't be
     // destroying the first operand.
-    const FPURegisterMap& fpu_map = frame()->fpu_register_map();
+    FPURegisterMap fpu_map = frame()->fpu_register_map();
     Value b(op2.type());
 
     // Make sure the operands are in a register...
@@ -1572,7 +1580,7 @@ void CodeGenerator::fpu_clear(bool flush_stack) {
     frame()->flush_fpu();
   }
   // fpu_clear() doesn't check if fpu_map.is_clearable(), this should be done by the caller!
-  FPURegisterMap& fpu_map = frame()->fpu_register_map();
+  FPURegisterMap fpu_map = frame()->fpu_register_map();
   if (!fpu_map.is_empty()) {
     comment("Clear FPU stack");
     fpu_map.clear();
@@ -1581,7 +1589,7 @@ void CodeGenerator::fpu_clear(bool flush_stack) {
 
 void CodeGenerator::fpu_prepare_unary(Value& op) {
   GUARANTEE(op.type() == T_FLOAT || op.type() == T_DOUBLE, "T_FLOAT or T_DOUBLE expected");
-  const FPURegisterMap& fpu_map = frame()->fpu_register_map();
+  FPURegisterMap fpu_map = frame()->fpu_register_map();
 
   Value a(op.type());
   op.writable_copy(a);
@@ -1595,7 +1603,7 @@ void CodeGenerator::fpu_prepare_binary_arithmetic(Value& op1, Value& op2, bool& 
   GUARANTEE(op1.type() == op2.type(), "FPU type mismatch");
   GUARANTEE(op1.type() == T_FLOAT || op2.type() == T_DOUBLE, "T_FLOAT or T_DOUBLE expected");
 
-  const FPURegisterMap& fpu_map = frame()->fpu_register_map();
+  FPURegisterMap fpu_map = frame()->fpu_register_map();
   Value a(op1.type());
   Value b(op2.type());
 
@@ -1629,7 +1637,7 @@ void CodeGenerator::fpu_prepare_binary_fprem(Value& op1, Value& op2) {
   GUARANTEE(op1.type() == op2.type(), "type mismatch");
   GUARANTEE(op1.type() == T_FLOAT || op1.type() == T_DOUBLE, "T_FLOAT or T_DOUBLE expected");
 
-  const FPURegisterMap& fpu_map = frame()->fpu_register_map();
+  FPURegisterMap fpu_map = frame()->fpu_register_map();
 
   // Make sure the operands are in a register...
   if (op2.is_immediate()) op2.materialize();
@@ -2167,15 +2175,16 @@ void CodeGenerator::runtime_long_op(Value& result, Value& op1, Value& op2,
   if (check_zero) {
     GUARANTEE(op2.stack_type() == T_LONG, "Sanity");
     if (op2.in_register() || (op2.is_immediate() && op2.as_long() == 0)) {
-      ZeroDivisorCheckStub* zero =
-        ZeroDivisorCheckStub::allocate_or_share(JVM_SINGLE_ARG_ZCHECK(zero));
+      UsingFastOops fast_oops;
+      ZeroDivisorCheckStub::Fast zero =
+          ZeroDivisorCheckStub::allocate_or_share(JVM_SINGLE_ARG_CHECK);
       if (op2.is_immediate()) {
-        jmp(zero);
+        jmp(&zero);
       } else {
         Register temp = RegisterAllocator::allocate();
         movl(temp, op2.lo_register());
         orl(temp,  op2.hi_register());
-        jcc(equal, zero);
+        jcc(equal, &zero);
         RegisterAllocator::dereference(temp);
       }
     }
@@ -2395,6 +2404,7 @@ void CodeGenerator::invoke_virtual(Method* method, int vtable_index,
 void CodeGenerator::invoke_interface(JavaClass* klass, int itable_index,
                                      int parameters_size,
                                      BasicType return_type JVM_TRAPS) {
+  UsingFastOops fast_oops;
   // Flush the virtual stack frame and an unmap everything.
   frame()->flush(JVM_SINGLE_ARG_CHECK);
   verify_fpu();
@@ -2423,12 +2433,12 @@ void CodeGenerator::invoke_interface(JavaClass* klass, int itable_index,
 
   // Lookup interface method table by linear search
   NearLabel lookup, found;
-  IncompatibleClassChangeStub* error =
-    IncompatibleClassChangeStub::allocate_or_share(JVM_SINGLE_ARG_ZCHECK(error));
+  IncompatibleClassChangeStub::Fast error =
+      IncompatibleClassChangeStub::allocate_or_share(JVM_SINGLE_ARG_CHECK);
 
   bind(lookup);
   subl(eax, 1);
-  jcc(less, error);
+  jcc(less, &error);
   cmpl(Address(edi), ebx);
   jcc(equal, found);
   addl(edi, 8);
@@ -2517,7 +2527,7 @@ void CodeGenerator::invoke_native(BasicType return_kind, address entry JVM_TRAPS
     case T_FLOAT:
     case T_DOUBLE:
       Assembler::Register freg = RegisterAllocator::allocate_float_register();
-      FPURegisterMap& fpu_map = frame()->fpu_register_map();
+      FPURegisterMap fpu_map = frame()->fpu_register_map();
 
       value.set_register(freg);
       fpu_map.push(freg);
@@ -2587,7 +2597,7 @@ void CodeGenerator::check_bytecode_counter() {
   }
 }
 
-void CodeGenerator::check_stack_overflow(Method* m JVM_TRAPS) {
+void CodeGenerator::check_stack_overflow(Method *m JVM_TRAPS) {
   Label stack_overflow, done;
 
   comment("Stack overflow check");
@@ -2598,9 +2608,9 @@ void CodeGenerator::check_stack_overflow(Method* m JVM_TRAPS) {
   jcc(above_equal, stack_overflow);
 bind(done);
 
-  StackOverflowStub* stub =
-    StackOverflowStub::allocate(stack_overflow, done, edx, ebx JVM_ZCHECK(stub));
-  stub->insert();
+  StackOverflowStub::Raw stub =
+      StackOverflowStub::allocate(stack_overflow, done, edx, ebx JVM_CHECK);
+  stub().insert();
 }
 
 void CodeGenerator::check_timer_tick(JVM_SINGLE_ARG_TRAPS) {
@@ -2615,10 +2625,9 @@ void CodeGenerator::check_timer_tick(JVM_SINGLE_ARG_TRAPS) {
 #endif
   bind(done);
   
-  TimerTickStub* stub =
-    TimerTickStub::allocate(Compiler::current()->bci(),
-      timer_tick, done JVM_ZCHECK(stub));
-  stub->insert();
+  TimerTickStub::Raw stub = TimerTickStub::allocate(Compiler::current()->bci(),
+                                                    timer_tick, done JVM_CHECK);
+  stub().insert();
 }
 
 CodeGenerator::Condition
@@ -2632,10 +2641,6 @@ CodeGenerator::convert_condition( const BytecodeClosure::cond_op condition) {
     case BytecodeClosure::le     : return less_equal;
     case BytecodeClosure::gt     : return greater;
     case BytecodeClosure::ge     : return greater_equal;
-#if ENABLE_CONDITIONAL_BRANCH_OPTIMIZATIONS
-    case BytecodeClosure::negative: return negative;
-    case BytecodeClosure::positive: return positive;
-#endif
   }
   SHOULD_NOT_REACH_HERE();
   return (CodeGenerator::Condition) -1;
@@ -2645,8 +2650,8 @@ CodeGenerator::convert_condition( const BytecodeClosure::cond_op condition) {
 
 void CodeGenerator::verify_fpu() {
 #if ENABLE_FLOAT
-  GUARANTEE(Compiler::frame()->fpu_register_map().is_empty(),
-            "FPU stack must be empty");
+  FPURegisterMap::Raw fpu_map = frame()->fpu_register_map();
+  GUARANTEE(fpu_map().is_empty(), "FPU stack must be empty");
 #endif
 }
 
@@ -2675,7 +2680,8 @@ void CodeGenerator::init_static_array(Value& array JVM_TRAPS) {
   movl(edi, array.lo_register());
 
   // Load the address of init_static_array bc into ESI.
-  Method::Raw cur_method = compiled_method()->method();
+  Method::Raw cur_method = 
+    Compiler::current()->current_compiled_method()->method();
   movl(esi, &cur_method);
   addl(esi, Method::base_offset() + bci());
   

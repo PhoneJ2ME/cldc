@@ -116,7 +116,7 @@ public:
 
  private:
 
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
+#ifndef PRODUCT
   static char* _class_CompileOnly;
   static char* _method_CompileOnly;
  private:
@@ -175,7 +175,7 @@ public:
    */
   static int parse_one_arg(int argc, char** argv);
 
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
+#ifndef PRODUCT
   // CompileOnly handling
   static bool must_check_CompileOnly() {
     return _method_CompileOnly != NULL || _class_CompileOnly != NULL;

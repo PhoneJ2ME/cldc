@@ -148,10 +148,6 @@ INCLUDE_DIRS         = -I$(DIST_DIR)/include \
 CPP_FLAGS           += $(INCLUDE_DIRS)
 CC_FLAGS            += $(INCLUDE_DIRS)
 
-ifeq ($(os_family), javacall)
-CPP_FLAGS           += -DNEED_CHECK_EVENTS
-endif
-
 all: $(ROMTESTVM)
 all: $(AMS_ROMTESTVM)
 
@@ -165,14 +161,14 @@ endif
 
 $(ROMTESTVM): $(SNI_OBJS) $(JVMX_LIB) $(JVMTEST_LIB) $(JVM_LIB)
 	@echo linking $@ ...
-	@$(LINK) $(SNI_OBJS) $(JVMX_LIB) $(JVMTEST_LIB) $(JVM_LIB) \
-		$(EXTRA_LIBS) $(THREAD_LIBS) $(LINK_FLAGS) $(LINK_OUT_SWITCH1) $(LINK_OUT_SWITCH2)$@
+	@$(LINK) $(LINK_FLAGS) $(SNI_OBJS) $(JVMX_LIB) $(JVMTEST_LIB) $(JVM_LIB) \
+		$(EXTRA_LIBS) $(THREAD_LIBS) $(LINK_OUT_SWITCH1) $(LINK_OUT_SWITCH2)$@
 	@echo ... generated $@
 
 $(AMS_ROMTESTVM): $(AMS_OBJS) $(JVMX_LIB) $(JVMTEST_LIB) $(JVM_LIB)
 	@echo linking $@ ...
-	@$(LINK) $(AMS_OBJS) $(JVMX_LIB) $(JVMTEST_LIB) $(JVM_LIB) \
-		$(EXTRA_LIBS) $(THREAD_LIBS) $(LINK_FLAGS) $(LINK_OUT_SWITCH1) $(LINK_OUT_SWITCH2)$@
+	@$(LINK) $(LINK_FLAGS) $(AMS_OBJS) $(JVMX_LIB) $(JVMTEST_LIB) $(JVM_LIB) \
+		$(EXTRA_LIBS) $(THREAD_LIBS) $(LINK_OUT_SWITCH1) $(LINK_OUT_SWITCH2)$@
 	@echo ... generated $@
 
 ## IMPL_NOTE: linux specific!
@@ -182,8 +178,8 @@ $(TEST_DLL): $(DLL_OBJS)
 
 $(ANI_ROMTESTVM): $(ANI_OBJS) $(JVMX_LIB) $(JVMTEST_LIB) $(JVM_LIB)
 	@echo linking $@ ...
-	@$(LINK) $(ANI_OBJS) $(ANIX_LIB) $(ANI_LIB) $(JVM_LIB) \
-	       	$(EXTRA_LIBS) $(THREAD_LIBS) $(LINK_FLAGS)     \
+	@$(LINK) $(LINK_FLAGS) $(ANI_OBJS) $(ANIX_LIB) $(ANI_LIB) $(JVM_LIB) \
+	       	$(EXTRA_LIBS) $(THREAD_LIBS)                                 \
                 $(LINK_OUT_SWITCH1) $(LINK_OUT_SWITCH2)$@
 	@echo ... generated $@
 

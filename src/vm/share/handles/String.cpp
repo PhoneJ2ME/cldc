@@ -132,7 +132,7 @@ jint String::last_index_of(jchar ch, jint fromIndex) {
   return -1;
 }
 
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
+#ifndef PRODUCT
 void String::print_value_on(Stream* st) {
   TypeArray::Raw t = value();
   if (t.is_null()) {

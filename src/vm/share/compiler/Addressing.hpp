@@ -36,13 +36,14 @@ class GenericAddress: public StackObj {
   virtual void write_barrier_epilog() { /* by default there's no write barrier */ }
 
  protected:
-  static inline VirtualStackFrame* frame ( void );
-
+  static inline VirtualStackFrame* frame ( void ) {
+    return jvm_fast_globals.compiler_frame;
+  }
   static inline CodeGenerator* code_generator ( void ) {
-    return _compiler_code_generator;
+    return jvm_fast_globals.compiler_code_generator;
   }
   static inline Method* method ( void ) {
-    return _compiler_method;
+    return jvm_fast_globals.compiler_method;
   }
 
   // default offsets to the low and high parts of the generic address

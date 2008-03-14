@@ -57,14 +57,10 @@ class RegisterNotation {
  };
 };
 #endif
-class RegisterAllocator {        
+class RegisterAllocator {
   enum {
     number_of_registers = Assembler::number_of_registers
   };
-
-  static inline CodeGenerator* code_generator ( void ) {
-    return _compiler_code_generator;
-  }
 
  public:
   typedef Assembler::Register Register;

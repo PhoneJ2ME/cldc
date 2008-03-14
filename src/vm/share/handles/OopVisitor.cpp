@@ -53,7 +53,7 @@ void SymbolField::print_on(Stream* st) {
 }
 #endif
 
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
+#if USE_DEBUG_PRINTING
 
 void OopPrinter::prologue() {
   _obj->print_value_on(st());

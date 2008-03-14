@@ -206,7 +206,7 @@ void ROMOptimizer::optimize(Stream *log_stream JVM_TRAPS) {
       if (EnableBaseOptimizations && RewriteROMConstantPool) {
         ROMHashtableManager hashtab_mgr;
         hashtab_mgr.initialize(SymbolTable::current(), StringTable::current()
-                                JVM_CHECK);
+				JVM_CHECK);
         ConstantPoolRewriter cp_rewriter(this, _log_stream, &hashtab_mgr);
         cp_rewriter.rewrite(JVM_SINGLE_ARG_CHECK);
         cp_rewriter.print_statistics(log_stream);
@@ -498,7 +498,7 @@ void ROMOptimizer::make_restricted_methods_final(JVM_SINGLE_ARG_TRAPS) {
     AccessFlags flags = klass().access_flags();
 
     if (!flags.is_final()) {
-          bool hidden = is_in_hidden_package(&klass JVM_CHECK);
+	  bool hidden = is_in_hidden_package(&klass JVM_CHECK);
       if (hidden || is_in_restricted_package(&klass)) {
         make_virtual_methods_final(&klass, &log_vector JVM_CHECK);
       }
@@ -1040,8 +1040,13 @@ void ROMOptimizer::fill_interface_implementation_cache(JVM_SINGLE_ARG_TRAPS) {
     interface_implementation_cache()->int_at_put(i, NOT_IMPLEMENTED); 
     direct_interface_implementation_cache()->int_at_put(i, NOT_IMPLEMENTED); 
   }
-
-  for (i = 0; i < Universe::number_of_java_classes(); i++) {
+  //return;
+#if USE_SOURCE_IMAGE_GENERATOR
+  i = 0;
+#else
+  i = ROM::number_of_system_classes();
+#endif
+  for (; i < Universe::number_of_java_classes(); i++) {
     UsingFastOops fast;
     JavaClass::Fast java_cls = Universe::class_from_id(i);
 
@@ -1650,7 +1655,7 @@ public:
 
   virtual void bytecode_prolog(JVM_SINGLE_ARG_TRAPS) {
     JVM_IGNORE_TRAPS;
-    _code = current_bytecode();
+    _code = method()->bytecode_at(bci());
   }
 
   virtual void handle_exception(JVM_SINGLE_ARG_TRAPS) {
@@ -1866,7 +1871,11 @@ ROMOptimizer::process_quickening_failure(Method *method) {
 
     // NOTE: we disable some ROM optimizations for this class,
     // so that the failure can be detected at run-time.
-    InstanceClass::Raw( method->holder() )().set_is_non_optimizable();
+    UsingFastOops fast_oops;
+    InstanceClass::Fast klass = method->holder();
+    AccessFlags access_flags = klass().access_flags();
+    access_flags.set_is_non_optimizable();
+    klass().set_access_flags(access_flags);
 
 #if USE_ROM_LOGGING
     _log_stream->print_cr("Failed to quicken bytecodes of ");
@@ -2077,7 +2086,7 @@ int ROMOptimizer::rename_non_public_fields(InstanceClass *klass JVM_TRAPS) {
   int count = 0;
 
   jint package_flags = get_package_flags(klass JVM_CHECK_0);
-  const AccessFlags class_flags = klass->access_flags();
+  AccessFlags class_flags = klass->access_flags();
 
   for (int i=0; i<fields().length(); i+= 5) {
     //5-tuples of shorts [access, name index, sig index, initval index, offset]
@@ -2281,8 +2290,8 @@ bool ROMOptimizer::is_field_removable(InstanceClass *ic, int field_index,
     }
   }
 
-  const jint package_flags = get_package_flags(ic JVM_CHECK_0);
-  const AccessFlags class_flags = ic->access_flags();
+  jint package_flags = get_package_flags(ic JVM_CHECK_0);
+  AccessFlags class_flags = ic->access_flags();
 
   if (is_member_reachable_by_apps(package_flags, class_flags, flags)) {
     return false;
@@ -2429,10 +2438,10 @@ void ROMOptimizer::remove_unused_symbols(JVM_SINGLE_ARG_TRAPS) {
     for (int i=0; i<length; i++) {
       symbol = symbol_table().obj_at(i);
       if (!symbol.is_null() && !ROMWriter::write_by_reference(&symbol) &&
-          !is_symbol_alive(&live_symbols, &symbol)) {
-        symbol_table().obj_at_clear(i);
-        count ++;
-        bytes += symbol().length();
+	  !is_symbol_alive(&live_symbols, &symbol)) {
+	symbol_table().obj_at_clear(i);
+	count ++;
+	bytes += symbol().length();
 #if USE_ROM_LOGGING
         log_vector.add_element(&symbol JVM_CHECK);
 #endif

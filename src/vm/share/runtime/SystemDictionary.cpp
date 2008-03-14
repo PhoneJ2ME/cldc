@@ -151,18 +151,15 @@ ReturnOop SystemDictionary::fetch_buffer(LoaderContext *loader_ctx JVM_TRAPS) {
 #if USE_BINARY_IMAGE_LOADER
   ObjArray::Raw bad_classes = Task::current()->names_of_bad_classes();
   if (bad_classes.not_null()) {
-    GUARANTEE((bad_classes().length() % 2) == 0, "Must be pairs");
-    for (int i = 0; i < bad_classes().length(); i += 2) {
+    for (int i=0; i<bad_classes().length(); i++) {
       Symbol::Raw name = bad_classes().obj_at(i);
       if (name.equals(loader_ctx->class_name())) {
-        Symbol::Raw exception_class_name = bad_classes().obj_at(i + 1);
-        String::Raw message;
         /*
-         * This class had generate an error during Monet
-         * conversion. The TCK requires us to throw that Error, not
+         * This class had generate a ClassFormatError during Monet
+         * conversion. The TCK requires us to throw an Error, not
          * ClassNoDefFoundException. 
          */
-        Throw::allocate_and_throw(&exception_class_name, &message JVM_THROW_0);
+        loader_ctx->set_fail_mode(ErrorOnFailure);
       }
     }
   }
@@ -415,14 +412,14 @@ ReturnOop SystemDictionary::create_fake_class(LoaderContext *loader_ctx JVM_TRAP
                                                         JVM_CHECK_0);
   // set the embedded oopmap to indicate there are no static or non-static
   // oops
-  {
-    const int offset = ic().first_nonstatic_map_offset();
-    ic().oop_map_at_put(offset, OopMapSentinel);   // a blank non-static oopmap
-    ic().oop_map_at_put(offset+1, OopMapSentinel); // a blank static oopmap
-  }
+  int offset = ic().first_nonstatic_map_offset();
+  ic().oop_map_at_put(offset, OopMapSentinel);   // a blank non-static oopmap
+  ic().oop_map_at_put(offset+1, OopMapSentinel); // a blank static oopmap
 
   ClassInfo::Fast klass_info = ic().class_info();
-  klass_info().set_is_fake_class();
+  AccessFlags flags = klass_info().access_flags();
+  flags.set_is_fake_class();
+  klass_info().set_access_flags(flags);
   klass_info().set_name(loader_ctx->class_name());
   // ROMizer uses a fake class to represent a missing class.
   // We need to fully initialize this object, so that an application with 

@@ -109,7 +109,8 @@ class VFPMemAccess: public Instruction {
 class Branch: public Instruction {
  public:
   Branch(address addr) : Instruction(addr) {
-    GUARANTEE( kind() == 5, "must be branch instruction");
+    GUARANTEE(Compiler::current()->code_generator()->has_overflown_compiled_method()
+              || kind() == 5, "must be branch instruction");
   }
 
   int imm24() const {

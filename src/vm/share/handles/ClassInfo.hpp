@@ -122,19 +122,14 @@ class ClassInfo: public Oop {
   void set_access_flags(AccessFlags access_flags) {
     int_field_put(access_flags_offset(), access_flags.as_int());
   }
-  void set_is_verified( void ) {
+  void set_is_verified() {
     AccessFlags flags = access_flags();
     flags.set_is_verified();
     set_access_flags(flags);
   }
-  void set_has_vanilla_constructor( void ) {
+  void set_has_vanilla_constructor() {
     AccessFlags flags = access_flags();
     flags.set_has_vanilla_constructor();
-    set_access_flags(flags);
-  }
-  void set_is_fake_class( void ) {
-    AccessFlags flags = access_flags();
-    flags.set_is_fake_class();
     set_access_flags(flags);
   }
 
@@ -318,17 +313,9 @@ class ClassInfo: public Oop {
   }
   void iterate_tables(OopROMVisitor* visitor);
 #endif
-
-#if !defined(PRODUCT) || ENABLE_ROM_GENERATOR || ENABLE_TTY_TRACE ||\
-                         ENABLE_PERFORMANCE_COUNTERS
+#ifndef PRODUCT
   void print_name_on(Stream* st);
-#endif
-
-#if !defined(PRODUCT) || ENABLE_ROM_GENERATOR || ENABLE_TTY_TRACE
   void print_value_on(Stream* st);
-#endif
-
-#if !defined(PRODUCT)
   void iterate(OopVisitor* visitor);
 
   static void iterate_oopmaps(oopmaps_doer do_map, void* param);

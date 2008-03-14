@@ -43,10 +43,8 @@ bool BytecodeOptimizer::has_static_arrays(Method *method, int& new_method_size) 
 #endif
 
   int old_bci, new_bci = 0;  
-  int start_bci = 0;  // bci of first instruction which could be transformed
-                      // into _init_static_array
-  int old_bcis[4];    // bcis of instructions which could be transformed
-                      // into _init_static_array
+  int start_bci = 0; //bci of first instruction which could be transrofmed into _init_static_array
+  int old_bcis[4]; //bcis of instructions which could be transrofmed into _init_static_array
   bool result = false;
 
   reset_parser();
@@ -55,15 +53,15 @@ bool BytecodeOptimizer::has_static_arrays(Method *method, int& new_method_size) 
   for (old_bci = 0; old_bci != method->code_size();) {
     GUARANTEE(old_bci < method->code_size(), "invalid bytecode");
 
-    const Bytecodes::Code code = method->bytecode_at( old_bci );
-    const int len = method->bytecode_length_for( old_bci ); 
+    Bytecodes::Code code = method->bytecode_at(old_bci);
+    int len = Bytecodes::length_for(method, old_bci); 
     int new_len = len;
 
     if (code == Bytecodes::_tableswitch || code == Bytecodes::_lookupswitch) {
-      const int old_aligned = align_size_up(old_bci + 1, sizeof(jint));
-      const int new_aligned = align_size_up(new_bci + 1, sizeof(jint));
-      const int old_pad = old_aligned - old_bci;
-      const int new_pad = new_aligned - new_bci;
+      int old_aligned = align_size_up(old_bci + 1, sizeof(jint));
+      int new_aligned = align_size_up(new_bci + 1, sizeof(jint));
+      int old_pad = old_aligned - old_bci;
+      int new_pad = new_aligned - new_bci;
       new_len = len + (new_pad - old_pad);
       result = result || ((new_pad - old_pad) != 0); //it's unnecessary, cause old_bci already ne new_bci, but....
     }
@@ -164,10 +162,6 @@ bool BytecodeOptimizer::has_static_arrays(Method *method, int& new_method_size) 
     }
     old_bci += len;
   }
-  // Mark the address of code[code_length] so that we can rewrite the
-  // exception header correctly.  The end_pc of an exception range is one
-  // beyond the last pc that could cause an exception
-  _owner->_new_bytecode_address.short_at_put(old_bci, new_bci);
   
   new_method_size = new_bci;
   return result;  
@@ -202,11 +196,12 @@ ReturnOop BytecodeOptimizer::optimize_static_arrays(Method *method JVM_TRAPS) {
     //new_bci could be larger than code size if init_static_array is the last bytecode 
     //and code size is decreased
     //GUARANTEE(new_bci < new_method.code_size(), "sanity");
+    int old_len, new_len;
 
     // (1) determine the length of this bytecode
-    const Bytecodes::Code code = method->bytecode_at(old_bci);
-    const int old_len = method->bytecode_length_for(old_bci);
-    int new_len = old_len;
+    Bytecodes::Code code = method->bytecode_at(old_bci);
+    old_len = Bytecodes::length_for(method, old_bci);
+    new_len = old_len;
 
     // (2) Stream the bytecode, using new CP index and branch offsets
     //     if necessary
@@ -660,20 +655,27 @@ ReturnOop BytecodeOptimizer::optimize_bytecodes(Method *p_method JVM_TRAPS) {
   for (bci = 0; bci != result().code_size();) {
     GUARANTEE(bci < result().code_size(), "invalid bytecode");
 
-    const Bytecodes::Code code = result().bytecode_at(bci);
-    const int len = result().bytecode_length_for(bci);
+    Bytecodes::Code code = result().bytecode_at(bci);
+    int len = Bytecodes::length_for(&result, bci);
 
     switch (code) {
     case Bytecodes::_fast_igetfield:
     case Bytecodes::_fast_agetfield:
       {
-        const int offset = ENABLE_NATIVE_ORDER_REWRITING
-                           ? result().get_native_ushort(bci+1)
-                           : result().get_java_ushort  (bci+1);
-        if( offset < 256 ) {
-          const Bytecodes::Code new_code = code == Bytecodes::_fast_igetfield
-                           ? Bytecodes::_fast_igetfield_1
-                           : Bytecodes::_fast_agetfield_1;
+        int offset;
+        if (ENABLE_NATIVE_ORDER_REWRITING) {
+          offset = result().get_native_ushort(bci+1);
+        } else {
+          offset = result().get_java_ushort(bci+1);
+        }
+        if (offset < 256) {
+          Bytecodes::Code new_code;
+
+          if (code == Bytecodes::_fast_igetfield) {
+            new_code = Bytecodes::_fast_igetfield_1;
+          } else {
+            new_code = Bytecodes::_fast_agetfield_1;
+          }
           result().bytecode_at_put_raw(bci, new_code);
           result().ubyte_at_put(bci+1, offset);
           result().bytecode_at_put_raw(bci+2, Bytecodes::_nop);
@@ -696,14 +698,14 @@ ReturnOop BytecodeOptimizer::optimize_bytecodes(Method *p_method JVM_TRAPS) {
   for (bci = 0; bci != result().code_size();) {
     GUARANTEE(bci < result().code_size(), "invalid bytecode");
 
-    const Bytecodes::Code code = result().bytecode_at(bci);
-    const int len = result().bytecode_length_for(bci);
+    Bytecodes::Code code = result().bytecode_at(bci);
+    int len = Bytecodes::length_for(&result, bci);
 
     switch (code) {
     case Bytecodes::_fast_igetfield_1:
     case Bytecodes::_fast_agetfield_1:
       if (last_code == Bytecodes::_aload_0 && !_owner->is_branch_target(bci)) {
-        const int offset = (result().ubyte_at(bci + 1)) * BytesPerWord;
+        int offset = (result().ubyte_at(bci + 1)) * BytesPerWord;
         Bytecodes::Code new_code;
 
         if (offset == 4) {

@@ -33,23 +33,41 @@
 
 extern "C" { extern address gp_base_label; }
 
-class BinaryAssembler: public BinaryAssemblerCommon {
- public:
-  void instruction_emitted( void ) const {
-#if !ENABLE_CODE_OPTIMIZER
-    CodeInterleaver* cil = _interleaver;
-    if (cil != NULL) { 
-      cil->emit();
-    }
-#endif    
-  }
-
-  void emit_raw( const int instr ) {
-    emit_code_int( instr );
+class BinaryAssembler: public Macros {
+ private:
+  // helpers
+  jint offset_at(jint pos) const { 
+    return CompiledMethod::base_offset() + pos; 
   }
 
  public:
-#if !defined(PRODUCT) || USE_COMPILER_COMMENTS
+  jint code_size() const            { return _code_offset; }
+
+  jint relocation_size() const      { return _relocation.size(); }
+  jint free_space() const {
+    return (_relocation.current_relocation_offset() + sizeof(jushort)) -
+            offset_at(code_size());
+  }
+  jint code_end_offset() const       { return offset_at(code_size()); }
+ 
+  // check if there's room for a few extra bytes in the compiled method
+  bool has_room_for(int bytes) { 
+    return free_space() >= bytes + /* slop */8;
+  }
+
+  void signal_output_overflow();
+  PRODUCT_STATIC void emit_raw(int instr);
+
+  void zero_literal_count() { 
+    _unbound_literal_count = 0;
+    _code_offset_to_force_literals = 0x7FFFFFFF; // never need to force
+    _code_offset_to_desperately_force_literals = 0x7FFFFFFF;
+  }
+
+ public:
+#if defined(PRODUCT) && !USE_COMPILER_COMMENTS
+  static
+#else
   virtual
 #endif
   void emit(int instr) {
@@ -57,15 +75,18 @@ class BinaryAssembler: public BinaryAssemblerCommon {
 #if !defined(PRODUCT) || USE_COMPILER_COMMENTS
     if (PrintCompiledCodeAsYouGo) { 
        Disassembler d(tty);
-       tty->print("%d:\t", _code_offset );
+       tty->print("%d:\t", instance()->_code_offset);
        tty->print("0x%08x\t", instr);
-       d.disasm(NULL, instr, _code_offset );
+       d.disasm(NULL, instr, instance()->_code_offset);
        tty->cr();
     }
 #endif
     emit_raw(instr);
   }
 
+#if defined(PRODUCT) && !USE_COMPILER_COMMENTS
+  static
+#endif 
   void emit_int(int instr) {
     // emit instruction
 #if !defined(PRODUCT) || USE_COMPILER_COMMENTS
@@ -78,6 +99,9 @@ class BinaryAssembler: public BinaryAssemblerCommon {
   }
 
 #if ENABLE_EMBEDDED_CALLINFO
+#if defined(PRODUCT) && !USE_COMPILER_COMMENTS
+  static
+#endif 
   void emit_ci(CallInfo info) {
     // emit call info
 #if !defined(PRODUCT) || USE_COMPILER_COMMENTS
@@ -93,9 +117,7 @@ class BinaryAssembler: public BinaryAssemblerCommon {
 #endif // ENABLE_EMBEDDED_CALLINFO
 
   NOT_PRODUCT(virtual) 
-  void ldr_big_integer(Register rd, int imm32, Condition cond = al) {
-    ldr_literal(rd, NULL, imm32, cond);
-  }
+  void ldr_big_integer(Register rd, int imm32, Condition cond = al);
 
 #if ENABLE_ARM_VFP
   void fld_literal(Register rd, int imm32, Condition cond = al);
@@ -111,7 +133,7 @@ class BinaryAssembler: public BinaryAssemblerCommon {
   void mov_imm(Register rd, address addr, Condition cond = al);
 
   // generates better C++ code than ldr(rd, imm_index(rn, offset_12))
-  static void ldr_imm_index(Register rd, Register rn, int offset_12=0);
+  PRODUCT_STATIC void ldr_imm_index(Register rd, Register rn, int offset_12=0);
 
 public:
 
@@ -133,7 +155,8 @@ public:
     }
 
   private:
-    CompilerIntArray* _buffer;
+    FastOopInStackObj __must_appear_before_fast_objects__;
+    TypeArray::Fast   _buffer;
     BinaryAssembler*  _assembler;
     int               _saved_size;
     int               _current;
@@ -142,19 +165,100 @@ public:
 
   CodeInterleaver*    _interleaver;
 
+#ifndef PRODUCT
+  BinaryAssembler* instance() {
+    return this;
+  }
+#else
+  static BinaryAssembler* instance() {
+    return (BinaryAssembler*)((void*)jvm_fast_globals.compiler_code_generator);
+  }
+#endif
+
  public:
   // creation
-  void initialize( OopDesc* compiled_method ) {
-    BinaryAssemblerCommon::initialize(compiled_method);
+  BinaryAssembler(CompiledMethod* compiled_method) : 
+          _relocation(compiled_method) {
+    _relocation.set_assembler(this);
+    _compiled_method = compiled_method;
+    _code_offset     = 0;
+    zero_literal_count();
     CodeInterleaver::initialize(this);
   }
 
-  int instruction_at(const jint pos) const { 
-    return BinaryAssemblerCommon::int_at(pos); 
+  BinaryAssembler(CompilerState* compiler_state, 
+                  CompiledMethod* compiled_method);
+  void save_state(CompilerState *compiler_state);
+  // accessors
+  CompiledMethod* compiled_method() { 
+      return _compiled_method; 
   }
+  address addr_at(jint pos) const { 
+      return (address)(_compiled_method->field_base(offset_at(pos))); 
+  }
+  int instruction_at(jint pos) const { 
+      return *(int*)(_compiled_method->field_base(offset_at(pos))); 
+  }
+  bool has_overflown_compiled_method() const {
+    // Using 8 instead of 0 as defensive programming
+    // The shrink operation at the end of compilation will regain the extra
+    // space.
+    // The extra space ensures that there is always a sentinel at the end of
+    // the relocation data and that there is always a null oop that the last
+    // relocation entry can address. 
+    return free_space() < 8; 
+  }
+  
+  // If compiler_area is enabled, move the relocation data to higher
+  // address to make room for more compiled code.
+  void ensure_compiled_method_space(int delta = 0);
 
   // branch support
-  typedef BinaryLabel Label;
+
+  // Labels are used to refer to (abstract) machine code locations.
+  // They encode a location >= 0 and a state (free, bound, linked).
+  // If code-relative locations are used (e.g. offsets from the
+  // start of the code, Labels are relocation-transparent, i.e.,
+  // the code can be moved around even during code generation (GC).
+  class Label {
+   public:
+    int _encoding;
+   private:
+    void check(int position) {
+      (void)position;
+      GUARANTEE(position >= 0, "illegal position"); 
+    }
+    friend class CodeGenerator;
+    friend class CompilationQueueElement;
+    friend class Compiler;
+    friend class Entry;
+    friend class BinaryAssembler;
+
+   public:
+    // manipulation
+    void unuse() { 
+      _encoding = 0; 
+    }
+    void link_to(int position) { 
+      check(position); 
+      _encoding = - position - 1; 
+    }
+    void bind_to(int position) { 
+      check(position); 
+      _encoding =   position + 1; }
+
+    // accessors
+    int  position () const { 
+      return abs(_encoding) - 1; 
+    } // -1 if free label
+    bool is_unused() const { return _encoding == 0; }
+    bool is_linked() const { return _encoding <  0; }
+    bool is_bound () const { return _encoding >  0; }
+
+    // creation/destruction
+    Label()                { unuse(); }
+    ~Label()               { /* do nothing for now */ }
+  };
 
 #if ENABLE_LOOP_OPTIMIZATION && ARM
 public:
@@ -189,9 +293,118 @@ public:
 #endif
 
 public:
+  class LiteralPoolElementDesc: public MixedOopDesc {
+  public:
+    LiteralPoolElementDesc *_next;
+    OopDesc *_literal_oop;
+    jint     _bci;
+    jint     _label;
+    jint     _literal_int;
+
+    bool is_bound() const {
+      return _bci != 0x7fffffff;
+    }
+
+    bool matches(const OopDesc* oop, const int imm32) const {
+      return oop == _literal_oop && imm32 == _literal_int;
+    }
+  };
+
+protected:
+  class LiteralPoolElement: public MixedOop {
+  public:
+    HANDLE_DEFINITION(LiteralPoolElement, MixedOop);
+
+    static size_t allocation_size() {
+      return align_allocation_size(sizeof(LiteralPoolElementDesc));
+    }
+    static size_t pointer_count() { return 2; }
+
+  public:
+    // To avoid endless lists of friends the static offset computation
+    // routines are all public.
+    static jint next_offset() {
+      return FIELD_OFFSET(LiteralPoolElementDesc, _next);
+    }
+    static jint literal_oop_offset() {
+      return FIELD_OFFSET(LiteralPoolElementDesc, _literal_oop);
+    }
+    static jint bci_offset() {
+      return FIELD_OFFSET(LiteralPoolElementDesc, _bci);
+    }
+    static jint label_offset() {
+      return FIELD_OFFSET(LiteralPoolElementDesc, _label);
+    }
+    static jint literal_int_offset() {
+      return FIELD_OFFSET(LiteralPoolElementDesc, _literal_int);
+    }
+
+  private:
+    enum {
+      // BCI indicating this literal is still unbound.
+      not_yet_defined_bci = 0x7fffffff
+    };
+
+  public:
+    // Note that the bci() field is used as a convenience.
+    // If the label is unbound, then bci() == 0x7fffffff
+    // If the label is bound, then bci()  is the same as the label's position.
+
+    int bci() const {
+      return int_field(bci_offset());
+    }
+    void set_bci(int i) {
+      int_field_put(bci_offset(), i);
+    }
+
+    int literal_int() const {
+      return int_field(literal_int_offset());
+    }
+    void set_literal_int(int i) {
+      int_field_put(literal_int_offset(), i);
+    }
+
+    Label label() const {
+      Label L;
+      L._encoding = int_field(label_offset());
+      return L;
+    }
+
+    void set_label(Label& value) {
+      int_field_put(label_offset(), value._encoding);
+    }
+
+    ReturnOop next() const  {
+      return obj_field(next_offset());
+    }
+    void set_next(Oop* oop) {
+      obj_field_put(next_offset(), oop);
+    }
+
+    ReturnOop literal_oop() const {
+      return obj_field(literal_oop_offset());
+    }
+    void set_literal_oop(const Oop *oop) {
+      obj_field_put(literal_oop_offset(), oop);
+    }
+    
+    bool is_bound() const {
+      return ((LiteralPoolElementDesc*)obj())->is_bound();
+    }
+
+  public:
+    static ReturnOop allocate(const Oop* oop, int imm32 JVM_TRAPS);
+      
+#if !defined(PRODUCT) || USE_COMPILER_COMMENTS
+    void print_value_on(Stream*s);
+#endif
+  };
+
+public:
 #if ENABLE_NPCE
   enum {
-    no_second_instruction = -1 //the byte code won't emit multi-LDR instructions                                         
+    no_second_instruction = -1 //the byte code won't emit multi-LDR instructions
+                                         
   };
 
   //emit a item into relocation stream. the item contain the address of LDR instr
@@ -229,12 +442,12 @@ public:
   };
   //if we move a array load action ahead of the array boundary checking
   //we mark it into the relocation item.
-  void emit_pre_load_item(const int ldr_offset, const int stub_offset) {
-    emit_relocation(Relocation::pre_load_type, ldr_offset, stub_offset);
+  void emit_pre_load_item(int ldr_offset, int stub_offset) {
+    _relocation.emit(Relocation::pre_load_type, ldr_offset, stub_offset);
   }
 
-  void emit_pre_load_item(const int ldr_offset) {
-    emit_pre_load_item(ldr_offset, _code_offset);
+  void emit_pre_load_item(int ldr_offset) {
+    _relocation.emit(Relocation::pre_load_type, ldr_offset, _code_offset);
   }
 
   //begin_of_cc represent the start address of the Compilation Continuous
@@ -250,14 +463,21 @@ public:
 #endif
 
   void emit_long_branch() {
-    emit_relocation(Relocation::long_branch_type);
+    _relocation.emit(Relocation::long_branch_type, _code_offset);
+  }
+  
+  void emit_compressed_vsf(VirtualStackFrame* frame) {
+    _relocation.emit_vsf(_code_offset, frame);
   }
 
-#if ENABLE_PAGE_PROTECTION  
-  void emit_compressed_vsf(VirtualStackFrame* frame) {
-    emit_vsf(frame);
+#if ENABLE_CODE_PATCHING
+  void emit_checkpoint_info_record(int instruction_offset,
+                                   int stub_position) {
+    _relocation.emit_checkpoint_info_record(instruction_offset, 
+                                            instruction_at(instruction_offset),
+                                            stub_position);
   }
-#endif
+#endif // ENABLE_CODE_PATCHING
 
   void branch(Label& L, bool link, Condition cond);
     // alignment is not used on ARM, but is needed to make
@@ -283,7 +503,8 @@ public:
       access_literal_pool(rd, lpe, cond, true);
   }
 
-  void ldr_literal(Register rd, OopDesc* obj, int offset, Condition cond = al);
+  void ldr_literal(Register rd, const Oop* oop, int offset, 
+                   Condition cond = al);
   void ldr_oop (Register r, const Oop* obj, Condition cond = al);
 
   // miscellaneous helpers
@@ -294,13 +515,22 @@ public:
     if (GenerateCompilerAssertions) {
       breakpoint();
     }
-    emit_sentinel(); 
+    _relocation.emit_sentinel(); 
   }
 
+  void emit_osr_entry(jint bci) { 
+    _relocation.emit(Relocation::osr_stub_type, _code_offset, bci); 
+  }
   static int ic_check_code_size() { 
     // no inline caches for ARM (yet)
     return 0; 
   } 
+
+#if !defined(PRODUCT) || USE_COMPILER_COMMENTS
+  NOT_PRODUCT(virtual) void comment(const char* /*str*/, ...);
+#else
+  NOT_PRODUCT(virtual) void comment(const char* /*str*/, ...) {}
+#endif
 
   void ldr_using_gp(Register reg, address target, Condition cond = al) { 
     int offset = target - (address)&gp_base_label;
@@ -341,24 +571,53 @@ public:
     }  
   }
 
-  LiteralPoolElement* find_literal(OopDesc* obj, const int imm32,
-                                   int offset JVM_TRAPS);
-  void append_literal(LiteralPoolElement* literal);
-  void write_literal(LiteralPoolElement* literal);
+  ReturnOop find_literal(const Oop* oop, int imm32, int offset JVM_TRAPS);
+  void append_literal(LiteralPoolElement *literal);
+  void write_literal(LiteralPoolElement *literal);
   void access_literal_pool(Register rd, LiteralPoolElement* literal,
                            Condition cond, bool is_store);
+
 public:
-  void write_literals(const bool force = false);
+  void write_literals(bool force = false);
   void write_literals_if_desperate(int extra_bytes = 0);
 
+  // We should write out the literal pool at our first convenience
+  bool need_to_force_literals() {
+    return _code_offset >= _code_offset_to_force_literals;
+  }
+
+  // We should write out the literal pool very very soon, even if it
+  // generates bad code
+  bool desperately_need_to_force_literals(int extra_bytes = 0) {
+    return _code_offset + extra_bytes >= _code_offset_to_desperately_force_literals;
+  }
+
+  int unbound_literal_count() { return _unbound_literal_count; }
+
 private:
+  friend class RelocationWriter;
   friend class CodeInterleaver;
+#if ENABLE_INTERNAL_CODE_OPTIMIZER
   friend class Compiler;
+#endif
+
+private:
+  FastOopInStackObj         __must_appear_before_fast_objects__;
+  CompiledMethod*           _compiled_method;
+  jint                      _code_offset;
+  RelocationWriter          _relocation;
+  LiteralPoolElement::Fast  _first_literal;
+  LiteralPoolElement::Fast  _first_unbound_literal;
+  LiteralPoolElement::Fast  _last_literal;
+  int                       _unbound_literal_count;
+  int                       _code_offset_to_force_literals;
+                            // and to boldly split infinitives
+  int                      _code_offset_to_desperately_force_literals;  
 };
 
 #if defined(PRODUCT) && !USE_COMPILER_COMMENTS
 inline void Assembler::emit(int instr) {
-  ((BinaryAssembler*)_compiler_code_generator)->emit_int(instr);
+  BinaryAssembler::emit_int(instr);
 }
 #endif // defined(PRODUCT) && !USE_COMPILER_COMMENTS
 

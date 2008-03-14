@@ -32,6 +32,7 @@ class BytecodeCompileClosure: public BytecodeClosure {
   CodeGenerator* _code_generator;
   int       _active_bci;
   jubyte    _has_exception_handlers;
+  jubyte    _has_overflown_output;
   bool      _has_clinit;   // if this or any super has clinit 
 #if ENABLE_CODE_PATCHING
   static int _jump_from_bci;
@@ -49,40 +50,30 @@ class BytecodeCompileClosure: public BytecodeClosure {
     _compiler = compiler;
   }
 #if ENABLE_CODE_PATCHING
-  static int jump_from_bci(void) {
-    return _jump_from_bci;
-  }
-  static void set_jump_from_bci(const int bci) {
+  static void set_jump_from_bci(int bci) {
     _jump_from_bci = bci;
   }
-  void set_jump_from_current_bci(const int dest) {
-    const int current= bci();
-    if( dest < current ) {
-      set_jump_from_bci( bci );
-    }
+  static int jump_from_bci() {
+    return _jump_from_bci;
   }
-#else
-  static void set_jump_from_bci(const int /*bci*/) {}
-  static void set_jump_from_current_bci(const int /*dest*/) {}
 #endif  
-  void set_active_bci(const int bci) {
+  void set_active_bci(int bci) {
     _active_bci = bci;
   }
-  int active_bci(void) const {
+  int active_bci() const {
     return _active_bci;
   }
-  bool is_active_bci(const int bci) const {
-    return _active_bci == bci;
+  bool is_active_bci() const {
+    return _active_bci == bci();
   }
-  bool is_active_bci(void) const {
-    return is_active_bci( bci() );
-  }
-
   void set_has_clinit(bool val) {
     _has_clinit = val;
   }
-  bool has_clinit(void) const {
+  bool has_clinit() {
     return _has_clinit;
+  }
+  void signal_output_overflow() {
+    _has_overflown_output = (jubyte)true;
   }
   // Epilogue and prologue.
   virtual void bytecode_prolog(JVM_SINGLE_ARG_TRAPS);
@@ -136,9 +127,6 @@ class BytecodeCompileClosure: public BytecodeClosure {
   virtual void branch_if     (cond_op cond, int dest JVM_TRAPS);
   virtual void branch_if_icmp(cond_op cond, int dest JVM_TRAPS);
   virtual void branch_if_acmp(cond_op cond, int dest JVM_TRAPS);
-#if ENABLE_CONDITIONAL_BRANCH_OPTIMIZATIONS
-  void branch_if_flags(JVM_SINGLE_ARG_TRAPS);
-#endif
 
   // Compare operations.
   virtual void compare(BasicType kind, cond_op cond JVM_TRAPS);
@@ -230,17 +218,18 @@ class BytecodeCompileClosure: public BytecodeClosure {
 
   // Accessors for the next bytecode index.
   int _next_bytecode_index;
-  int  next_bytecode_index    (void) const { return _next_bytecode_index; }
-  void set_next_bytecode_index(const int bci) { _next_bytecode_index = bci; }
+  int  next_bytecode_index()       const { return _next_bytecode_index; }
+  void set_next_bytecode_index(int bci)  { _next_bytecode_index = bci;  }
+  void set_default_next_bytecode_index(Method* method, jint bci);
 
   bool is_compilation_done()   const { return next_bytecode_index() == -1;  }
   void terminate_compilation()       { set_next_bytecode_index(-1);         }
 
   // Accessor for the stack frame.
-  inline VirtualStackFrame* frame     ( void ) const;
+  inline VirtualStackFrame* frame() const;
 
   // Accessors for the code generator used to do the compilation.
-  inline CodeGenerator* code_generator( void ) const;
+  inline CodeGenerator* code_generator() const;
 
   friend class CodeGenerator;
   friend class ForwardBranchOptimizer;
@@ -249,15 +238,9 @@ class BytecodeCompileClosure: public BytecodeClosure {
   void frame_pop(Value& value);
 
 private:
-  // If next bytecode can be read ahead, returns its index, otherwise -1
-  int get_next_bci( void ) const;
-
-  void set_default_next_bytecode_index(const jint bci);
-
   void throw_null_pointer_exception(JVM_SINGLE_ARG_TRAPS);
   void array_check(Value& array, Value& index JVM_TRAPS);
 
-  void osr_entry(JVM_SINGLE_ARG_TRAPS);
 #if ENABLE_ISOLATES
   // Determine the requirement for a class initialization barrier
   // when using a class. The access_static_var flag indicate that

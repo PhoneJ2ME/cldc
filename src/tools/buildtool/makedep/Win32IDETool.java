@@ -1178,9 +1178,6 @@ class VC6VMProject extends VC6Project {
         if (tool().isOptionEnabled("ENABLE_ISOLATES")) {
             globalProps.put("ENABLE_ISOLATES", "true");
         }
-        if (tool().isOptionEnabled("ENABLE_REFLECTION")) {
-            globalProps.put("ENABLE_REFLECTION", "true");
-        }
         if (this.type == TARGET) {
             if (tool().isOptionEnabled("ENABLE_MONET")) {
                 globalProps.put("ENABLE_MONET", "true");

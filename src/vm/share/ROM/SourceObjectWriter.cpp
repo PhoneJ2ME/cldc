@@ -601,7 +601,7 @@ void SourceObjectWriter::put_compiled_method_symbolic(CompiledMethod *cm,
 
   const address value = (address)cm->int_field(offset);
 
-  if (value == (address)Java_void_unimplemented) {
+  if (value == (address)Java_unimplemented) {
     // For midp and the like, we occassionally compile things that are
     // not yet defined.
     if ((method.is_native() || method.is_abstract()) &&
@@ -771,7 +771,7 @@ void SourceObjectWriter::put_c_function(Method *method, address addr,
     done:
     GUARANTEE(name != NULL, "sanity");
   } else {
-    if (addr == (address)Java_void_unimplemented) {
+    if (addr == (address)Java_unimplemented) {
       address entry_addr = method->execution_entry();
       bool is_native_entry = false;
 
@@ -785,7 +785,7 @@ void SourceObjectWriter::put_c_function(Method *method, address addr,
 
       if (is_native_entry) {
         // This is a class built in this VM that has a fixed entry
-        name = "Java_void_unimplemented";
+        name = "Java_unimplemented";
       } else {
         // We're romizing a class that's not part of the VM (e.g.,
         // we're romizing MIDP using a CLDC-only VM.) We failed to
@@ -814,8 +814,8 @@ void SourceObjectWriter::put_c_function(Method *method, address addr,
         write_kvm_method_stub(method, name);
       } else {
         _declare_stream->print_cr("extern \"C\" %s %s();", 
-                                  get_native_function_return_type(method),
-                                  name);
+				  get_native_function_return_type(method),
+				  name);
       }
     }
   }
@@ -973,7 +973,7 @@ void SourceObjectWriter::print_entry_declarations() {
     }
   }
   _declare_stream->print_cr("extern \"C\" void %s();",
-                            "Java_void_unimplemented");
+                            "Java_unimplemented");
   _declare_stream->print_cr("extern \"C\" void %s();",
                             "Java_abstract_method_execution");
   _declare_stream->print_cr("extern \"C\" void %s();",

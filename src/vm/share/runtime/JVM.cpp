@@ -149,16 +149,12 @@ void JVM::stop(int code) {
     // of JVM::run), all of the handles will be pointing to unused space on
     // the C stack. So let's invalidate them.
     _last_handle = NULL;
-#ifdef AZZERT    
-    last_raw_handle = NULL;
-#endif
     current_thread_to_primordial();
   }
 }
 
 void JVM::exit(int code) {
   cleanup();
-  Arguments::finalize();
   JVMSPI_Exit(code);
   ::jvm_exit(code); // just in case 'JVMSPI_Exit()' forgot to terminate
                     // the process
@@ -259,28 +255,28 @@ void JVM::run() {
   // so that one can look at the executable binary
   // with a text browser and look at the copyright notice:
 const char *JVM::copyright =
-   " Portions Copyright  2000-2007 Sun Microsystems, Inc. All Rights"
-   " Reserved.  Use is subject to license terms."
-   " DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER"
+   " Portions Copyright  2000-2007  Sun Microsystems,  Inc.  All rig"
+   "hts reserved. SUN PROPRIETARY/CONFIDENTIAL. "
+   "Use is subject to license terms.                             "
    " "
-   " This program is free software; you can redistribute it and/or"
-   " modify it under the terms of the GNU General Public License version"
-   " 2 only, as published by the Free Software Foundation."
+   "                                                              "
+   "                                                                    "
+   "                                                      "
    " "
-   " This program is distributed in the hope that it will be useful, but"
-   " WITHOUT ANY WARRANTY; without even the implied warranty of"
-   " MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU"
-   " General Public License version 2 for more details (a copy is"
-   " included at /legal/license.txt)."
+   "                                                                    "
+   "                                                           "
+   "                                                                 "
+   "                                                             "
+   "                                 "
    " "
-   " You should have received a copy of the GNU General Public License"
-   " version 2 along with this work; if not, write to the Free Software"
-   " Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA"
-   " 02110-1301 USA"
+   "                                                                  "
+   "                                                                   "
+   "                                                          "
+   "               "
    " "
-   " Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa"
-   " Clara, CA 95054 or visit www.sun.com if you need additional"
-   " information or have any questions.";
+   "                                                                  "
+   "                                                            "
+   "                                   ";
   // \xA9 is the 8-bit ASCII copyright sign
 
 inline bool JVM::initialize( void ) {
@@ -293,12 +289,12 @@ inline bool JVM::initialize( void ) {
   if (Verbose) {
     JVM::print_parameters();
   }
+  EventLogger::initialize();
 
   _is_started = false;
   _exit_code = 0;
   _startup_phase_count = 0;
   Os::initialize();
-  EventLogger::initialize();
 
 #if ENABLE_PERFORMANCE_COUNTERS
   JVM::calibrate_cpu();
@@ -543,6 +539,8 @@ void JVM::cleanup() {
   Universe::apocalypse();
   _is_started = false;  
   Thread::clear_current_pending_exception();
+
+  Arguments::finalize();
 }
 
 bool JVM::check_misc_options(JVM_SINGLE_ARG_TRAPS) {

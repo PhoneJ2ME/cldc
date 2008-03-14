@@ -130,23 +130,30 @@ void ClassFileParser::set_buffer_position(int pos) {
   }
 
 // Does the current buffer contain a valid UTF8 string of the given length
-inline bool ClassFileParser::is_valid_utf8_in_buffer(jint utf8_length) {
-  const jbyte* p = (jbyte*)_bufptr;
-  const jbyte* const e = p + utf8_length;
+bool ClassFileParser::is_valid_utf8_in_buffer(jint utf8_length) {
+  jubyte *p = _bufptr;
+  jubyte *e = p + utf8_length;
 
-  if (e > (jbyte*)_bufend) {
+  if (e > _bufend) {
     return false;
   }
 
-  while( p < e ) {
-    if (*p++ <= 0) {
-      // This UTF8 string contains an escape sequence (which is very rare),
-      // so let's do it the more proper way.
-      ByteStream bs(_buffer, get_buffer_position(), utf8_length);
-      return bs.is_valid();
+
+  jint mask = 0x80;
+  while (p < e) {
+    jint b = (jint)(*p++);
+    if ((b == 0) || (b & mask) != 0) {
+      goto slow;
     }
   }
+
   return true;
+
+slow:
+  // This UTF8 string contains an escape sequence (which is very rare),
+  // so let's do it the more proper way.
+  ByteStream bs(_buffer, get_buffer_position(), utf8_length);
+  return bs.is_valid();
 }
 
 // Constant pool parsing:
@@ -169,8 +176,7 @@ void ClassFileParser::parse_constant_pool_utf8_entry(ConstantPool* cp,
   }
 }
 
-inline void
-ClassFileParser::parse_constant_pool_entries(ConstantPool* cp JVM_TRAPS) {
+void ClassFileParser::parse_constant_pool_entries(ConstantPool* cp JVM_TRAPS) {
   int index = 1;
   int len = cp->length();
   for (index = 1; index < len; index++) {
@@ -266,7 +272,7 @@ ClassFileParser::parse_constant_pool_entries(ConstantPool* cp JVM_TRAPS) {
 }
 
 // Validate cross references and fixup class and string constants
-inline void
+void
 ClassFileParser::validate_and_fixup_constant_pool_entries(ConstantPool* cp
                                                           JVM_TRAPS) {
   int index;
@@ -381,7 +387,7 @@ ClassFileParser::validate_and_fixup_constant_pool_entries(ConstantPool* cp
   }
 }
 
-inline void ClassFileParser::remove_unused_utf8_entries(ConstantPool* cp) {
+void ClassFileParser::remove_unused_utf8_entries(ConstantPool* cp) {
   AllocationDisabler raw_pointers_used_in_this_function;
 
   TypeArray::Raw tags = cp->tags();
@@ -390,9 +396,11 @@ inline void ClassFileParser::remove_unused_utf8_entries(ConstantPool* cp) {
   jubyte *tagend = tagptr + cp->length();
 
   // skip entry 0, which is always Invalid
-  while (++tagptr < tagend) {
-    entryptr++;
-    const jubyte tag = *tagptr;
+  tagptr++;
+  entryptr++;
+
+  while (tagptr < tagend) {
+    jubyte tag = *tagptr;
     if (tag == JVM_CONSTANT_Utf8) {
       OopDesc *oop = *entryptr;
       if (ObjectHeap::contains(oop) && oop->is_byte_array()) {
@@ -409,12 +417,14 @@ inline void ClassFileParser::remove_unused_utf8_entries(ConstantPool* cp) {
         GUARANTEE(oop->is_symbol(), "only other possible value");
       }
     }
+    tagptr++;
+    entryptr++;
   }
 }
 
-inline ReturnOop ClassFileParser::parse_constant_pool(JVM_SINGLE_ARG_TRAPS) {
+ReturnOop ClassFileParser::parse_constant_pool(JVM_SINGLE_ARG_TRAPS) {
   UsingFastOops fast_oops;
-  const int length = get_u2(JVM_SINGLE_ARG_CHECK_0);
+  int length = get_u2(JVM_SINGLE_ARG_CHECK_0);
   ConstantPool::Fast cp = Universe::new_constant_pool(length JVM_CHECK_0);
   parse_constant_pool_entries(&cp JVM_CHECK_0);
   validate_and_fixup_constant_pool_entries(&cp JVM_CHECK_0);
@@ -422,12 +432,11 @@ inline ReturnOop ClassFileParser::parse_constant_pool(JVM_SINGLE_ARG_TRAPS) {
   return cp;
 }
 
-inline
 ReturnOop ClassFileParser::parse_interface_indices(ClassParserState *stack, 
                                                    ConstantPool* cp, 
-                                                   bool& resolved JVM_TRAPS) {
-  resolved = true;
-  const int length = get_u2(JVM_SINGLE_ARG_CHECK_0);
+                                                   bool *resolved JVM_TRAPS) {
+  *resolved = true;
+  int length = get_u2(JVM_SINGLE_ARG_CHECK_0);
   if (length == 0) {    
     return Universe::empty_short_array()->obj();
   }
@@ -453,17 +462,16 @@ ReturnOop ClassFileParser::parse_interface_indices(ClassParserState *stack,
                                     /*check_only=*/ true JVM_CHECK_0);
     if (interf.is_null()) {
       stack->push(&interface_name JVM_CHECK_0);
-      resolved = false;
+      *resolved = false;
     }
   }
   return interface_indices;
 }
 
-inline
 ReturnOop ClassFileParser::parse_interfaces(ConstantPool* cp,
                                             TypeArray* interface_indices
                                             JVM_TRAPS) {
-  const int length = interface_indices->length();
+  int length = interface_indices->length();
   if (length == 0) {
     return Universe::empty_short_array()->obj();
   }
@@ -497,7 +505,7 @@ ReturnOop ClassFileParser::parse_interfaces(ConstantPool* cp,
 // index of the initial field value.
 // This can be a constant integer, long, float, double or string. 0
 // means no initial value for the field.
-inline void
+void
 ClassFileParser::parse_field_attributes(ConstantPool* cp, 
                                         jushort& constantvalue_index_addr,
                                         FieldType* type, 
@@ -527,36 +535,40 @@ ClassFileParser::parse_field_attributes(ConstantPool* cp,
   }
   constantvalue_index_addr = constantvalue_index;
   is_synthetic_addr = is_synthetic;
+  return;
 }
 
 bool
 ClassFileParser::are_valid_field_access_flags(const AccessFlags field_access_flags,
                                               const AccessFlags class_access_flags) {
   if (class_access_flags.is_interface()) {
-    const int flag = field_access_flags.as_int();
+    int flag = field_access_flags.as_int();
     if (flag != (JVM_ACC_PUBLIC | JVM_ACC_FINAL | JVM_ACC_STATIC)) {
       return false;
     }
   } else {
-    const int subset = field_access_flags.as_int() &
-                       (JVM_ACC_PUBLIC | JVM_ACC_PRIVATE | JVM_ACC_PROTECTED);
+    int subset = field_access_flags.as_int() &
+                 (JVM_ACC_PUBLIC | JVM_ACC_PRIVATE | JVM_ACC_PROTECTED);
     switch (subset) { // Must be at most one of the following:
-      case JVM_ACC_PUBLIC:
-      case JVM_ACC_PRIVATE:
-      case JVM_ACC_PROTECTED:
-      case 0:
-        if (field_access_flags.is_final() && field_access_flags.is_volatile()) {
-          // A field can't be both final and volatile
-      default:
-          return false;
-        }
+    case JVM_ACC_PUBLIC:
+    case JVM_ACC_PRIVATE:
+    case JVM_ACC_PROTECTED:
+      break;
+    case 0:
+      break;
+    default:
+      return false;
+    }
+    if (field_access_flags.is_final() && field_access_flags.is_volatile()) {
+      // A field can't be both final and volatile
+      return false;
     }
   }
   return true;
 }
 
 // Fields must not have the same name AND type
-inline void ClassFileParser::check_for_duplicate_fields(ConstantPool* cp, 
+void ClassFileParser::check_for_duplicate_fields(ConstantPool* cp, 
                                           const TypeArray& fields JVM_TRAPS) {
   {
     // This is a hot loop, so we're using raw pointers here to help C++
@@ -564,26 +576,29 @@ inline void ClassFileParser::check_for_duplicate_fields(ConstantPool* cp,
     // in deep trouble!
 
     AllocationDisabler raw_pointers_used_in_this_block;
-    const int imax = fields.length() - Field::NUMBER_OF_SLOTS;
-    const int jmax = fields.length();
-    const int step = Field::NUMBER_OF_SLOTS;
+    int imax = fields.length() - Field::NUMBER_OF_SLOTS;
+    int jmax = fields.length();
+    int step = Field::NUMBER_OF_SLOTS;
     const jushort* const field_base = (jushort*)fields.base_address();
-    const OopDesc* const* cp_base = (const OopDesc* const*)cp->base_address();
+    OopDesc **cp_base = (OopDesc**)cp->base_address();
 
     //
     // Note: this algorithm has quadratic complexity
     //
+    OopDesc * name_i, * name_j;
+    OopDesc * type_i, * type_j;
     for (int i = 0; i < imax; i += step) {
       const jushort* ibase = field_base + i;
-      const OopDesc* name_i = cp_base[ibase[Field::NAME_OFFSET]];
 
       for (int j = i + step; j < jmax; j += step) {
         const jushort* jbase = field_base + j;
-        const OopDesc* name_j = cp_base[jbase[Field::NAME_OFFSET]];
+
+        name_i = cp_base[ibase[Field::NAME_OFFSET]];
+        name_j = cp_base[jbase[Field::NAME_OFFSET]];
 
         if (name_i == name_j) {
-          const OopDesc* type_i = cp_base[ibase[Field::SIGNATURE_OFFSET]];
-          const OopDesc* type_j = cp_base[jbase[Field::SIGNATURE_OFFSET]];
+          type_i = cp_base[ibase[Field::SIGNATURE_OFFSET]];
+          type_j = cp_base[jbase[Field::SIGNATURE_OFFSET]];
 
           if (type_i == type_j) {
             goto error;
@@ -598,13 +613,12 @@ error:
   classfile_parse_error(duplicate_field JVM_NO_CHECK_AT_BOTTOM);
 }
 
-inline
 ReturnOop ClassFileParser::parse_fields(ConstantPool* cp,
                                         int& nonstatic_field_size,
                                         int& static_field_size,
                                         AccessFlags& class_access_flags
                                         JVM_TRAPS) {
-  const jushort length = get_u2(JVM_SINGLE_ARG_CHECK_0);
+  jushort length = get_u2(JVM_SINGLE_ARG_CHECK_0);
   if (length == 0) {
     return Universe::empty_short_array()->obj();
   }
@@ -643,23 +657,21 @@ ReturnOop ClassFileParser::parse_fields(ConstantPool* cp,
 
     // Parse field attributes
     jushort constantvalue_index = 0;
-    {
-      bool is_synthetic = false;
-      parse_field_attributes(cp, constantvalue_index, &type, is_synthetic
-                             JVM_CHECK_0);
-      if (is_synthetic) {
-        access_flags.set_is_synthetic();
-      }
+    bool is_synthetic = false;
+    parse_field_attributes(cp, constantvalue_index, &type, is_synthetic
+                           JVM_CHECK_0);
+    if (is_synthetic) {
+      access_flags.set_is_synthetic();
     }
+
     // Compute field sizes, offsets will be computed later
-    {
-      int field_size = type().allocation_byte_size(access_flags.is_static());
-      if (access_flags.is_static()) {
-        static_field_size    += field_size;
-      } else {
-        nonstatic_field_size += field_size;
-      }
+    int field_size = type().allocation_byte_size(access_flags.is_static());
+    if (access_flags.is_static()) {
+      static_field_size    += field_size;
+    } else {
+      nonstatic_field_size += field_size;
     }
+
     {
       AllocationDisabler raw_pointers_used_in_this_block;
 
@@ -683,19 +695,17 @@ ReturnOop ClassFileParser::parse_fields(ConstantPool* cp,
   return fields;
 }
 
-inline bool ClassFileParser::are_valid_method_access_flags(
+bool ClassFileParser::are_valid_method_access_flags(
                                         ClassParserState *state, Symbol *name, 
                                         const AccessFlags method_access_flags,
                                         const AccessFlags class_access_flags) {
-  const int flags = method_access_flags.as_int();
-  {
-    int flag = flags & (JVM_ACC_PUBLIC | JVM_ACC_PRIVATE | JVM_ACC_PROTECTED);
-    switch (flag) { // Must have one of these 4 legal values:
-      case 0: case JVM_ACC_PUBLIC: case JVM_ACC_PRIVATE: case JVM_ACC_PROTECTED:
-        break;
-      default:
-        return false;
-    }
+  int flags = method_access_flags.as_int();
+  int flag = flags & (JVM_ACC_PUBLIC | JVM_ACC_PRIVATE | JVM_ACC_PROTECTED);
+  switch (flag) { // Must have one of these 4 legal values:
+    case 0: case JVM_ACC_PUBLIC: case JVM_ACC_PRIVATE: case JVM_ACC_PROTECTED:
+      break;
+    default:
+      return false;
   }
   if (class_access_flags.is_interface()) {
     if ((flags & (JVM_ACC_ABSTRACT | JVM_ACC_PUBLIC | JVM_ACC_STATIC)) 
@@ -713,15 +723,16 @@ inline bool ClassFileParser::are_valid_method_access_flags(
       //  //   JVMS §2.10.3
       //  return false;
       //}
-      if( flags & JVM_ACC_STRICT ) {
-        // The class is built with JDK 1.1 and this combination
-        // is deemed OK. See CR 6363911
-        if (state->major_version() != 45 || state->minor_version() != 3) {
+      if ((flags & JVM_ACC_STRICT) != 0) {
+        if (state->major_version() == 45 && state->minor_version() == 3) {
+          // The class is built with JDK 1.1 and this combination
+          // is deemed OK. See CR 6363911
+        } else {
           return false;
         }
       }
-      if( flags & (JVM_ACC_FINAL | JVM_ACC_NATIVE | JVM_ACC_SYNCHRONIZED |
-                   JVM_ACC_PRIVATE | JVM_ACC_STATIC) ) {
+      if ((flags & (JVM_ACC_FINAL | JVM_ACC_NATIVE | JVM_ACC_SYNCHRONIZED |
+                    JVM_ACC_PRIVATE | JVM_ACC_STATIC)) != 0) {
         return false;
       }
     }
@@ -750,6 +761,8 @@ juint ClassFileParser::parse_stackmaps(ConstantPool *cp, jushort num_stackmaps,
   int max_stackmaps = 2 * num_stackmaps;
 
   while (stackmap_index < max_stackmaps) {
+    juint i, index;
+
     // Allocate new stackmap arrays
     // Stores all the scalar types associated with the stackmap:
     stackmap_scalars = Universe::new_int_array(temp_size JVM_CHECK_0);
@@ -763,14 +776,15 @@ juint ClassFileParser::parse_stackmaps(ConstantPool *cp, jushort num_stackmaps,
     // Save the bytecode offset for this stackmap entry at the beginning
     stackmap_scalars().int_at_put(0, stackmap_offset);
 
-    for (juint index = 1, i = 0; i < 2; i++) {
+    for (index = 1, i = 0; i < 2; i++) {
+      jushort j;
       // read the size
       juint size = get_u2(JVM_SINGLE_ARG_CHECK_0);
       juint size_delta = 0;
       juint size_index = index++;
       juint max_size = (i == 0 ? frame_size : max_stack);
 
-      for (jushort j = 0; j < size; j++) {
+      for (j = 0; j < size; j++) {
         // get the locals register or stack type
         jubyte stack_type = get_u1(JVM_SINGLE_ARG_CHECK_0);
         // Reading the j-th element of the stackmap.
@@ -826,20 +840,21 @@ juint ClassFileParser::parse_stackmaps(ConstantPool *cp, jushort num_stackmaps,
   }
 
   // return the number of bytes read bytes read while parsing the stackmaps
-  const int endpos = _bufptr - _buffer->ubyte_base_address();
+  int endpos = _bufptr - _buffer->ubyte_base_address();
   return (endpos - startpos) + 2;
 }
 
-inline ReturnOop ClassFileParser::parse_exception_table(int code_length, 
+ReturnOop ClassFileParser::parse_exception_table(int code_length, 
                                                  ConstantPool* cp JVM_TRAPS) {
-  const int table_length = get_u2(JVM_SINGLE_ARG_CHECK_0);
+  int table_length = get_u2(JVM_SINGLE_ARG_CHECK_0);
+
   if (table_length == 0) {
     return NULL;
-  }
-  if ((_bufend - _bufptr) < (table_length * 4)) {
-    truncated_class_file_error(JVM_SINGLE_ARG_THROW_0);
-  }
-  {
+  } else {
+    if ((_bufend - _bufptr) < (table_length * 4)) {
+      truncated_class_file_error(JVM_SINGLE_ARG_THROW_0);
+    }
+
     // 4-tuples of ints [start_pc, end_pc, handler_pc, catch_type index]
     TypeArray::Raw table =
       Universe::new_short_array_raw(table_length * 4 JVM_CHECK_0);
@@ -877,6 +892,8 @@ inline ReturnOop ClassFileParser::parse_exception_table(int code_length,
     }
     return table;
   }
+
+
 corrupt:
   classfile_parse_error(corrupted_exception_handler JVM_THROW_0);
 
@@ -888,7 +905,7 @@ ReturnOop ClassFileParser::new_lazy_error_method(Method* method,
                                                  address native_function
                                                  JVM_TRAPS)
 {
-  const int code_length = Bytecodes::length_for(Bytecodes::_fast_invokenative) ;
+  int code_length = Bytecodes::length_for(Bytecodes::_fast_invokenative) ;
 
   // All sizing information for a Method is finally available, now create it.
   AccessFlags access = method->access_flags();
@@ -907,7 +924,7 @@ ReturnOop ClassFileParser::new_lazy_error_method(Method* method,
   init_native_method(&m, native_function);
   m().set_default_entry(false);
 
-#if ENABLE_JVMPI_PROFILE 
+#if  ENABLE_JVMPI_PROFILE 
    //copy the method id
    m().set_method_id(method->method_id());     
 #endif 
@@ -925,13 +942,12 @@ ReturnOop ClassFileParser::new_lazy_error_method(Method* method,
 // footprint, so we only know the size of the resulting methodOop when
 // the entire method attribute is parsed.
 
-inline ReturnOop
-ClassFileParser::parse_method(ClassParserState *state, ConstantPool* cp,
-                              const AccessFlags class_access_flags JVM_TRAPS)
+ReturnOop ClassFileParser::parse_method(ClassParserState *state, ConstantPool* cp,
+                                        AccessFlags& class_access_flags JVM_TRAPS) 
 {
   UsingFastOops fast_oops;
   // Parse fixed parts
-  const int flags = get_u2(JVM_SINGLE_ARG_CHECK_0);
+  int flags = get_u2(JVM_SINGLE_ARG_CHECK_0);
   jushort name_index = get_u2(JVM_SINGLE_ARG_CHECK_0);
   Symbol::Fast name = cp->checked_symbol_at(name_index JVM_CHECK_0);
   jushort signature_index = get_u2(JVM_SINGLE_ARG_CHECK_0);
@@ -1108,22 +1124,55 @@ ClassFileParser::parse_method(ClassParserState *state, ConstantPool* cp,
     if (m().is_abstract()) {
       init_native_method(&m, (address) Java_abstract_method_execution);
     } else {
-#if ENABLE_DYNAMIC_NATIVE_METHODS && !USE_SOURCE_IMAGE_GENERATOR
-      Signature::Fast signature = m().signature();
-
-#define INIT_NATIVE_METHOD_CASE(jtype, ttype, arg)             \
-          case ttype :                                         \
-            init_native_method(                                \
-              &m, (address) Java_ ## jtype ## _unimplemented); \
+#if ENABLE_DYNAMIC_NATIVE_METHODS
+      if(!GenerateROMImage) {
+        Signature::Fast signature = m().signature();
+        switch(signature().return_type()) {
+          //For now, we have individual functions for each return
+          // type.  This may very well change in the future.  
+          // For example, using Java_unimplemented_int for 
+          // bool, byte, char, short, and int types. 
+          case(T_VOID):
+            init_native_method(&m, (address) Java_unimplemented);
             break;      
-
-      switch(signature().return_type()) {
-        FOR_ALL_TYPES(INIT_NATIVE_METHOD_CASE)
+          case(T_BOOLEAN):
+            init_native_method(&m, (address) Java_unimplemented_bool);
+            break;      
+          case(T_BYTE):
+            init_native_method(&m, (address) Java_unimplemented_byte);
+            break;      
+          case(T_CHAR):
+            init_native_method(&m, (address) Java_unimplemented_char);
+            break;      
+          case(T_SHORT):
+            init_native_method(&m, (address) Java_unimplemented_short);
+            break;      
+          case(T_INT):
+            init_native_method(&m, (address) Java_unimplemented_int);
+            break;      
+#if ENABLE_FLOAT
+          case(T_FLOAT):
+            init_native_method(&m, (address) Java_unimplemented_float);
+            break;      
+          case(T_DOUBLE):
+            init_native_method(&m, (address) Java_unimplemented_double);
+            break;      
+#endif //ENABLE_FLOAT
+          case(T_LONG):
+            init_native_method(&m, (address) Java_unimplemented_long);
+            break;      
+          case(T_OBJECT):
+          case(T_ARRAY):
+            init_native_method(&m, (address) Java_unimplemented_object);
+            break;      
           default:
-        SHOULD_NOT_REACH_HERE();
+            SHOULD_NOT_REACH_HERE();
+        }
+      } else {
+        init_native_method(&m, (address) Java_unimplemented);
       }
 #else
-      init_native_method(&m, (address) Java_void_unimplemented);
+      init_native_method(&m, (address) Java_unimplemented);
 #endif
     }
   } else {
@@ -1150,9 +1199,12 @@ ClassFileParser::parse_method(ClassParserState *state, ConstantPool* cp,
 }
 
 // Parse the attributes contained by a method's Code attribute.
-inline ReturnOop ClassFileParser::parse_code_attributes(ConstantPool* cp,
-                   jushort max_stack, jushort max_locals, juint code_length,
-                   LineVarTable *line_var_table JVM_TRAPS)
+ReturnOop ClassFileParser::parse_code_attributes(ConstantPool* cp,
+                                                 jushort max_stack,
+                                                 jushort max_locals,
+                                                 juint code_length,
+                                                 LineVarTable *line_var_table
+                                                 JVM_TRAPS)
 {
   UsingFastOops fast_oops;
   ObjArray::Fast stackmaps;
@@ -1273,7 +1325,7 @@ void ClassFileParser::init_native_method(Method *m, address native_function)
 }
 
 // Methods must not have the same name AND type
-inline void ClassFileParser::check_for_duplicate_methods(ConstantPool *cp, 
+void ClassFileParser::check_for_duplicate_methods(ConstantPool *cp, 
                                                   const ObjArray& methods JVM_TRAPS)
 {
   {
@@ -1292,14 +1344,14 @@ inline void ClassFileParser::check_for_duplicate_methods(ConstantPool *cp,
     // symbol!
     for (int i = 0; i < len - 1; i++) {
       Method::Raw method_a = methods.obj_at(i);
-      const jint name_a = method_a().name_index();
+      jint name_a = method_a().name_index();
 
       for (int j = i + 1; j < len; j++) {
         Method::Raw method_b = methods.obj_at(j);
-        const jint name_b = method_b().name_index();
+        jint name_b = method_b().name_index();
         if (cp_base[name_a] == cp_base[name_b]) {
-          const jint signature_a = method_a().signature_index();
-          const jint signature_b = method_b().signature_index();
+          jint signature_a = method_a().signature_index();
+          jint signature_b = method_b().signature_index();
           if (cp_base[signature_a] == cp_base[signature_b]) {
             goto error;
           }
@@ -1312,19 +1364,19 @@ inline void ClassFileParser::check_for_duplicate_methods(ConstantPool *cp,
 
 error:
   classfile_parse_error(duplicate_field JVM_NO_CHECK_AT_BOTTOM);
+  return;
 }
 
-inline ReturnOop
-ClassFileParser::parse_methods(ClassParserState *state, ConstantPool* cp,
-                               const AccessFlags class_access_flags,
-                               bool& has_native_methods JVM_TRAPS) {
+ReturnOop ClassFileParser::parse_methods(ClassParserState *state, ConstantPool* cp,
+                                         AccessFlags& class_access_flags,
+                                         bool& has_native_methods JVM_TRAPS) {
   UsingFastOops fast_oops;
   has_native_methods = false;
   int length = get_u2(JVM_SINGLE_ARG_CHECK_0);
   ObjArray::Fast methods = Universe::new_obj_array(length JVM_CHECK_0);
   for (int index = 0; index < length; index++) {
     Method::Raw method = parse_method(state, cp, class_access_flags JVM_CHECK_0);
-    has_native_methods |= method().is_native();
+    has_native_methods = has_native_methods || method().is_native();
     methods().obj_at_put(index, &method);
   }
   if (get_UseVerifier()) {
@@ -1333,15 +1385,14 @@ ClassFileParser::parse_methods(ClassParserState *state, ConstantPool* cp,
   return methods;
 }
 
-inline
 void ClassFileParser::parse_classfile_sourcefile_attribute(ConstantPool* cp
                                                            JVM_TRAPS) {
-  const jushort sourcefile_index = get_u2(JVM_SINGLE_ARG_CHECK);
+  jushort sourcefile_index = get_u2(JVM_SINGLE_ARG_CHECK);
   // IMPL_NOTE: no need to intern the Symbol, unless ENABLE_JAVA_DEBUGGER
-  (void) cp->checked_symbol_at(sourcefile_index JVM_NO_CHECK_AT_BOTTOM);
+  (void) cp->checked_symbol_at(sourcefile_index JVM_CHECK);
 }
 
-inline void ClassFileParser::parse_classfile_inner_classes_attribute(
+void ClassFileParser::parse_classfile_inner_classes_attribute(
                       ConstantPool* cp, InstanceClass* c JVM_TRAPS) {
   juint length = get_u2(JVM_SINGLE_ARG_CHECK);
 
@@ -1397,9 +1448,8 @@ inline void ClassFileParser::parse_classfile_inner_classes_attribute(
   }
 }
 
-inline void
-ClassFileParser::parse_classfile_attributes(ConstantPool* cp, 
-                                            InstanceClass* c JVM_TRAPS) {
+void ClassFileParser::parse_classfile_attributes(ConstantPool* cp, 
+                                                 InstanceClass* c JVM_TRAPS) {
 #if ENABLE_REFLECTION
   c->set_inner_classes(Universe::empty_short_array());
 #endif
@@ -1428,65 +1478,63 @@ ClassFileParser::parse_classfile_attributes(ConstantPool* cp,
       parse_classfile_synthetic_attribute(c);
     } else {
       // Unknown attribute
-      skip_u1(attribute_length JVM_CHECK);
+      skip_u1(attribute_length JVM_NO_CHECK_AT_BOTTOM);
     }
   }
 }
 
-inline bool ClassFileParser::is_circular(InstanceClass* this_class) {
-  for( InstanceClass::Raw c = this_class;; ) {
-    c = c().super();
-    if( c().is_null() ) {
-      return false;
-    }
+static bool is_circular(InstanceClass* this_class) {
+  InstanceClass::Raw c = this_class->super();
+  while (c().not_null()) {
     if (c.equals(this_class)) {
       return true;
     }
+    c = c().super();
   }
+  return false;
 }
 
-inline void
-ClassFileParser::check_local_interfaces(InstanceClass* this_class JVM_TRAPS) {
+static void check_local_interfaces(InstanceClass* this_class JVM_TRAPS) {
   UsingFastOops fast_oops;
   TypeArray::Fast local_interfaces = this_class->local_interfaces();
   InstanceClass::Fast interf;
-  const int len = local_interfaces().length();
+  int len = local_interfaces().length();
 
   for (int i = 0; i < len; i++) {
-    const int class_id = local_interfaces().ushort_at(i);
+    int class_id = local_interfaces().ushort_at(i);
     interf = Universe::class_from_id(class_id);
     cpf_check(!interf.equals(this_class) &&
               interf().is_interface(), invalid_class_file)
     interf().check_access_by(this_class, ErrorOnFailure JVM_CHECK);
 
-    for (int j = i; --j >= 0;) {
+    for (int j = i - 1; j >= 0; j--) {
       int other_class_id = local_interfaces().ushort_at(j);
       cpf_check(other_class_id != class_id, circular_interfaces);
     }
   }
 }
 
-inline
 void ClassFileParser::check_for_circular_class_parsing(ClassParserState *stack
                                                        JVM_TRAPS) {
   // Check whether this is represented twice on the static class file
   // parse list.
   // IMPL_NOTE: is this still needed?? (don't delete unless you're 100% sure)
-  {
-    for (ClassFileParser* check = previous(); check != NULL;
-         check = check->previous()) {
-      if (name()->equals(check->name())) {
-        classfile_parse_error(recursive_class_structure JVM_THROW);
-      }
+  for (ClassFileParser* check = previous(); check != NULL;
+       check = check->previous()) {
+    if (name()->equals(check->name())) {
+      classfile_parse_error(recursive_class_structure JVM_NO_CHECK_AT_BOTTOM);
+      return;
     }
   }
 
   // Check whether this is represented twice on the class parsing stack
-  for(ClassParserState::Raw chk = stack->next(); chk.not_null();
-                                                 chk = chk().next()) {
-    Symbol::Raw class_name = chk().class_name();
+  ClassParserState::Raw chk;
+  Symbol::Raw class_name;
+  for (chk = stack->next(); !chk.is_null(); chk = chk().next()) {
+    class_name = chk().class_name();
     if (name()->equals(&class_name) && chk().stage() != 0) {
-      classfile_parse_error(recursive_class_structure JVM_THROW);
+      classfile_parse_error(recursive_class_structure JVM_NO_CHECK_AT_BOTTOM);
+      return;
     }
   }
 }
@@ -1496,37 +1544,43 @@ bool ClassFileParser::is_package_restricted(Symbol *class_name) {
   // we won't even be able to load java.lang.Object!
   GUARANTEE(UseROM, "sanity");
 
-  const char* ptr = class_name->base_address();
-  const char* s = ptr + class_name->length();
-  do {
-    if( --s <= ptr ) {
-      // This class is in the 'default' package, which is always unrestricted
-      return false;
+  char * ptr = class_name->base_address();
+  int n = class_name->length();
+  char *s = ptr + n - 1;
+  while (s > ptr) {
+    if (*s == '/') {
+      break;
+    } else {
+       s --;
     }
-  } while (*s != '/');
-
-  const int pkg_length = s - ptr;
-  bool is_restricted = ROM::is_restricted_package(ptr, pkg_length);
-#if ENABLE_MULTIPLE_PROFILES_SUPPORT
-  if (!is_restricted) {
-    is_restricted = ROM::is_restricted_package_in_profile(ptr, pkg_length);
   }
+
+  int pkg_length = s - ptr;
+  if (pkg_length <= 0) {
+    // This class is in the 'default' package, which is always unrestricted
+  } else {
+    bool is_restricted = ROM::is_restricted_package(ptr, pkg_length);
+#if ENABLE_MULTIPLE_PROFILES_SUPPORT
+    is_restricted |= 
+      ROM::is_restricted_package_in_profile(ptr, pkg_length);
 #endif
 #if ENABLE_DYNAMIC_RESTRICTED_PACKAGE
-  if (!is_restricted) {
-    is_restricted = JVMSPI_IsRestrictedPackage(ptr, pkg_length);
-  }
+    if (!is_restricted) {
+      is_restricted |= JVMSPI_IsRestrictedPackage(ptr, pkg_length);
+    }
 #endif
 #if ENABLE_ISOLATES
-  if (!is_restricted) {
-    is_restricted = Task::current()->is_restricted_package(ptr, pkg_length);
-  }
+    is_restricted |= Task::current()->is_restricted_package(ptr, pkg_length);
 #endif
-  return is_restricted;
+
+    return is_restricted;
+  }
+
+  return false;
 }
 
 // Perform "stage 0" parsing of a class file
-inline bool ClassFileParser::parse_class_0(ClassParserState *stack JVM_TRAPS) {
+bool ClassFileParser::parse_class_0(ClassParserState *stack JVM_TRAPS) {
   UsingFastOops fast_oops;
   ClassParserState::Fast state = stack->top();
 
@@ -1615,7 +1669,7 @@ inline bool ClassFileParser::parse_class_0(ClassParserState *stack JVM_TRAPS) {
   bool interfaces_resolved;
   {
     TypeArray::Raw interface_indices = 
-      parse_interface_indices(stack, &cp, interfaces_resolved JVM_CHECK_0);
+      parse_interface_indices(stack, &cp, &interfaces_resolved JVM_CHECK_0);
     state().set_interface_indices(&interface_indices);
   }
 
@@ -1624,142 +1678,24 @@ inline bool ClassFileParser::parse_class_0(ClassParserState *stack JVM_TRAPS) {
   return super_class_resolved && interfaces_resolved;
 }
 
-inline void ClassFileParser::clone_invoke_special_virtual_conflicts(
-                                  InstanceClass* this_klass, 
-                                  ConstantPool* old_cp, ConstantPool* new_cp, 
-                                  TypeArray* relocation_map, int map_size)
-{
-  {
-    TypeArray::Raw old_tags = old_cp->tags();
-    const int cp_length = old_cp->length();
-    TypeArray::Raw new_tags = new_cp->tags();
-    TypeArray::array_copy(&old_tags, 0, &new_tags, 0, cp_length);
-    const void* old_cp_base_address = old_cp->base_address();
-    void* new_cp_base_address = new_cp->base_address();
-    jvm_memcpy(new_cp_base_address, old_cp_base_address, cp_length*sizeof(int));
-  }
-  {    
-    for( int i = 0; i < map_size; i+=2 ) {
-      const int old_offset = relocation_map->ushort_at(i);
-      const int new_offset = relocation_map->ushort_at(i+1);
-      new_cp->tag_at_put(new_offset, old_cp->tag_value_at(old_offset));
-      new_cp->value32_at_put(new_offset, old_cp->value32_at(old_offset));
-    }
-  }
-  {
-    ObjArray::Raw methods = this_klass->methods();
-    const int methods_length = methods().length();
-    //updating invoke_special indexes in methods
-    for (int i = 0; i < methods_length; i++) {
-      Method::Raw method = methods().obj_at(i);
-      if (method.is_null()) continue;
-      if (!old_cp->equals(method().constants())) {
-        GUARANTEE(method().is_native() &&
-                  method().get_native_code() ==
-                  (address)Java_abstract_method_execution,
-                  "Must be a miranda method");
-        continue;
-      }
-      method().set_constants(new_cp);
-      const int code_length = method().code_size();
-      for( int bci = 0; bci < code_length; ) {
-        const Bytecodes::Code code = method().bytecode_at(bci);
-        if (code == Bytecodes::_invokespecial) {
-          const int cp_index = method().get_java_ushort(bci+1);
-          for (int j = 0; j < map_size; j+=2) {
-            const int old_cp_index = relocation_map->ushort_at(j);
-            if (old_cp_index == cp_index) {
-              method().put_java_ushort(bci+1, relocation_map->ushort_at(j+1));
-            }
-          }
-        }
-        bci = method().next_bci( bci );
+#if ENABLE_MONET
+ReturnOop ClassFileParser::parse_class(ClassParserState *stack JVM_TRAPS) {
+  int class_id = Universe::number_of_java_classes();
+  JavaClass::Raw klass = parse_class_internal(stack JVM_NO_CHECK);
+  // If converting, remove this class from the class_list if there was
+  // an exception.  Otherwise when we iterate through the list of
+  // system classes we will get a NULL InstanceClass
+  if (CURRENT_HAS_PENDING_EXCEPTION) {
+    if (GenerateROMImage) {
+      if (Universe::number_of_java_classes() == class_id + 1) {
+        Universe::unregister_last_java_class();
       }
     }
+    return NULL;
   }
+  return klass;
 }
-
-inline void ClassFileParser::fill_in_invoke_indexes(InstanceClass* this_klass,
-                                             TypeArray* invoke_sp_ids, 
-                                             TypeArray* invoke_vi_ids) {
-  ObjArray::Raw methods = this_klass->methods();
-  const int methods_length = methods().length();
-  for (int i = 0; i < methods_length; i++) {
-    Method::Raw method = methods().obj_at(i);  
-    const int code_length = method().code_size() - 2;
-    for( int bci = 0; bci < code_length; bci = method().next_bci( bci ) ) {
-      TypeArray* invoke_ids;
-      const Bytecodes::Code code = method().bytecode_at(bci);
-      switch( code ) {
-        case Bytecodes::_invokespecial:
-          invoke_ids = invoke_sp_ids;
-          break;
-        case Bytecodes::_invokevirtual:
-          invoke_ids = invoke_vi_ids;
-          break;
-        default: continue;
-      }
-      const int index = method().get_java_ushort(bci+1);
-      const int idx1 = index / BitsPerWord;
-      const int idx2 = index % BitsPerWord;
-      const int map = invoke_ids->int_at(idx1) | (1 << idx2);
-      invoke_ids->int_at_put(idx1, map);
-    }
-  }  
-}
-
-inline void ClassFileParser::resolve_invoke_special_virtual_conflicts(
-                                     InstanceClass* this_klass JVM_TRAPS) {
-  UsingFastOops fast;
-  ConstantPool::Fast cp = this_klass->constants();
-  const int cp_length = cp().length();
-  const int bitmap_length = cp_length / BitsPerWord + 1;
-  TypeArray::Fast invoke_virtual_indexes =
-    Universe::new_int_array(bitmap_length JVM_CHECK);
-  TypeArray::Fast invoke_special_indexes =
-    Universe::new_int_array(bitmap_length JVM_CHECK);  
-  
-  fill_in_invoke_indexes(this_klass, &invoke_special_indexes, &invoke_virtual_indexes);
-
-  int count = 0;
-  int i;
-  for (i = 0; i < bitmap_length; i++) {
-    for( int collision = invoke_special_indexes().int_at(i) & 
-                         invoke_virtual_indexes().int_at(i);
-         collision; collision >>= 1 ) {
-      if (collision & 1) {
-        count++;
-      }      
-    }
-  }
-  if (count == 0) return; //nothing to do
-  if (count + cp_length > 65535) { //overflow
-    Throw::out_of_memory_error(JVM_SINGLE_ARG_THROW);
-  }
-  TypeArray::Fast relocation_map = Universe::new_short_array(2*count JVM_CHECK);
-
-  count = 0;
-  for (i = 0; i < bitmap_length; i++) {
-    int offset = 0;
-    for( int collision = invoke_special_indexes().int_at(i) &
-                         invoke_virtual_indexes().int_at(i);
-         collision; collision >>= 1 ) {
-      if( collision & 1 ) {
-        relocation_map().ushort_at_put(2*count, i*BitsPerWord + offset);
-        relocation_map().ushort_at_put(2*count + 1, cp_length + count);          
-        count++;
-      }
-      offset++;
-    }
-  }
-
-  ConstantPool::Fast new_cp =
-    Universe::new_constant_pool(count + cp_length JVM_CHECK);
-  clone_invoke_special_virtual_conflicts(this_klass, &cp, &new_cp,
-                                         &relocation_map, 2*count);
-  ClassInfo::Raw klass_info = this_klass->class_info();
-  klass_info().set_constants(&new_cp);
-}
+#endif
 
 ReturnOop ClassFileParser::parse_class_internal(ClassParserState *stack JVM_TRAPS) {
   UsingFastOops fast_oops;
@@ -1816,21 +1752,10 @@ ReturnOop ClassFileParser::parse_class_internal(ClassParserState *stack JVM_TRAP
   ObjArray::Fast methods = parse_methods(&state, &cp,
                                          access_flags, has_native_methods
                                          JVM_CHECK_0);
-
-  TypeArray::Fast all_super_interfaces;
-  TypeArray::Fast bitmap;
-  if (!access_flags.is_interface() && access_flags.is_abstract() && local_interfaces().length() > 0) {    
-    int bitmap_size = Universe::number_of_java_classes() / BitsPerWord + 1;
-    bitmap = Universe::new_int_array(bitmap_size JVM_CHECK_0);
-    int all_interface_count = count_interfaces(local_interfaces.obj(), bitmap.obj());    
-    all_super_interfaces = Universe::new_short_array(all_interface_count JVM_CHECK_0);
-    jvm_memset(bitmap().base_address(), 0, bitmap_size*sizeof(int));
-    int found = found_all_interfaces(local_interfaces.obj(), all_super_interfaces.obj(), 0, bitmap.obj());
-    GUARANTEE(found == all_interface_count, "calculation check");
-    (void)found;
+  if (!access_flags.is_interface()) {
     methods = InstanceClass::add_miranda_methods(&super_class,
                                                  &methods,
-                                                 &all_super_interfaces,
+                                                 &local_interfaces,
                                                  &class_name JVM_CHECK_0);
   }
 
@@ -1848,20 +1773,20 @@ ReturnOop ClassFileParser::parse_class_internal(ClassParserState *stack JVM_TRAP
                                                     itable_length);
 
   // Finalization support
+  bool has_finalizer = false;
   if (super_class.not_null()) {  // Don't set flag for java.lang.Object
-    Method::Raw fm = 
-      InstanceClass::find_method(&methods, Symbols::finalize_name(),
-                                 Symbols::void_signature());
-    if (fm.not_null() && fm().is_private() && fm().is_native()) {
-#if !USE_SOURCE_IMAGE_GENERATOR
-      if (fm().get_native_code() == (address)Java_void_unimplemented) {
-        access_flags.set_has_unresolved_finalizer();
-      } else 
-#endif
-      {
-        access_flags.set_has_finalizer();
+    has_finalizer = super_class().has_finalizer();
+    if (!has_finalizer) {
+      Method::Raw fm = 
+          InstanceClass::find_method(&methods, Symbols::finalize_name(),
+                                     Symbols::void_signature());
+      if (fm.not_null()) {
+        has_finalizer = fm().is_private() && fm().is_native();
       }
     }
+  }
+  if (has_finalizer) {
+    access_flags.set_has_finalizer();
   }
 #if ENABLE_ISOLATES
   if (Task::current()->is_hidden_class(&class_name)) {
@@ -1995,7 +1920,7 @@ ReturnOop ClassFileParser::parse_class_internal(ClassParserState *stack JVM_TRAP
   } else {
     cpf_check_0(!is_circular(&this_class), circular_superclasses);
     bool status = super_class().check_access_by(&this_class, ErrorOnFailure 
-                                                JVM_ZCHECK_0(status));
+                                                JVM_ZCHECK(status));
     if (super_class().has_vanilla_constructor()) {
       Method::Raw constructor = 
           this_class().find_local_method(Symbols::object_initializer_name(),
@@ -2035,53 +1960,7 @@ ReturnOop ClassFileParser::parse_class_internal(ClassParserState *stack JVM_TRAP
   // completed loading of the top stack element
   stack->pop();
   state().set_result(&this_class);
-  if (this_class().is_super()) { //see CR6552040
-    resolve_invoke_special_virtual_conflicts(&this_class JVM_CHECK_0);
-  }
   return this_class.obj();
-}
-
-int ClassFileParser::count_interfaces(OopDesc* local_interface_indices_obj,
-                                      OopDesc* bitmap_obj) {
-  TypeArray::Raw local_interface_indices = local_interface_indices_obj;
-  TypeArray::Raw bitmap = bitmap_obj;
-  const int length = local_interface_indices().length();
-  int total_size = length;
-  for(int i = 0; i < length; i++) {
-    const int id = local_interface_indices().ushort_at(i);
-    int bitmap_offset = id / BitsPerWord;
-    const int bitmap_mask = 1 << (id % BitsPerWord);
-    if (bitmap().int_at(bitmap_offset) & bitmap_mask) continue; //were here
-    bitmap().int_at_put(bitmap_offset, bitmap().int_at(bitmap_offset) | bitmap_mask);
-    InstanceClass::Raw cls = Universe::class_from_id(id);    
-    total_size += count_interfaces(cls().local_interfaces(), bitmap_obj);
-  }
-  return total_size;
-}
-int ClassFileParser::found_all_interfaces(OopDesc* local_interface_indices_obj, 
-                                          OopDesc* all_interface_indices_obj, 
-                                          int already_in_table,
-                                          OopDesc* bitmap_obj) {
-  TypeArray::Raw local_interface_indices = local_interface_indices_obj;
-  TypeArray::Raw all_interface_indices = all_interface_indices_obj;
-  TypeArray::Raw bitmap = bitmap_obj;
-  const int size = local_interface_indices().length();
-  if (size != 0) {
-    TypeArray::array_copy(&local_interface_indices, 0, &all_interface_indices,
-                          already_in_table, size);
-    already_in_table += size;  
-    for (int i = 0; i < size; i++) {
-      const int id = local_interface_indices().ushort_at(i);
-      const int bitmap_offset = id / BitsPerWord;
-      const int bitmap_mask = 1 << (id % BitsPerWord);
-      if (bitmap().int_at(bitmap_offset) & bitmap_mask) continue; //were here
-      bitmap().int_at_put(bitmap_offset, bitmap().int_at(bitmap_offset) | bitmap_mask);
-      InstanceClass::Raw cls = Universe::class_from_id(id);    
-      already_in_table = found_all_interfaces(cls().local_interfaces(), all_interface_indices_obj, 
-                                              already_in_table, bitmap_obj);
-    }
-  }
-  return already_in_table;
 }
 
 void ClassFileParser::update_fields(ConstantPool* cp, TypeArray* fields, 
@@ -2089,6 +1968,7 @@ void ClassFileParser::update_fields(ConstantPool* cp, TypeArray* fields,
                                     int prev_oop_offset, TypeArray* map,
                                     int& map_size, int map_index) {
   AllocationDisabler raw_pointers_used_in_this_function;
+  FieldType::Raw type;
   jubyte *map_ptr = map->ubyte_base_address() + map_index;
   jubyte *map_start_ptr = map_ptr;
 
@@ -2112,9 +1992,9 @@ void ClassFileParser::update_fields(ConstantPool* cp, TypeArray* fields,
         continue;
       }
 
-      const int type_index = field[Field::SIGNATURE_OFFSET];
-      FieldType::Raw type = cp->symbol_at(type_index);
-      const int field_size = type().allocation_byte_size(is_static);
+      int type_index = field[Field::SIGNATURE_OFFSET];
+      type = cp->symbol_at(type_index);
+      int field_size = type().allocation_byte_size(is_static);
 
 #ifndef PRODUCT
       if (type().basic_type() == T_OBJECT) {

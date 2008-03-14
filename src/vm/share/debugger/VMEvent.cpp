@@ -717,11 +717,8 @@ void VMEvent::create_event_request(PacketInputStream *in,
   int i;
   bool error = false;
   VMEventModifier::Fast current_modifier_slot, new_modifier, event_modifier;
-
-  {
-    TaskAllocationContext tmp(SYSTEM_TASK);
-    ep = create_vm_event_request();
-  }
+ 
+  ep = create_vm_event_request();
     
   ep().set_event_kind(event_kind);
   ep().set_suspend_policy(in->read_byte());
@@ -734,10 +731,7 @@ void VMEvent::create_event_request(PacketInputStream *in,
 #endif
   for (i=0; i < ep().num_modifiers(); i++) {
 
-    {
-      TaskAllocationContext tmp(SYSTEM_TASK);
-      new_modifier = VMEventModifier::new_modifier(in, out, error);
-    }
+    new_modifier = VMEventModifier::new_modifier(in, out, error);
 
     if (error) {
       // some sort of error happened
@@ -1111,20 +1105,16 @@ void VMEvent::vminit(Transport *t)
   out.send_packet();
 
   if (is_suspend) {
-    int task_id = -1;
-#if ENABLE_ISOLATES
-    task_id = Task::current_id();
-#endif
     // Use suspend policy which suspends all threads by default
     JavaDebugger::process_suspend_policy(JDWP_SuspendPolicy_ALL,
-                                         task_id,
-                                         true);
+                                        Thread::current(),
+                                        true);
   } else {
     // Use suspend policy which suspends no threads
     DEBUGGER_EVENT(("VM SuspendPolicy not specified"));
     JavaDebugger::process_suspend_policy(JDWP_SuspendPolicy_NONE,
-                                         -1,
-                                         true);
+                                        Thread::current(),
+                                        true);
   }
   if (_debugger_active) {
     JavaDebugger::send_all_class_prepares();

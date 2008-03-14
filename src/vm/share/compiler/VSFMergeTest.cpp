@@ -28,7 +28,7 @@
 #include "incls/_VSFMergeTest.cpp.incl"
 
 #ifndef PRODUCT
-#if ENABLE_COMPILER && ENABLE_VSF_MERGE_TEST
+#if ENABLE_COMPILER
 
 #if ENABLE_PERFORMANCE_COUNTERS
 void VSFMergeTest::run(OsFile_Handle config_file) {
@@ -50,8 +50,8 @@ void VSFMergeTest::run(OsFile_Handle config_file) {
 
   compiler->set_current_compiled_method(&compiled_method);
 
-  CodeGenerator code_generator( &compiled_method );
-  compiler->set_code_generator( &code_generator  );
+  CodeGenerator code_generator(compiler);
+
   execute_test_cases(config_file JVM_NO_CHECK_AT_BOTTOM);
 }
 
@@ -325,21 +325,22 @@ const char * VSFMergeTest::next_word(const char * p) {
 
 void VSFMergeTest::execute_test_case(const MergeTestCase * const test_case 
                                      JVM_TRAPS) {
-  VirtualStackFrame::set_location_map_size(
-    Location::size() * test_case->location_count );
 
-  VirtualStackFrame* src_frame = 
-    VirtualStackFrame::allocate( JVM_SINGLE_ARG_ZCHECK(src_frame) );
-  VirtualStackFrame* dst_frame = 
-    VirtualStackFrame::allocate( JVM_SINGLE_ARG_ZCHECK(src_frame) );
+  VirtualStackFrame src_frame = 
+    VirtualStackFrame::allocate(Location::size()*
+                                test_case->location_count JVM_CHECK);
+  VirtualStackFrame dst_frame = 
+    VirtualStackFrame::allocate(Location::size()*
+                                test_case->location_count JVM_CHECK);
 
-  src_frame->set_virtual_stack_pointer(test_case->location_count - 1);
-  dst_frame->set_virtual_stack_pointer(test_case->location_count - 1);
+  src_frame.set_virtual_stack_pointer(test_case->location_count - 1);
+  dst_frame.set_virtual_stack_pointer(test_case->location_count - 1);
 
   {
-    RawLocation* src = src_frame->raw_location_at(0);
-    RawLocation* end = src_frame->raw_location_end(src);
-    RawLocation* dst = dst_frame->raw_location_at(0);
+    AllocationDisabler allocation_not_allowed_in_this_block;
+    RawLocation *src = src_frame.raw_location_at(0);
+    RawLocation *end = src_frame.raw_location_end(src);
+    RawLocation *dst = dst_frame.raw_location_at(0);
     unsigned int index = 0;
 
     while (src < end) {
@@ -360,7 +361,7 @@ void VSFMergeTest::execute_test_case(const MergeTestCase * const test_case
     }
   }
 
-  src_frame->verify_conform_to( dst_frame );
+  src_frame.verify_conform_to(&dst_frame);
 }
 #endif
 
@@ -387,26 +388,27 @@ void VSFMergeTest::verify_merge(VirtualStackFrame* src_frame,
   GUARANTEE(compiler != NULL && compiler->code_generator() != NULL, "Sanity");
 
   // Merge code modifies the source frame, so use a copy.
-  VirtualStackFrame* src_copy = src_frame->clone(JVM_SINGLE_ARG_CHECK);
-  src_frame = src_copy;
+  VirtualStackFrame src_copy = src_frame->clone(JVM_SINGLE_ARG_CHECK);
+  src_frame = &src_copy;
 
   CodeGenerator* saved_code_generator = compiler->code_generator();
-  VirtualStackFrame* saved_src_frame = compiler->frame();
+  VirtualStackFrame saved_src_frame = compiler->frame()->obj();
 
   CompilerState state;
   saved_code_generator->save_state(&state);
 
   // Unlink unbound literals to prevent VSFMergeTester from writing literals.
   {
+    Oop null_oop;
 #if defined(ARM) || defined(HITACHI_SH) || ENABLE_THUMB_COMPILER
-    state.set_first_literal( NULL );
-    state.set_first_unbound_literal( NULL );
-    state.set_last_literal( NULL );
+    state.set_first_literal(&null_oop);
+    state.set_first_unbound_literal(&null_oop);
+    state.set_last_literal(&null_oop);
 #endif
 
 #if ENABLE_THUMB_COMPILER
-    state.set_first_unbound_branch_literal( NULL );
-    state.set_last_unbound_branch_literal( NULL );
+    state.set_first_unbound_branch_literal(&null_oop);
+    state.set_last_unbound_branch_literal(&null_oop);
 #endif
   }
 
@@ -430,10 +432,8 @@ void VSFMergeTest::verify_merge(VirtualStackFrame* src_frame,
 
   GUARANTEE(saved_code_generator->code_size() == state.code_size(), "Sanity");
 
-  compiler->set_frame( saved_src_frame );
-  compiler->set_code_generator( saved_code_generator );
-  jvm_fast_globals.compiler_code_generator = saved_code_generator;
-
+  compiler->set_frame(&saved_src_frame);
+  compiler->set_code_generator(saved_code_generator);
 }  
 
 bool VSFMergeTest::_initialized = false;
@@ -486,12 +486,12 @@ int VSFMergeTester::_register_hi_values[Assembler::number_of_registers];
 VSFMergeTester::VSFMergeTester(VirtualStackFrame* src_frame, 
                                VirtualStackFrame* dst_frame,
                                CompilerState* state) :
- CodeGenerator( state, Compiler::current()->current_compiled_method() ), 
+ CodeGenerator(Compiler::current(), state), 
  _src_frame(src_frame), _dst_frame(dst_frame), _state(state) {
+
   if (src_frame->virtual_stack_pointer() + 1 > MAX_STACK_LOCATIONS) {
     return;
   }
-  Compiler::current()->set_code_generator(this);
 
   VSFMergeTest::initialize();
 
@@ -771,10 +771,11 @@ void VSFMergeTester::verify_merge() {
 
 void VSFMergeTester::cleanup() {
 #if USE_COMPILER_LITERALS_MAP
-  LiteralPoolElement* last_literal = _state->last_literal();
+  BinaryAssembler::LiteralPoolElement last_literal = _state->last_literal();
   // Discard all literals appended by the VSFMergeTester.
-  if( last_literal ) {
-    last_literal->set_next( NULL );
+  if (last_literal.not_null()) {
+    Oop null_oop;
+    last_literal.set_next(&null_oop);
   }
 #endif
 }

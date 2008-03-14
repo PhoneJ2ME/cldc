@@ -211,7 +211,7 @@ OopDesc* ROM::_romized_heap_marker;
 #endif
 OopDesc** _romized_heap_top;
 
-#if !defined(PRODUCT) || ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+#if !defined(PRODUCT) || ENABLE_JVMPI_PROFILE
 OopDesc* ROM::_original_class_name_list;
 OopDesc* ROM::_original_method_info_list;
 OopDesc* ROM::_original_fields_list;
@@ -356,10 +356,10 @@ void ROM::check_consistency() {
 }
 #endif
 
-#if !defined(PRODUCT) || ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+#if !defined(PRODUCT) || ENABLE_JVMPI_PROFILE
 // Init the symbols for debug or JVMPI interface.
 void ROM::init_debug_symbols(JVM_SINGLE_ARG_TRAPS) {
-#if ENABLE_ROM_DEBUG_SYMBOLS || ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+#if ENABLE_ROM_DEBUG_SYMBOLS || ENABLE_JVMPI_PROFILE
   // Initialize mapping from renamed ".unknown." methods/field
   // to their original names (non-product build only)
     if (LoadROMDebugSymbols
@@ -382,7 +382,7 @@ void ROM::init_debug_symbols(JVM_SINGLE_ARG_TRAPS) {
 
 
 #if (!defined(PRODUCT) && ENABLE_ROM_DEBUG_SYMBOLS) \
-       || ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+       || ENABLE_JVMPI_PROFILE
 
 void ROM::initialize_original_class_name_list(JVM_SINGLE_ARG_TRAPS) {
   int count = _rom_original_class_info_count;
@@ -505,9 +505,9 @@ void ROM::initialize_alternate_constant_pool(JVM_SINGLE_ARG_TRAPS) {
   }
 }
 
-#endif //!PRODUCT || ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+#endif //!PRODUCT || ENABLE_JVMPI_PROFILE
 
-bool ROM::is_restricted_package(const char *name, int pkg_length) {
+bool ROM::is_restricted_package(char *name, int pkg_length) {
 
   char *rp = (char*)&_rom_restricted_packages[0];
   char *rp2;
@@ -653,7 +653,7 @@ void ROM::oops_do(void do_oop(OopDesc**), bool do_all_data_objects,
 #ifdef PRODUCT
   (void)do_method_variable_parts;
 
-#if ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+#if ENABLE_JVMPI_PROFILE
   if (UseROM || GenerateROMImage) {
     do_oop((OopDesc**)&_original_class_name_list);
     do_oop((OopDesc**)&_original_method_info_list);
@@ -786,7 +786,7 @@ ReturnOop ROM::compiled_method_from_address(const address addr) {
 }
 #endif // ENABLE_COMPILER && ENABLE_APPENDED_CALLINFO
 
-#if !defined(PRODUCT) || ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+#if !defined(PRODUCT) || ENABLE_JVMPI_PROFILE
 ReturnOop ROM::get_original_class_name(ClassInfo *clsinfo) {
   if (!GenerateROMImage && _original_class_name_list == NULL) {
     return Symbols::unknown()->obj();
@@ -944,7 +944,7 @@ void ROM::dispose() {
   ROMBundle::set_current( NULL );
 #endif
 
-#if !defined( PRODUCT) || ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+#if !defined( PRODUCT) || ENABLE_JVMPI_PROFILE
   _original_class_name_list = NULL;
   _original_method_info_list = NULL;
   _original_fields_list = NULL;
@@ -1066,20 +1066,6 @@ ReturnOop ROM::symbol_for(utf8 s, juint hash_value, int len) {
 
 #if USE_BINARY_IMAGE_LOADER || USE_BINARY_IMAGE_GENERATOR
 
-#if ENABLE_DYNAMIC_NATIVE_METHODS
-
-#define TEMPLATE(jtype, ttype, arg) arg(Java_ ## jtype ## _unimplemented)
-
-#define UNIMPLEMENTED_METHOD_ENTRIES_DO(template) \
-  FOR_ALL_TYPES_ARG(TEMPLATE, template)
-
-#else
-
-#define UNIMPLEMENTED_METHOD_ENTRIES_DO(template) \
-  template(Java_void_unimplemented)
-
-#endif
-
 #define METHOD_ENTRIES_DO(template) \
   template(interpreter_method_entry) \
   template(interpreter_fast_method_entry_0) \
@@ -1105,7 +1091,7 @@ ReturnOop ROM::symbol_for(utf8 s, juint hash_value, int len) {
   template(shared_fast_getint_static_accessor)   \
   template(shared_fast_getlong_static_accessor)  \
   \
-  UNIMPLEMENTED_METHOD_ENTRIES_DO(template)    \
+  template(Java_unimplemented)                 \
   template(Java_abstract_method_execution)     \
   template(Java_incompatible_method_execution) \
   \
@@ -1256,7 +1242,7 @@ void ROM::ROM_print_hrticks(void print_hrticks(const char *name,
 #endif
 
 #if ENABLE_MULTIPLE_PROFILES_SUPPORT
-bool ROM::is_restricted_package_in_profile(const char *name, int name_len) {
+bool ROM::is_restricted_package_in_profile(char *name, int name_len) {
   const int current_profile_id = Universe::current_profile_id();  
   if (current_profile_id == Universe::DEFAULT_PROFILE_ID) {
     return false;

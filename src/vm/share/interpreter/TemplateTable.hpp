@@ -44,8 +44,6 @@ enum template_options {
 
 class Template: public SourceMacros {
  public:
-  void* operator new(size_t size) { return GlobalObj::operator new( size ); }
-
   Template(SourceMacros* assembler, Bytecodes::Code bc, int options) :
     SourceMacros(*assembler), _bc(bc), _options(options)
   { }

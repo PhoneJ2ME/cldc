@@ -78,8 +78,7 @@ class InstanceClass: public JavaClass {
     return (oop_map_at(first_static_map_offset()) != OopMapSentinel);
   }
 
-  ReturnOop lookup_method(Symbol* name, Symbol* signature,
-                          const bool non_static_only = false);
+  ReturnOop lookup_method(Symbol* name, Symbol* signature);
 
   // Returns the Method.
   // interface_class_id = class_id of interface that declares the method
@@ -137,11 +136,9 @@ class InstanceClass: public JavaClass {
   }
 #endif
 
-  ReturnOop find_local_method(Symbol* name, Symbol* signature,
-                              const bool non_static_only = false);
-
+  ReturnOop find_local_method(Symbol* name, Symbol* signature);
   static ReturnOop find_method(ObjArray* class_methods, Symbol* name,
-                     Symbol* signature, const bool non_static_only = false);
+                               Symbol* signature);
 
   ReturnOop interface_method_at(jint itable_index);
 
@@ -149,7 +146,7 @@ class InstanceClass: public JavaClass {
   void update_vtable(int super_vtable_length);
   static bool needs_new_vtable_entry(Method* method, InstanceClass* super,
                                      Symbol* classname,
-                                     const AccessFlags access_flags, 
+                                     AccessFlags access_flags, 
                                      ClassInfo* cl_info, //don't need if update_entries == false
                                      bool update_entries);
 

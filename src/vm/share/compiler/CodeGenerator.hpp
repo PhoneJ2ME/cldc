@@ -37,31 +37,18 @@
 
 class CodeGenerator: public BinaryAssembler {
  public:
-  static CodeGenerator* allocate( const int size JVM_TRAPS ) {
-    OopDesc* compiled_method = Universe::new_compiled_method(size JVM_NO_CHECK);
-    if( compiled_method ) {
-#ifdef PRODUCT
-      CodeGenerator* gen = COMPILER_OBJECT_ALLOCATE( CodeGenerator );
-      if( gen )
-#else
-      static CodeGenerator _code_generator;
-      CodeGenerator* gen = &_code_generator;
-#endif
-      {
-        _compiler_code_generator = gen;
-        gen->initialize( compiled_method );
-        return gen;
-      }
-    }
-    return NULL;
-  }
-  static void terminate( void ) {
-    _compiler_code_generator = NULL;
-  }
-  static CodeGenerator* current( void ) {
-    return _compiler_code_generator;
-  }
+  // construct a code generator given a compiled method and the 
+  // current compiler
+  CodeGenerator(Compiler* compiler);
 
+  // construct a code generator for resuming a suspended compilation.
+  CodeGenerator(Compiler* compiler, CompilerState* compiler_state);
+
+  // Save my state when suspending compilation
+  void save_state(CompilerState *compiler_state);
+#if ENABLE_INLINE
+  void restore_state(CompilerState *compiler_state);
+#endif
   // generate the jmp to interpreter_method_entry for overflow
   void overflow(const Assembler::Register&, const Assembler::Register&);
   // generate the code for the method entry of the given method
@@ -78,7 +65,9 @@ class CodeGenerator: public BinaryAssembler {
   // load/store value from/to the location at the specified index
   void load_from_address  (Value& result, BasicType type,
                             MemoryAddress& address, Condition cond = always);
+  NOT_PRODUCT(virtual)
   void load_from_location (Value& result, jint index, Condition cond = always);
+  NOT_PRODUCT(virtual)
   void store_to_location  (Value& value,  jint index);
 
   // load/store value from/to given object at the specified offset
@@ -108,7 +97,7 @@ class CodeGenerator: public BinaryAssembler {
 
   //do the null check if needed. 
   void maybe_null_check_by_npce(Value& value, bool need_tigger_instr, 
-             bool is_quick_return, BasicType type_of_data JVM_TRAPS) ;
+  	     bool is_quick_return, BasicType type_of_data JVM_TRAPS) ;
 
 private:
 
@@ -151,9 +140,11 @@ public:
   void ensure_sufficient_stack_for(int index, BasicType kind);
 
   // platform independent move operations
+  NOT_PRODUCT(virtual)
   void move(const Value& dst, const Value& src, const Condition cond = always);
   void move(Value& dst, ExtendedValue& src, Condition cond = always);
   void move(Value& dst, Oop* obj,    Condition cond = always);
+  NOT_PRODUCT(virtual)
   void move(Assembler::Register dst, Assembler::Register src,
                                      Condition cond = always);
 
@@ -162,13 +153,7 @@ public:
 
   // Branch if integer comparison satisfies condition.
   void branch_if(BytecodeClosure::cond_op condition, int destination, 
-                 Value& op1, Value& op2, const bool flags_set JVM_TRAPS); 
-
-  // Branch if integer comparison satisfies condition.
-  void branch_if(BytecodeClosure::cond_op condition, int destination, 
-                 Value& op1, Value& op2 JVM_TRAPS) {
-    branch_if( condition, destination, op1, op2, false JVM_NO_CHECK );
-  }
+                 Value& op1, Value& op2 JVM_TRAPS); 
 
   bool forward_branch_optimize(int next_bci,
                                BytecodeClosure::cond_op condition,
@@ -346,17 +331,7 @@ public:
   void bytecode_prolog();
   void flush_epilogue(JVM_SINGLE_ARG_TRAPS);
 
-  bool omit_stack_frame( void ) const {
-    return _omit_stack_frame;
-  }
-  void set_omit_stack_frame( const bool value ) {
-    _omit_stack_frame = value;
-  }
-
-  OopDesc* finish( void );
-
  protected:
-
   // Generic binary operations.
   // NOTE: result must be uninitialized when this routine is called;
   //       op1 must be in a register; and
@@ -461,46 +436,28 @@ public:
 
 
   // Do conditional jump.
-  void conditional_jump(const BytecodeClosure::cond_op condition,
-                        const int destination,
-                        const bool assume_backward_jumps_are_taken
-                        JVM_TRAPS);
+  void conditional_jump(BytecodeClosure::cond_op condition,
+                        int destination,
+                        bool assume_backward_jumps_are_taken JVM_TRAPS);
 
   void conditional_jump_do(BytecodeClosure::cond_op condition, 
                            Label& destination);
 
-  static inline VirtualStackFrame* frame ( void );
-
-  static jint bci ( void ) {
+  static inline VirtualStackFrame* frame ( void ) {
+    return jvm_fast_globals.compiler_frame;
+  }
+  static inline jint bci ( void ) {
     return jvm_fast_globals.compiler_bci;
   }
-  static Method* method ( void ) {
+  static inline Method* method ( void ) {
     return jvm_fast_globals.compiler_method;
-  }
-  static jint next_bci ( const jint bci ) {
-    return method()->next_bci( bci );
-  }
-  static jint next_bci ( void ) {
-    return next_bci( bci() );
   }
 
   void flush_frame(JVM_SINGLE_ARG_TRAPS);
 
 #if ENABLE_APPENDED_CALLINFO
-  CallInfoWriter _callinfo_writer;
-  CallInfoWriter* callinfo_writer( void ) { return &_callinfo_writer; }
   void append_callinfo_record(const int code_offset JVM_TRAPS);
 #endif
-
-  void initialize( OopDesc* compiled_method ) {
-    BinaryAssemblerCommon::initialize( compiled_method );
-#if ENABLE_APPENDED_CALLINFO
-    _callinfo_writer.initialize( this->compiled_method() );
-#endif
-    _omit_stack_frame = false;
-  }
-
-  bool _omit_stack_frame;
 
   // Platform dependent stuff
 #include "incls/_CodeGenerator_pd.hpp.incl"

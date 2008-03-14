@@ -342,7 +342,7 @@ class Thread: public Oop {
     obj_field_clear(global_next_offset());
   }
 
-  ReturnOop previous() const {
+  ReturnOop previous() {
     return obj_field(previous_offset());
   }
   void set_previous(Thread* value) {
@@ -352,7 +352,7 @@ class Thread: public Oop {
     obj_field_clear(previous_offset());
   }
 
-  ReturnOop next_waiting() const {
+  ReturnOop next_waiting() {
     return obj_field(next_waiting_offset());
   }
   void set_next_waiting(Thread* value) {
@@ -362,7 +362,7 @@ class Thread: public Oop {
     obj_field_clear(next_waiting_offset());
   }
 
-  ReturnOop wait_obj() const {
+  ReturnOop wait_obj() {
     return obj_field(wait_obj_offset());
   }
   void set_wait_obj(Oop* value) {

@@ -101,7 +101,7 @@ void CodeGenerator::load_task_mirror(Oop*klass, Value& statics_holder,
     Label class_is_initialized, need_init;
     // Can we make the flush conditional for  get/put static ? 
     //  see if register usage cross compiled bytecode.
-    frame()->flush(JVM_SINGLE_ARG_CHECK);
+    frame()->flush();
     // check for no task mirror at all.
     tst(statics_holder.lo_register(), statics_holder.lo_register());
     b(need_init, eq);
@@ -144,7 +144,7 @@ void CodeGenerator::check_cib(Oop *klass JVM_TRAPS){
   Label class_is_initialized, need_init;
   // IMPL_NOTE: Cannot make the flush conditionally.
   //  see how this can be made conditional!
-  frame()->flush(JVM_SINGLE_ARG_CHECK);
+  frame()->flush();
 
   // add to the klass oop to get the address of the appropriate
   // task mirror table entry
@@ -222,6 +222,10 @@ bool CompilerLiteralAccessor::has_literal(int imm32,
   }
  
   return false;
+}
+
+void CodeGenerator::save_state(CompilerState *compiler_state) {
+  BinaryAssembler::save_state(compiler_state);
 }
 
 void CodeGenerator::load_from_address(Value& result, BasicType type,
@@ -430,19 +434,18 @@ void CodeGenerator::move(Assembler::Register dst, Assembler::Register src,
 }
 
 void CodeGenerator::array_check(Value& array, Value& index JVM_TRAPS) {
+  UsingFastOops fast_oops;
   write_literals_if_desperate();
+  NullCheckStub::Fast null_check_stub;
 
-  const bool null_check = need_null_check(array);
+  bool null_check = need_null_check(array);
 
   TempRegister length;
   if (null_check) {
+    null_check_stub = NullCheckStub::allocate_or_share(JVM_SINGLE_ARG_CHECK);
     cmp_imm(array.lo_register(), zero);
     frame()->set_value_must_be_nonnull(array);
-
-    NullCheckStub* null_check_stub =
-      NullCheckStub::allocate_or_share(JVM_SINGLE_ARG_ZCHECK(null_check_stub));
-    b(null_check_stub, eq);
-
+    b(&null_check_stub, eq);
     ldr(length, array.lo_register(), Array::length_offset());
   } else {
     ldr(length, array.lo_register(), Array::length_offset());
@@ -455,9 +458,9 @@ void CodeGenerator::array_check(Value& array, Value& index JVM_TRAPS) {
   } else {
     cmp(length, reg(index.lo_register()));
   }
-  IndexCheckStub* index_check_stub = 
-    IndexCheckStub::allocate_or_share(JVM_SINGLE_ARG_ZCHECK(index_check_stub));
-  b(index_check_stub, ls);
+  IndexCheckStub::Fast index_check_stub = 
+    IndexCheckStub::allocate_or_share(JVM_SINGLE_ARG_CHECK);
+  b(&index_check_stub, ls);
 }
 
 // Note: We cannot bailout in null_check, as null_check is used in
@@ -465,13 +468,14 @@ void CodeGenerator::array_check(Value& array, Value& index JVM_TRAPS) {
 // This means that we do not have enough data to reconstruct the virtual
 // stack frame for the  uncommon trap
 void CodeGenerator::null_check(const Value& object JVM_TRAPS) {
-  NullCheckStub* check_stub = 
-    NullCheckStub::allocate_or_share(JVM_SINGLE_ARG_ZCHECK(check_stub));
+  UsingFastOops fast_oops;
+  NullCheckStub::Fast check_stub = 
+      NullCheckStub::allocate_or_share(JVM_SINGLE_ARG_CHECK);
   if (object.must_be_null()) {
-    b(check_stub);
+    b(&check_stub);
   } else {
     cmp_imm(object.lo_register(), zero);
-    b(check_stub, eq);
+    b(&check_stub, eq);
   }
 }
 
@@ -543,15 +547,15 @@ void CodeGenerator::method_entry(Method* method JVM_TRAPS) {
 
   bind(done);
 
-    StackOverflowStub* stub =
-      StackOverflowStub::allocate(stack_overflow, done, r1, r0 JVM_ZCHECK(stub));
-    stub->insert();
+    StackOverflowStub::Raw stub =
+        StackOverflowStub::allocate(stack_overflow, done, r1, r0 JVM_CHECK);
+    stub().insert();
 
     // If we go to the stub, we can't be guaranteed it has preserved literals
     frame()->clear_literals();
   }
 
-  if (omit_stack_frame()) {
+  if (Compiler::omit_stack_frame()) {
     // The rest of method_entry deal with pushing the call frame, so
     // we can safely return here.
     GUARANTEE(!ENABLE_WTK_PROFILER, "Profiler always need call frame");
@@ -948,9 +952,10 @@ void CodeGenerator::idiv_rem(Value& result, Value& op1, Value& op2,
 
   if (!op2.in_register()) {
     if (divisor == 0) {
-      ZeroDivisorCheckStub* zero_error =
-          ZeroDivisorCheckStub::allocate_or_share(JVM_SINGLE_ARG_ZCHECK(zero_error));
-      b(zero_error);
+      UsingFastOops fast_oops;
+      ZeroDivisorCheckStub::Fast zero_error =
+          ZeroDivisorCheckStub::allocate_or_share(JVM_SINGLE_ARG_CHECK);
+      b(&zero_error);
     } else if (divisor == 1) {
       if (isRemainder) {
         result.set_int(0);
@@ -1232,7 +1237,7 @@ void CodeGenerator::double_cmp(Value& result, BytecodeClosure::cond_op cond,
 void CodeGenerator::vcall_simple_c_runtime(Value& result,
                                         address runtime_func, ...) {
   GUARANTEE(runtime_func != 0, "sanity check");
-  GUARANTEE(!omit_stack_frame(),
+  GUARANTEE(!Compiler::omit_stack_frame(),
             "cannot call runtime functions with omitted compiled frame");
 
   int i;
@@ -1542,15 +1547,16 @@ void CodeGenerator::runtime_long_op(Value& result, Value& op1, Value& op2,
   write_literals_if_desperate();
   if (check_zero) {
     if (op2.in_register() || (op2.is_immediate() && op2.as_long() == 0)) {
-      ZeroDivisorCheckStub* zero_error =
-        ZeroDivisorCheckStub::allocate_or_share(JVM_SINGLE_ARG_ZCHECK(zero_error));
+      UsingFastOops fast_oops;
+      ZeroDivisorCheckStub::Fast zero_error =
+        ZeroDivisorCheckStub::allocate_or_share(JVM_SINGLE_ARG_CHECK);
       if (op2.is_immediate()) {
-        jmp(zero_error);
+        jmp(&zero_error);
       } else {
         TempRegister tmp;
         mov(tmp, op2.lo_register());
         orr(tmp, reg(op2.hi_register()));
-        b(zero_error, eq);
+        b(&zero_error, eq);
       }
     }
   }
@@ -1648,9 +1654,9 @@ void CodeGenerator::check_stack_overflow(Method *m JVM_TRAPS) {
   b(stack_overflow, JavaStackDirection < 0 ? ls : hs);
 bind(done);
 
-  StackOverflowStub* stub =
-    StackOverflowStub::allocate(stack_overflow, done, r1, r0 JVM_ZCHECK(stub));
-  stub->insert();
+  StackOverflowStub::Raw stub =
+      StackOverflowStub::allocate(stack_overflow, done, r1, r0 JVM_CHECK);
+  stub().insert();
 
   // If we go to the stub, we can't be guaranteed it has preserved literals
   frame()->clear_literals();
@@ -1666,9 +1672,10 @@ void CodeGenerator::check_timer_tick(JVM_SINGLE_ARG_TRAPS) {
   b(timer_tick, gt);
 bind(done);
 
-  TimerTickStub* stub =
-    TimerTickStub::allocate(Compiler::current()->bci(), timer_tick, done JVM_ZCHECK(stub));
-  stub->insert();
+  TimerTickStub::Raw stub =
+      TimerTickStub::allocate(Compiler::current()->bci(),
+                              timer_tick, done JVM_CHECK);
+  stub().insert();
 
   // If we go to the stub, we can't be guaranteed it has preserved literals
   frame()->clear_literals();
@@ -1786,12 +1793,10 @@ void CodeGenerator::instance_of(Value& result, Value& object, Value& klass,
   }
 
   bind(done_checking);
-  {
-    InstanceOfStub* stub =
+  InstanceOfStub::Raw stub =
       InstanceOfStub::allocate(bci(), class_id, slow_case, done_checking,
-                               result.lo_register() JVM_ZCHECK(stub));
-    stub->insert();
-  }
+                               result.lo_register() JVM_CHECK);
+  stub().insert();
   frame()->pop(object);
 
   // If we go to the stub, we can't be guaranteed it has preserved literals
@@ -2059,7 +2064,7 @@ void CodeGenerator::return_result(Value& result JVM_TRAPS) {
   }
 
   // We always return to Java code or an assembly language stub
-  omit_stack_frame() ? bx(lr) : bx(r3);
+  Compiler::omit_stack_frame() ? bx(lr) : bx(r3);
 
   RegisterAllocator::dereference(r0);
   RegisterAllocator::dereference(r1);
@@ -2091,7 +2096,7 @@ void CodeGenerator::return_void(JVM_SINGLE_ARG_TRAPS) {
     }
   }
 
-  omit_stack_frame() ? bx(lr) : bx(r3);
+  Compiler::omit_stack_frame() ? bx(lr) : bx(r3);
 
   RegisterAllocator::dereference(r3);
 
@@ -2121,7 +2126,7 @@ void CodeGenerator::return_error(Value& value JVM_TRAPS) {
 
 
 void CodeGenerator::restore_last_frame(Register return_address) {
-  if (omit_stack_frame()) {
+  if (Compiler::omit_stack_frame()) {
     int params = method()->size_of_parameters();
     if (params > 0) {
       add_imm(jsp, - params * JavaStackDirection * BytesPerStackElement);
@@ -2153,7 +2158,7 @@ void CodeGenerator::throw_simple_exception(int rte JVM_TRAPS) {
 
   if (rte == ThrowExceptionStub::rte_null_pointer) { 
     int num_locals = method()->max_locals(); 
-    if(omit_stack_frame()) {
+    if(Compiler::omit_stack_frame()) {
       int params = method()->size_of_parameters();
       mov_imm(r3, gp_compiler_throw_NullPointerException_10_ptr);
       mov_imm(r0, - params * JavaStackDirection * BytesPerStackElement);
@@ -2167,14 +2172,15 @@ void CodeGenerator::throw_simple_exception(int rte JVM_TRAPS) {
     }
     bx(r3);
   } else if (rte == ThrowExceptionStub::rte_array_index_out_of_bounds) { 
-    if(omit_stack_frame()) {
+    if(Compiler::omit_stack_frame()) {
       int params = method()->size_of_parameters();
       mov_imm(r3, gp_compiler_throw_ArrayIndexOutOfBoundsException_10_ptr);
       mov_imm(r0, - params * JavaStackDirection * BytesPerStackElement);
       bx(r3);
     } else {
       Register tmp_reg = r1;
-      address &target = gp_compiler_throw_ArrayIndexOutOfBoundsException_ptr;
+      address &target 
+          = gp_compiler_throw_ArrayIndexOutOfBoundsException_ptr;
       mov_imm(r0, method()->max_locals());
       long offset = (long)&target - (long)&gp_base_label;
       mov(tmp_reg, gp);
@@ -2203,6 +2209,10 @@ void CodeGenerator::unlock_activation(JVM_SINGLE_ARG_TRAPS) {
 }
 
 void CodeGenerator::check_monitors(JVM_SINGLE_ARG_TRAPS) {
+  UsingFastOops fast_oops;
+  UnlockExceptionStub::Fast unlock_exception =
+      UnlockExceptionStub::allocate_or_share(JVM_SINGLE_ARG_CHECK);
+
   // Make sure there are no locked monitors on the stack.
   // Add the stub for the unlock exception.
   Label unlocking_loop, unlocking_loop_entry;
@@ -2228,11 +2238,7 @@ void CodeGenerator::check_monitors(JVM_SINGLE_ARG_TRAPS) {
 
 bind(unlocking_loop);
   cmp_imm(object, zero);
-  {
-    UnlockExceptionStub* unlock_exception =
-      UnlockExceptionStub::allocate_or_share(JVM_SINGLE_ARG_ZCHECK(unlock_exception));
-    b(unlock_exception, ne);
-  }
+  b(&unlock_exception, ne);
 
 bind(unlocking_loop_entry);
   cmp(lock, reg(end));
@@ -2419,12 +2425,11 @@ void CodeGenerator::invoke(const Method* method,
   GUARANTEE(tmp != lr, "Must not have lr as temporary register");
 
   if (must_do_null_check) {
-    GUARANTEE(!frame()->receiver_must_be_nonnull(size_of_parameters),
-              "Null check not needed");
-
-    Value receiver(T_OBJECT);
-    frame()->receiver(receiver, size_of_parameters);
-    maybe_null_check(receiver JVM_CHECK);
+    if(!(frame()->reveiver_must_be_nonnull(size_of_parameters))) {
+      Value receiver(T_OBJECT);
+      frame()->receiver(receiver, size_of_parameters);
+      maybe_null_check(receiver JVM_CHECK);
+    }
     ldr_oop(r0, method);
   } else {
     ldr_oop(r0, method);
@@ -2435,13 +2440,12 @@ void CodeGenerator::invoke(const Method* method,
   // IMPL_NOTE: this needs to be fixed so that the AOT-compiled code can 
   // directly invoke the method without a look up
   if (method->is_native() && 
-      method->get_native_code() == (address)Java_void_unimplemented) {
+      method->get_native_code() == (address)Java_unimplemented) {
     // Used by AOT only: we are calling a MIDP native method, which
     // is not resolved during romization
     try_skip_lookup = false;
   } else if (method->is_quick_native() && 
-             method->get_quick_native_code() == 
-             (address)Java_void_unimplemented) {
+             method->get_quick_native_code() == (address)Java_unimplemented) {
     try_skip_lookup = false;
   }
 #else
@@ -2582,6 +2586,11 @@ void CodeGenerator::invoke_virtual(Method* method, int vtable_index,
 void CodeGenerator::invoke_interface(JavaClass* klass, int itable_index,
                                      int parameters_size,
                                      BasicType return_type JVM_TRAPS) {
+  UsingFastOops fast_oops;
+  IncompatibleClassChangeStub::Fast icc_error =
+      IncompatibleClassChangeStub::allocate_or_share(JVM_SINGLE_ARG_CHECK);
+
+
   // Make sure that tmp0 isn't taken by receiver, below
   frame()->spill_register(tmp0);
   Value tmp(T_OBJECT);
@@ -2632,11 +2641,7 @@ void CodeGenerator::invoke_interface(JavaClass* klass, int itable_index,
   Label lookup;
 bind(lookup);
   sub_imm(tmp5, one); 
-  {
-    IncompatibleClassChangeStub* icc_error =
-      IncompatibleClassChangeStub::allocate_or_share(JVM_SINGLE_ARG_ZCHECK(icc_error));
-    b(icc_error, lt);
-  }
+  b(&icc_error, lt);
 
   add_imm(tmp1, 2 * BytesPerWord);
   ldr(tos_val, tmp1, 0);
@@ -2966,9 +2971,9 @@ void CodeGenerator::type_check(Value& array, Value& index, Value& object JVM_TRA
   // Cache hit.
   bind(done_checking);
   
-  TypeCheckStub* stub =
-      TypeCheckStub::allocate(bci(), slow_case, done_checking JVM_ZCHECK(stub));
-  stub->insert();
+  TypeCheckStub::Raw stub =
+      TypeCheckStub::allocate(bci(), slow_case, done_checking JVM_CHECK);
+  stub().insert();
   frame()->pop(object);
   frame()->pop(index);
   frame()->pop(array);

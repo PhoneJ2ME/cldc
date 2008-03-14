@@ -255,9 +255,6 @@ private:
   develop(bool, ShareExceptionStubs, true,                                  \
           "Share exception thrower stubs for compiled methods.")            \
                                                                             \
-  develop(bool, InlineIfExceptions, true,                                   \
-          "Inline methods that can throw exceptions.")                      \
-                                                                            \
   develop(bool, ResolveConstantPoolInCompiler, true,                        \
           "Try to resolve constant pool entries inside the compiler "       \
           "if possible")                                                    \
@@ -439,21 +436,6 @@ private:
           "Use execution time profiler")
 #endif
 
-#ifndef USE_EVENT_LOGGER
-#error USE_EVENT_LOGGER must be defined
-#endif
-
-#if USE_EVENT_LOGGER
-#define EVENT_LOGGER_RUNTIME_FLAGS(develop, product)\
-  product(bool, UseEventLogger, false,                                     \
-          "Enable EventLogger, and print event log at VM exit")            \
-  product(bool, LogEventsToFile, false,                                    \
-          "If true, write the event log into event.log. Otherwise dump to "\
-          "tty")
-#else
-#define EVENT_LOGGER_RUNTIME_FLAGS(develop, product)
-#endif
-
 /*
  * The following flags are 'product' flags if ENABLE_PERFORMANCE_COUNTERS
  * if false; 'develop' flags otherwise. These flags are useful in discovering
@@ -505,6 +487,12 @@ private:
           "Print performance counters related to romization")              \
   op(bool, PrintThreadPerformanceCounters, false,                          \
           "Print performance counters related to threads and events")      \
+  op(int, UseEventLogger, 0,                                               \
+          "Enable EventLogger, and print event log at VM exit. 0 for no "  \
+          "logging, 1 for critical events and 2 for all events")           \
+  op(bool, LogEventsToFile, false,                                         \
+          "If true, write the event log into event.log. Otherwise dump to "\
+          "tty")                                                           \
   op(bool, RetryCompilation, true,                                         \
           "Retry compilation if CompiledCodeFactor is too small")          \
   op(bool, TestCompiler, false,                                            \
@@ -558,7 +546,7 @@ private:
        op(bool, TraceMethodInlining, false,                                 \
           "Trace method inlining (only for ENABLE_INLINE)")                 \
                                                                             \
-       op(bool, TraceNativeCalls, false,                                    \
+  develop(bool, TraceNativeCalls, false,                                    \
           "Trace native method calls")                                      \
                                                                             \
        op(bool, TraceCompiledMethodCache, false,                            \
@@ -947,20 +935,10 @@ private:
 #define CPU_VARIANT_RUNTIME_FLAGS(develop, product)
 #endif
 
-#if ENABLE_ARM_VFP
-#define VFP_RUNTIME_FLAGS(develop, product)                          \
-  product(bool, RunFastMode, false,                                      \
-          "Configure the ARM VFP coprocessor to run in RunFast mode "    \
-          "and execute extra instructions to ensure TCK compilance")
-#else
-#define VFP_RUNTIME_FLAGS(develop, product)
-#endif
-
 #define RUNTIME_FLAGS(develop, product, always)            \
       GENERIC_RUNTIME_FLAGS(develop, product)              \
       USE_ROM_RUNTIME_FLAGS(develop, product, always)      \
       PROFILER_RUNTIME_FLAGS(develop, product)             \
-      EVENT_LOGGER_RUNTIME_FLAGS(develop, product)         \
       ROM_GENERATOR_FLAGS(develop, product)                \
       PERFORMANCE_COUNTERS_RUNTIME_FLAGS(develop, product) \
       PLATFORM_RUNTIME_FLAGS(develop, product)             \
@@ -972,7 +950,6 @@ private:
       JVMPI_PROFILE_RUNTIME_FLAGS(develop, product)        \
       JVMPI_PROFILE_VERIFY_RUNTIME_FLAGS(develop, product) \
       CPU_VARIANT_RUNTIME_FLAGS(develop, product)          \
-      VFP_RUNTIME_FLAGS(develop, product)                  \
       TTY_TRACE_RUNTIME_FLAGS(always, develop, product)
 
 /*

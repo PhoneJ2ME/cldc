@@ -48,11 +48,6 @@ HOST_TOOLS_DIR       = $(WorkSpace)/build/share/bin/$(host_os)_$(host_arch)
 NATIVES_TABLE        = $(GEN_DIR)/NativesTable.cpp
 BUILDTOOLS_DIR       = $(BuildSpace)/$(BUILD_DIR_NAME)/tools
 BUILDTOOL_JAR        = $(BUILDTOOLS_DIR)/buildtool.jar
-ifeq ($(USE_VS2005), true)
-VC_MANIFEST_EMBED_EXE = mt.exe -nologo -manifest $@.manifest "-outputresource:$@"
-else
-VC_MANIFEST_EMBED_EXE = true
-endif
 
 #----------------------------------------------------------------------
 #
@@ -81,6 +76,12 @@ ifeq ($(ENABLE_JVMPI_PROFILE_VERIFY), true)
 MakeDepsOpts  += ENABLE_JVMPI_PROFILE_VERIFY=true
 else
 MakeDepsOpts  += ENABLE_JVMPI_PROFILE_VERIFY=false
+endif
+
+# Use ENABLE_SEGMENTED_ROM_TEXT_BLOCK by default
+ifndef ENABLE_SEGMENTED_ROM_TEXT_BLOCK  
+export ENABLE_SEGMENTED_ROM_TEXT_BLOCK     := true
+export ENABLE_SEGMENTED_ROM_TEXT_BLOCK__BY := jvm.make
 endif
 
 ifeq ($(IsTarget)+$(ENABLE_MONET), true+true)
@@ -113,7 +114,7 @@ PRODUCT_NAME        = phoneME Feature VM
 endif
 
 ifndef RELEASE_VERSION
-RELEASE_VERSION     = 1.1
+RELEASE_VERSION     = 1.2
 endif
 
 ifndef BUILD_VERSION
@@ -136,9 +137,6 @@ endif
 MakeDepsMain_win32    = WinGammaPlatform
 MakeDepsMain_wince    = WinCEGammaPlatform
 MakeDepsMain_linux    = UnixPlatform
-ifeq ($(target_platform), linux_javacall)
-MakeDepsMain_javacall = UnixPlatform
-endif
 ifneq ($(MakeDepsMain_$(os_family)_$(compiler)),)
 MakeDepsMain          = $(MakeDepsMain_$(os_family)_$(compiler))
 else
@@ -156,9 +154,6 @@ endif
 MakeDepsOpts_win32    = -resolveVpath true
 MakeDepsOpts_wince    = -resolveVpath true
 MakeDepsOpts_linux    = -resolveVpath true
-ifeq ($(target_platform), linux_javacall)
-MakeDepsOpts_javacall = -resolveVpath true
-endif
 MakeDepsOpts         += -gendir $(GEN_DIR) -workspace $(WorkSpace)
 MakeDepsOpts         += $(MakeDepsOpts_$(os_family))
 
@@ -235,12 +230,8 @@ ifeq ($(ENABLE_INLINEASM_INTERPRETER), true)
 LOOP_GEN_ARG        += +GenerateInlineAsm
 endif
 
-ifeq ($(ENABLE_TTY_TRACE), true)
-LOOP_GEN_ARG        += +TraceNativeCalls
-endif
-
 LOOP_GEN_ARG_debug   = $(DETERMINISTIC_FLAG) $(TRACE_BYTECODES_FLAG) \
-                       -generate +GenerateDebugAssembly +TraceNativeCalls
+                       -generate +GenerateDebugAssembly
 LOOP_GEN_ARG_release = $(DETERMINISTIC_FLAG) -generateoptimized
 LOOP_GEN_ARG_product = $(DETERMINISTIC_FLAG) -generateoptimized
 LOOP_GEN_ARG        += $(LOOP_GEN_ARG_$(BUILD)) $(LOOP_GEN_FLAGS)
@@ -344,9 +335,6 @@ ASM_SUFFIX           = $(ASM_SUFFIX_$(compiler))
 EXTRA_JVMCONFIG_win32   = USE_UNICODE_FOR_FILENAMES=1
 EXTRA_JVMCONFIG_linux   =
 EXTRA_JVMCONFIG_solaris =
-ifeq ($(target_platform), linux_javacall)
-EXTRA_JVMCONFIG_javacall=
-endif
 EXTRA_JVMCONFIG         = $(EXTRA_JVMCONFIG_$(os_family))
 
 ifndef ROMIZING
@@ -443,18 +431,10 @@ export ENABLE_INTERPRETER_GENERATOR
 export ENABLE_INTERPRETER_GENERATOR__BY
 endif
 
-# Use ENABLE_SEGMENTED_ROM_TEXT_BLOCK by default for Visual C++
-ifndef ENABLE_SEGMENTED_ROM_TEXT_BLOCK  
-ifeq ($(compiler), visCPP)
-export ENABLE_SEGMENTED_ROM_TEXT_BLOCK     := true
-export ENABLE_SEGMENTED_ROM_TEXT_BLOCK__BY := jvm.make
-endif
-endif
-
 ifeq ($(IsTarget)+$(ROMIZING)+$(ENABLE_SEGMENTED_ROM_TEXT_BLOCK), true+true+true)
   # by default separate ROMImage.cpp into smaller parts
   override SeparateROMImage := true
-
+  
   # by default compile ROMImage.cpp as one file
   CompileROMImageSeparately := false
 
@@ -472,9 +452,6 @@ ifeq ($(IsTarget)+$(ROMIZING)+$(ENABLE_SEGMENTED_ROM_TEXT_BLOCK), true+true+true
 
   ifeq ($(arch), arm)
     ifeq ($(os_family), linux)
-      CompileROMImageSeparately := true
-    endif
-    ifeq ($(target_platform), linux_javacall)
       CompileROMImageSeparately := true
     endif
   endif
@@ -824,6 +801,7 @@ else
 endif
 
 # /Ox (full optimization)
+# /GB (optimize for processor) blend
 # /Os (Favor small code)
 # /Gy (Enable function-level linking)
 # /GF (Enable read -only string pooling)
@@ -843,8 +821,8 @@ endif
 CPP_DBG_FLAGS          += $(CPP_DBG_FLAGS_$(BUILD))
 
 CPP_OPT_FLAGS_debug     =
-CPP_OPT_FLAGS_release   = /Ox /Os /Gy /GF
-CPP_OPT_FLAGS_product   = /Ox /Os /Gy /GF
+CPP_OPT_FLAGS_release   = /Ox /GB /Os /Gy /GF
+CPP_OPT_FLAGS_product   = /Ox /GB /Os /Gy /GF
 CPP_OPT_FLAGS          += $(CPP_OPT_FLAGS_$(BUILD))
 
 CPP_DEF_FLAGS_debug     = -D_DEBUG -DAZZERT
@@ -904,7 +882,7 @@ MAKE_EXPORT_EXTRA_LIBS += $(PCSL_LIBS)
 endif
 
 
-LIB_FLAGS_debug         = 
+LIB_FLAGS_debug         = /DEBUGTYPE:CV
 LIB_FLAGS_release       =
 LIB_FLAGS_product       =
 LIB_FLAGS               = /nologo $(LIB_FLAGS_$(BUILD))
@@ -983,7 +961,6 @@ $(LOOP_GENERATOR): $(BUILD_PCH) $(Obj_Files) \
 		   InterpreterSkeleton.obj OopMapsSkeleton.obj
 	$(A)$(LINK) $(PCSL_LIBS) $(LINK_FLAGS) /out:$@ $(Obj_Files) \
 		   InterpreterSkeleton.obj OopMapsSkeleton.obj
-	$(A)$(VC_MANIFEST_EMBED_EXE)
 	$(A)echo generated `pwd`/$@
 endif
 endif
@@ -1026,7 +1003,6 @@ $(ROM_GENERATOR): $(BUILD_PCH) $(Obj_Files) InterpreterSkeleton.obj \
 	$(A)$(MAKE) OopMaps.obj
 	$(A)$(LINK) $(PCSL_LIBS) $(LINK_FLAGS) /out:$@ \
 		$(Obj_Files) Interpreter_$(arch).obj OopMaps.obj
-	$(A)$(VC_MANIFEST_EMBED_EXE)
 	$(A)echo generated `pwd`/$@
 
 endif
@@ -1132,7 +1108,6 @@ $(JVM_EXE): $(BIN_DIR) $(BUILD_PCH) $(JVMX_LIB) $(JVM_LIB) $(JVMTEST_LIB) \
 	    $(EXE_OBJS)
 	$(A)$(LINK) $(LINK_FLAGS) /out:$@ $(EXE_OBJS) $(JVMX_LIB) $(JVM_LIB) \
 		$(JVMTEST_LIB) $(PCSL_LIBS)
-	$(A)$(VC_MANIFEST_EMBED_EXE)
 	$(A)echo generated `pwd`/$@
 
 ANI_OBJS  = ani.obj os_port.obj poolthread.obj
@@ -1396,7 +1371,7 @@ ROM_SEGMENTS_OBJS = ROMImage_00.obj \
 		            ROMImage_10.obj \
 		            ROMImage_11.obj \
 		            ROMImage_12.obj
-
+		            
 EXE_OBJS := $(subst ROMImage.obj,,$(EXE_OBJS))
 EXE_OBJS += $(ROM_SEGMENTS_OBJS)
 $(ROM_SEGMENTS_OBJS): $(GENERATED_ROM_FILE)
@@ -1465,7 +1440,6 @@ endif
 GCC_PREFIX_arm     = $(GNU_TOOLS_DIR)/bin/
 GCC_PREFIX_sh      = $(GNU_TOOLS_DIR)/bin/
 GCC_PREFIX_mips    = $(GNU_TOOLS_DIR)/bin/
-GCC_PREFIX_thumb2  = $(GNU_TOOLS_DIR)/bin/
 GCC_PREFIX_i386    =
 GCC_PREFIX_sparc   =
 GCC_PREFIX_powerpc =
@@ -1571,9 +1545,6 @@ CPP_DEF_FLAGS_i386       = -Di386
 CPP_DEF_FLAGS_arm	 =
 CPP_DEF_FLAGS_win32      = -DWIN32 -D_WINDOWS
 CPP_DEF_FLAGS_linux      = -DLINUX
-ifeq ($(target_platform), linux_javacall)
-CPP_DEF_FLAGS_javacall   = -DLINUX
-endif
 ifeq ($(host_os), cygwin)
 CPP_DEF_FLAGS            += -DCYGWIN
 ENABLE_MAP_FILE          = false

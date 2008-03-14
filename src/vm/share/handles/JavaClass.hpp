@@ -232,10 +232,7 @@ public:
   new_initialized_instance(InstanceClass* sender_class, Thread *t JVM_TRAPS);
 
   void iterate(OopVisitor* /*visitor*/) PRODUCT_RETURN;
-#if !defined(PRODUCT) || ENABLE_ROM_GENERATOR || ENABLE_TTY_TRACE ||\
-                         ENABLE_PERFORMANCE_COUNTERS
-  void print_name_on(Stream*);
-#endif
+  void print_name_on(Stream*) PRODUCT_RETURN;
   static void iterate_oopmaps(oopmaps_doer /*do_map*/, void* /*param*/) 
                               PRODUCT_RETURN;
 
@@ -272,12 +269,6 @@ public:
     ClassInfo::Raw info = class_info();
     info().set_access_flags(access_flags);
   }
-  void set_is_non_optimizable( void ) {
-    AccessFlags flags = access_flags();
-    flags.set_is_non_optimizable();
-    set_access_flags(flags);
-  }
-
   jushort class_id() const {
     return raw_class_info()->_class_id;
   }
@@ -294,7 +285,6 @@ public:
   bool is_interface()      const { return access_flags().is_interface(); }
   bool is_final()          const { return access_flags().is_final();     }
   bool is_abstract()       const { return access_flags().is_abstract();  }
-  bool is_super()          const { return access_flags().is_super();     }
   bool is_public()         const { return access_flags().is_public();    }
   bool is_private()        const { return access_flags().is_private();   }
   bool is_preloaded()      const { return access_flags().is_preloaded(); }

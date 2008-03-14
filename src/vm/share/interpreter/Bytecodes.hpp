@@ -396,7 +396,6 @@ class Bytecodes: public AllStatic {
     CSE             = 0x040,
     NoFallThru      = 0x080,
     NoPatching      = 0x100,
-    NoInlining      = 0x200,
 
     // For stack frame omission, mark as throwing exceptions the bytecodes which:
     // 1. allocate memory (including exception throwing)
@@ -404,7 +403,7 @@ class Bytecodes: public AllStatic {
     // 3. call a runtime function on a target where call instruction saves
     //    return address in a fixed register.
     // 4. use uncommon trap
-#if ENABLE_THUMB_COMPILER || defined (HITACHI_SH)
+#if ENABLE_THUMB_COMPILER || HITACHI_SH
     SoftLong        = Exceptions,
 #else
     SoftLong        = 0,
@@ -505,16 +504,6 @@ class Bytecodes: public AllStatic {
 #if ENABLE_CODE_PATCHING
   static bool disables_code_patching(const Code code) {
     return get_flags(code) & NoPatching;
-  }
-#endif
-
-#if ENABLE_INLINE
-  static bool allow_inlining(const Code code) {
-    return allow_inlining_flags(get_flags(code));
-  }
-
-  static bool allow_inlining_flags(const jushort flags) {
-    return (flags & NoInlining) == 0;
   }
 #endif
 

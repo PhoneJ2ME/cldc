@@ -431,7 +431,7 @@ void Thread::stack_oops_do(void do_oop(OopDesc**)) {
 
   // See Scheduler.cpp threads_do_list() for the
   // reason why we do this.
-  const TaskGCContext tmp(this->task_id());
+  TaskGCContext tmp(this->task_id());
 
   // Java frames
   if (last_java_frame_exists()) {
@@ -794,8 +794,6 @@ void Thread::iterate_oopmaps(oopmaps_doer do_map, void *param) {
   OOPMAP_ENTRY_4(do_map, param, T_OBJECT, next);
   OOPMAP_ENTRY_4(do_map, param, T_OBJECT, previous);
   OOPMAP_ENTRY_4(do_map, param, T_OBJECT, global_next);
-  OOPMAP_ENTRY_4(do_map, param, T_OBJECT, next_waiting);
-  OOPMAP_ENTRY_4(do_map, param, T_OBJECT, wait_obj);
   OOPMAP_ENTRY_4(do_map, param, T_OBJECT, pending_exception);
   OOPMAP_ENTRY_4(do_map, param, T_OBJECT, thread_obj);
   OOPMAP_ENTRY_4(do_map, param, T_OBJECT, pending_entries);

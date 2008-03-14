@@ -1225,9 +1225,12 @@ void SourceROMWriter::write_original_class_info_table(JVM_SINGLE_ARG_TRAPS) {
   int i;
   int class_count = number_of_romized_java_classes();
 
-  // Enable the original info output in Romized files.
-  main_stream()->print_cr(
-   "#if ENABLE_ROM_DEBUG_SYMBOLS || ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE");
+#if ENABLE_JVMPI_PROFILE
+  // Enalbe the original info output in Romized files.
+  main_stream()->print_cr("#if ENABLE_ROM_DEBUG_SYMBOLS || ENABLE_JVMPI_PROFILE");
+#else
+  main_stream()->print_cr("#if ENABLE_ROM_DEBUG_SYMBOLS");
+#endif
 
   write_original_info_strings(JVM_SINGLE_ARG_CHECK);
 
@@ -1821,15 +1824,15 @@ bool SourceROMWriter::may_skip_constant_pool(Method *method) {
 
 void SourceROMWriter::fixup_image(JVM_SINGLE_ARG_TRAPS) {
   JarFileParser::flush_caches();
-  SymbolTable::current()                        ->set_null();
-  StringTable::current()                        ->set_null();
-  Universe::gc_block_stackmap()                 ->set_null();
-  Universe::verifier_stackmap_cache()           ->set_null();
-  Universe::verifier_instruction_starts_cache() ->set_null();
-  Universe::verifier_vstack_tags_cache()        ->set_null();
-  Universe::verifier_vstack_classes_cache()     ->set_null();
-  Universe::verifier_vlocals_tags_cache()       ->set_null();
-  Universe::verifier_vlocals_classes_cache()    ->set_null();
+  SymbolTable::current()			->set_null();
+  StringTable::current()			->set_null();
+  Universe::gc_block_stackmap()			->set_null();
+  Universe::verifier_stackmap_cache()		->set_null();
+  Universe::verifier_instruction_starts_cache()	->set_null();
+  Universe::verifier_vstack_tags_cache()	->set_null();
+  Universe::verifier_vstack_classes_cache()	->set_null();
+  Universe::verifier_vlocals_tags_cache()	->set_null();
+  Universe::verifier_vlocals_classes_cache()	->set_null();
 
   ROMWriter::fixup_image(JVM_SINGLE_ARG_CHECK);
 }

@@ -36,7 +36,7 @@ Throw::new_exception(Symbol* class_name, String* message JVM_TRAPS) {
   // sure that they are cleared, even in non-debug builds
   Thread::clear_current_pending_exception();
 
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
+#ifndef PRODUCT
   if (TraceExceptions || GenerateROMImage) {
     tty->print("TraceExceptions: ");
     class_name->print_value_on(tty);
@@ -199,7 +199,7 @@ void Throw::verify_error(ErrorMsgTag err JVM_TRAPS) {
 
 void Throw::out_of_memory_error(JVM_SINGLE_ARG_TRAPS) {
   JVM_IGNORE_TRAPS;
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
+#ifndef PRODUCT
   if (TraceExceptions) {
     TTY_TRACE_CR(("TraceExceptions: OutOfMemoryError"));
     ps();

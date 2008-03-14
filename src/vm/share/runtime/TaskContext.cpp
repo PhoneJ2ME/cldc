@@ -27,15 +27,13 @@
 # include "incls/_precompiled.incl"
 # include "incls/_TaskContext.cpp.incl"
 
-#if ENABLE_ISOLATES
-
-// The global TaskContext instance
-TaskContextSave TaskContextSave::_global_context;
+TaskContextSave _global_context;  // The global TaskContext instance
 
 #ifdef AZZERT
 int TaskContextSave::_count = 0;
 #endif
 
+#if ENABLE_ISOLATES
 
 void TaskContextSave::init() {
 #ifdef AZZERT
@@ -43,7 +41,7 @@ void TaskContextSave::init() {
 #endif
   _number_of_java_classes = 0;
   _prev_task_id = _global_context._current_task_id;
-  _valid = false;
+  _status = INVALID;
 }
 
 void TaskContextSave::dispose() {
@@ -51,29 +49,32 @@ void TaskContextSave::dispose() {
   _global_context._count--;
   GUARANTEE(level == _count, "Out of order context switch.");
 #endif
-  if (_prev_task_id != _global_context._current_task_id) {
+  if (_prev_task_id != 0 &&
+      _prev_task_id != _global_context._current_task_id) {
     GUARANTEE(Universe::task_from_id(_prev_task_id), "task must be alive");
     TaskContext::set_current_task(_prev_task_id);
   }
+}
+
+bool TaskContextSave::status() {
+  return (_status == VALID ? true : false);
 }
 
 void TaskContext::init(int task_id) {
   if (TraceTaskContext) {
     tty->print_cr("TC: %d", task_id);
   }
-
-  GUARANTEE(!ObjectHeap::is_gc_active() ||
-    task_id == _global_context._current_task_id, "Can't switch tasks during GC");
-  _valid = true;
+  GUARANTEE(!ObjectHeap::is_gc_active(), "Can't switch tasks during GC");
+  _status = VALID;
   set_current_task(task_id);
 }
 
-void TaskGCContext::init(const OopDesc* object) {
+TaskGCContext::TaskGCContext(const OopDesc* const object) {
   if (ROM::system_contains(object)) {
     if (TraceTaskContext) {
       tty->print_cr("TGCOROM: 0x%x", (int)object);
     }
-    _valid = true;
+    _status = VALID;
     return;
   }
 
@@ -86,38 +87,47 @@ void TaskGCContext::init(const OopDesc* object) {
   }
 }
 
-void TaskGCContext::set(const int task_id) {
-  Task::Raw task = Universe::task_from_id(task_id);
-  if( task.not_null() ) {
-    _global_context._current_task_id = task_id;
-    _global_context._number_of_java_classes = task().class_count();
-    _class_list_base =((address)task().class_list() ) + ObjArray::base_offset();
-    _mirror_list_base=((address)task().mirror_list()) + ObjArray::base_offset();
-    _valid = true;
-
-    if (TraceTaskContext) {
-      tty->print_cr("TGC-set: %d 0x%x", task_id, (int)_class_list_base);
-    }
-  }
-}
-
-
-void TaskGCContext::init(const int task_id) {
+void TaskGCContext::init(int task_id) {
   // Used during GC so that accesses to class_list references correct list
   if (TraceTaskContext) {
-    tty->print_cr("TGC-init: %d", task_id);
+    tty->print_cr("TGC: %d", task_id);
   }
-  set( task_id );
+  Task::Raw task = Universe::task_from_id(task_id);
+  if (task.not_null()) {
+    _status = VALID;
+    _class_list_base = (address)task().class_list();
+    _class_list_base += ObjArray::base_offset();
+    if (TraceTaskContext) {
+      tty->print_cr("TGC-set: 0x%x", (int)_class_list_base);
+    }
+    _global_context._number_of_java_classes = task().class_count();
+    _global_context._current_task_id = task_id;
+    _mirror_list_base = (address)task().mirror_list();
+    _mirror_list_base += ObjArray::base_offset();
+  }
 }
 
-void TaskGCContext::dispose( void ) {
+void TaskGCContext::dispose() {
   if (TraceTaskContext) {
     tty->print_cr("TGC: dis");
   }
-  set( _prev_task_id );
+  if (_prev_task_id != 0) {
+    Task::Raw task = Universe::task_from_id(_prev_task_id);
+    if (task.not_null()) {
+      _class_list_base = (address)task().class_list();
+      _class_list_base += ObjArray::base_offset();
+      if (TraceTaskContext) {
+        tty->print_cr("TGC: dis 0x%x", (int)_class_list_base);
+      }
+      _global_context._number_of_java_classes = task().class_count();
+      _global_context._current_task_id = _prev_task_id;
+      _mirror_list_base = (address)task().mirror_list();
+      _mirror_list_base += ObjArray::base_offset();
+    }
+  }
 }
-
 #if ENABLE_OOP_TAG
+
 void TaskGCContextDebug::init(int class_id, int tag) {
 
   // Used during GC so that accesses to class_list references correct list
@@ -128,7 +138,7 @@ void TaskGCContextDebug::init(int class_id, int tag) {
     Task::Raw task = Universe::task_from_id(tag & Oop::TASK_ID_MASK);
     if (task.not_null()) {
       if (task().seq() == (tag >> Oop::TASK_SEQ_SHIFT)) {
-        _vaild = true;
+        _status = VALID;
         if (TraceGC) {
           //    tty->print("old: 0x%x, ", (int)_class_list_base);
         }
@@ -147,7 +157,7 @@ void TaskGCContextDebug::init(int class_id, int tag) {
 }
 
 void TaskGCContextDebug::dispose() {
-  {
+  if (_prev_task_id != 0) {
     Task::Raw task = Universe::task_from_id(_prev_task_id);
     if (task.not_null()) {
       if (TraceGC) {
@@ -217,15 +227,41 @@ void TaskContext::set_class_list(ObjArray *cl) {
   }
 }
 
+#else
+// non Isolate build
+
+void TaskContextSave::init()     {}
+void TaskContextSave::dispose()  {}
+
+void TaskGCContext::init(int task_id) {
+  (void)task_id;
+}
+
+void TaskGCContext::dispose() {}
+
+void TaskContext::set_current_task(int task_id) {
+  set_current_task_id(task_id);
+}
+
+#endif
+
+int TaskContext::current_task_id() {
+  return _global_context._current_task_id;
+}
+
+void TaskContext::set_current_task_id(int task_id) {
+  _global_context._current_task_id = task_id;
+}
+
+int TaskContext::number_of_java_classes() {
+  return _global_context._number_of_java_classes;
+}
+
 void TaskContext::set_number_of_java_classes(int number) {
   _global_context._number_of_java_classes = number;
+#if ENABLE_ISOLATES
   if (Task::current()->not_null()) {
     Task::current()->set_class_count(number);
   }
+#endif
 }
-#else   //  ENABLE_ISOLATES
-
-int TaskContext::_number_of_java_classes;
-
-#endif  //  ENABLE_ISOLATES
-

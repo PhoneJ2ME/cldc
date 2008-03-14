@@ -56,7 +56,7 @@ void OsMisc_flush_icache(address start, int size) {
   (void)size;
 }
 
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
+#if !defined(PRODUCT) || USE_DEBUG_PRINTING
 
 const char *OsMisc_jlong_format_specifier() {
   /* 

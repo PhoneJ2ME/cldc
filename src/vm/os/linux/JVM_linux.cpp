@@ -37,28 +37,32 @@
 #include "incls/_precompiled.incl"
 #include "incls/_JVM_linux.cpp.incl"
 
-static int executeVM( void ) {
+extern "C" int JVM_Start(const JvmPathChar *classpath, 
+                         char *main_class, int argc,
+                         char **argv) {
+  JVM::set_arguments(classpath, main_class, argc, argv);
+
   int result = 0;
-  for( int i = ExecutionLoops; --i >= 0; ) {
+  for (int i = 0; i < ExecutionLoops; i++) {
     if (Verbose) {
       TTY_TRACE_CR(("\t***Starting VM***"));
     }
     result = JVM::start();
   }
-  Arguments::finalize();
   return result;
-}
-
-extern "C" int JVM_Start(const JvmPathChar *classpath, 
-                         char *main_class, int argc,
-                         char **argv) {
-  JVM::set_arguments(classpath, main_class, argc, argv);
-  return executeVM();
 }
 
 extern "C" int JVM_Start2(const JvmPathChar *classpath, 
                           char *main_class, int argc,
                           jchar **u_argv) {
   JVM::set_arguments2(classpath, main_class, argc, NULL, u_argv, true);
-  return executeVM();
+
+  int result = 0;
+  for (int i = 0; i < ExecutionLoops; i++) {
+    if (Verbose) {
+      TTY_TRACE_CR(("\t***Starting VM***"));
+    }
+    result = JVM::start();
+  }
+  return result;
 }

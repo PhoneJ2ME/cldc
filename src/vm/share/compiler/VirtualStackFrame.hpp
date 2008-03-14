@@ -54,61 +54,36 @@ public:
   void print_on(Stream *);
   void p();
 #endif
+
 };
 
 class RawLocation;
 
-class VirtualStackFrame: public CompilerObject {
+class VirtualStackFrame: public MixedOop {
  private:
-  int            _saved_stack_pointer;
-  // Fields to copy start here
-  int            _real_stack_pointer;
-  int            _virtual_stack_pointer;
-  int            _flush_count;
-#if ENABLE_REMEMBER_ARRAY_LENGTH
-  //bitmap of _bound_mask
-  //31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0  
-  //|flag       |                                       |base      |boundary  |local index                    |
-  //flag:  whether is valid
-  //base:  store the index of array base register
-  //boundary:  store the the index of array length register
-  //local index: store the location index(in the Virstual Stack Frame) of a array boundary checked local variable
-  //We use 4bits to represent the index of ARM register(16 registers). So we use other approach to represent the case 
-  //there's no register assigned for base or boundary. 
-  //we don't adjust register reference when one is cached.
-  int            _bound_mask;
-#endif
+  static Method* method();
 
-#if USE_COMPILER_FPU_MAP
-  FPURegisterMap _fpu_register_map;
-#endif
-
-#if ENABLE_ARM_VFP  
-  // Literals mask is necessary to distingish zero literals from non-literals
-  // in literals map.  If literal map[reg] == 0 && literals_mask & 1 << reg
-  // then reg contains zero literal otherwise reg does not contain a literal.
-  int            _literals_mask[2];    
-#endif  // ENABLE_ARM_VFP
-
-#if USE_COMPILER_LITERALS_MAP
-  enum { literals_map_size = Assembler::number_of_registers };
-  int _literals_map[ literals_map_size ];
-#endif
-
-  static int _location_map_size;
-
-  // Followed by _location_map_size ints
-  static Method* method( void );
-
-  static CodeGenerator* code_generator( void ) {
-    return _compiler_code_generator;
+  static CodeGenerator* code_generator() {
+    return jvm_fast_globals.compiler_code_generator;
   }
 
-  static int num_stack_lock_words( void ) {
-    return jvm_fast_globals.num_stack_lock_words;
+  static int num_stack_lock_words() {
+     return jvm_fast_globals.num_stack_lock_words;
   }
 
  public:
+  HANDLE_DEFINITION(VirtualStackFrame, MixedOop);
+
+#if USE_COMPILER_LITERALS_MAP
+  enum {
+    literals_map_size = Assembler::number_of_registers
+  };
+#else
+  enum {
+    literals_map_size = 0
+  };
+#endif
+
 #if ENABLE_CSE
   friend class BytecodeCompileClosure;
 
@@ -279,27 +254,17 @@ class VirtualStackFrame: public CompilerObject {
   }
 
   //the offset of bci stack base in the VirtualStackFrame
-  jint* bci_stack_base( void ) {
-    return (jint*) DERIVED(address, this+1,
-            _location_map_size - method()->max_execution_stack_count() *
-            sizeof(jint));
-  }
-  const jint* bci_stack_base( void ) const {
-    return (const jint*) DERIVED(address, this+1,
-            _location_map_size - method()->max_execution_stack_count() *
-            sizeof(jint));
+  jint bci_stack_base_offset() {
+    return location_map_base_offset() + 
+            location_map_size() - 
+            method()->max_execution_stack_count() *
+            sizeof(jint);
   }
 
   //the tag corresponding to the index of item on the operation stack 
-  jint* tag_at(const int index)  {
-    GUARANTEE( unsigned(index) < unsigned(method()->max_execution_stack_count()),
-               "Tag index out of bounds" );
-    return bci_stack_base() + index;
-  }
-  const jint* tag_at(const int index) const {
-    GUARANTEE( unsigned(index) < unsigned(method()->max_execution_stack_count()),
-               "Tag index out of bounds" );
-    return bci_stack_base() + index;
+  jint *tag_at(int index)  {
+    address base = ((address)obj()) +bci_stack_base_offset();
+    return (jint*)( base + sizeof(jint) * index);
   }
 
   //clean the register notations whose value should be cleaned due to multi-entry
@@ -312,42 +277,27 @@ class VirtualStackFrame: public CompilerObject {
  public: 
   void wipe_notation_for_osr_entry() {}
 #endif
-  // copy this virtual stack frame to dst
-  void copy_to(VirtualStackFrame* dst) const {
-    // Need to copy only the locations that are actually in use. I.e.,
-    //
-    //     virtual_stack_pointer()---+
-    //                               v
-    //     [literals_map_size][Y][Y][Y][n][n]
-    //
-    // Note that virtual_stack_pointer() is a "full stack": it points to
-    // the current top of stack, so the number of used stack elements are
-    // virtual_stack_pointer()+1
-    jvm_memcpy( &dst->_real_stack_pointer, &_real_stack_pointer,
-                DISTANCE(&_real_stack_pointer, raw_location_end() ) );
-  }
 
   // Allocate a new instance of VirtualStackFrame.
-  static VirtualStackFrame* allocate(JVM_SINGLE_ARG_TRAPS) {
-    return (VirtualStackFrame*)
-      CompilerObject::allocate( CompilerObject::VirtualStackFrame_type,
-        _location_map_size + sizeof(VirtualStackFrame) JVM_NO_CHECK );
-  }
+  static ReturnOop allocate(int location_map_size JVM_TRAPS);
 
   // Construct a new virtual stack frame for the given method.
-  static VirtualStackFrame* create(Method* method JVM_TRAPS);
+  static ReturnOop create(Method* method JVM_TRAPS);
 
   // clone this virtual stack frame
-  VirtualStackFrame* clone(JVM_SINGLE_ARG_TRAPS);
+  ReturnOop clone(JVM_SINGLE_ARG_TRAPS);
+
+  // copy this virtual stack frame to dst
+  void copy_to(VirtualStackFrame* dst) const;
 
   // clone this virtual stack frame, but adjust stack for exception
-  VirtualStackFrame* clone_for_exception(int handler_bci JVM_TRAPS);
+  ReturnOop clone_for_exception(int handler_bci JVM_TRAPS);
 
   // clear this virtual stack frame
-  void clear( void );
+  void clear();
 
   // clear a specific location
-  void clear( const int location );
+  void clear(int location);
 
   // adjust the virtual stack frame for an invoke.
   // - pop the parameter block and
@@ -470,50 +420,63 @@ class VirtualStackFrame: public CompilerObject {
   bool is_mapping_something(const Assembler::Register reg) const;
 
  public:
+#if USE_COMPILER_FPU_MAP
+  static jint fpu_register_map_offset() {
+    return FIELD_OFFSET(VirtualStackFrameDesc, _fpu_register_map);
+  }
+#endif
+  static jint real_stack_pointer_offset() {
+    return FIELD_OFFSET(VirtualStackFrameDesc, _real_stack_pointer);
+  }
+  static jint virtual_stack_pointer_offset() {
+    return FIELD_OFFSET(VirtualStackFrameDesc, _virtual_stack_pointer);
+  }
+  static jint saved_stack_pointer_offset() {
+    return FIELD_OFFSET(VirtualStackFrameDesc, _saved_stack_pointer);
+  }
+  static jint flush_count_offset() {
+    return FIELD_OFFSET(VirtualStackFrameDesc, _flush_count);
+  }
+
   // Accessors for the virtual stack pointer variable.
-  jint virtual_stack_pointer( void ) const { 
-    return _virtual_stack_pointer; 
+  inline jint virtual_stack_pointer() const { 
+    return int_field(virtual_stack_pointer_offset()); 
   }
-  void set_virtual_stack_pointer( const jint value ) { 
-    _virtual_stack_pointer = value; 
+  void set_virtual_stack_pointer(jint value) { 
+    int_field_put(virtual_stack_pointer_offset(), value); 
   }
-  void increment_virtual_stack_pointer( void ) {
-    _virtual_stack_pointer++;
+  void increment_virtual_stack_pointer() {
+    set_virtual_stack_pointer(virtual_stack_pointer() + 1); 
   }
-  void decrement_virtual_stack_pointer( void ) { 
-    _virtual_stack_pointer--;
+  void decrement_virtual_stack_pointer() { 
+    set_virtual_stack_pointer(virtual_stack_pointer() - 1); 
   }  
 
 #if ENABLE_ARM_VFP
-  const jint* literals_mask( void ) const { return _literals_mask; }
-  jint*       literals_mask( void )       { return _literals_mask; }
+  jint* literals_mask_addr() const {
+    return ((VirtualStackFrameDesc*)obj())->_literals_mask;
+  }
 #endif
 
-#if USE_COMPILER_LITERALS_MAP
-  const jint* literals_map ( void ) const { return _literals_map;  }
-  jint* literals_map ( void ) { return _literals_map;  }
-#endif
-
-  static void set_location_map_size( const int value ) {
-    _location_map_size = value;
+  inline static jint header_size() {
+    return VirtualStackFrameDesc::header_size();
   }
-
-  const RawLocationData* raw_location_base( void  ) const {
-    return (const RawLocationData*)(this+1);
+  inline static jint literals_map_base_offset() {
+    return header_size();
   }
-  RawLocationData* raw_location_base( void ) {
-    return (RawLocationData*)(this+1);
+  address literals_map_base() const {
+    return ((address)obj()) + literals_map_base_offset();
   }
-
-  const RawLocation* raw_location_at(const int index) const {
-    GUARANTEE( unsigned(index*sizeof(RawLocationData)) < unsigned(_location_map_size),
-               "Location index out of bounds" );
-    return (const RawLocation*) (raw_location_base() + index);
+  inline jint location_map_size() const {
+    return object_size() - (header_size() + literals_map_size * sizeof(int));
   }
-  RawLocation* raw_location_at(const int index) {
-    GUARANTEE( unsigned(index*sizeof(RawLocationData)) < unsigned(_location_map_size),
-               "Location index out of bounds" );
-    return (RawLocation*) (raw_location_base() + index);
+  inline static jint location_map_base_offset() {
+    return literals_map_base_offset() + 
+           (literals_map_size * sizeof(int));
+  }
+  RawLocation *raw_location_at(int index) const {
+    address base = ((address)obj()) + location_map_base_offset();
+    return (RawLocation*)(base + index * sizeof(RawLocationData));
   }
 
   // Marks the exclusive end of the end of the stack. To iterate all locations:
@@ -522,69 +485,39 @@ class VirtualStackFrame: public CompilerObject {
   //     ....;
   //     raw_loc += is_two_word(raw_loc->type()) ? 2 : 1;
   // }
-  const RawLocation* raw_location_end(const RawLocation* start) const {
-    GUARANTEE(start == raw_location_at(0), "sanity");
-    const RawLocationData *p = (const RawLocationData*) ((void*)start);
-    return (const RawLocation*) (p + (virtual_stack_pointer() + 1));
-  }
-  RawLocation* raw_location_end(RawLocation* start) const {
+  RawLocation *raw_location_end(RawLocation *start) const {
     GUARANTEE(start == raw_location_at(0), "sanity");
     RawLocationData *p = (RawLocationData*) ((void*)start);
-    return (RawLocation*) (p + (virtual_stack_pointer() + 1));
+    return (RawLocation*) ((void*)(p + (virtual_stack_pointer() + 1)));
   }
 
-  const RawLocation* raw_location_end( void ) const {
-    return raw_location_end( raw_location_at(0) );
-  }
-  RawLocation* raw_location_end( void ) {
-    return raw_location_end( raw_location_at(0) );
-  }
-
-  void clear_stack( void ) { 
+  void clear_stack() { 
     set_virtual_stack_pointer(method()->max_locals() - 1);
   }
 
 #if USE_COMPILER_FPU_MAP
-  const FPURegisterMap& fpu_register_map( void ) const { 
-    return _fpu_register_map;      
+  ReturnOop fpu_register_map() const { 
+    return obj_field(fpu_register_map_offset());      
   }
-  FPURegisterMap& fpu_register_map( void ) { 
-    return _fpu_register_map;      
+  void set_fpu_register_map(TypeArray* value) {
+    obj_field_put(fpu_register_map_offset(), (Oop*)value);
   }
 #endif  // USE_COMPILER_FPU_MAP
-
-  // Accessors for the stack pointer variable.
-  jint stack_pointer( void ) const { 
-    return _real_stack_pointer;
-  }
-  void set_real_stack_pointer( const jint value) { 
-    _real_stack_pointer = value; 
+  jint stack_pointer() const { 
+    return int_field(real_stack_pointer_offset());
   }
   
-  jint flush_count( void ) const { 
-    return _flush_count;          
+  jint flush_count() const { 
+    return int_field(flush_count_offset());          
   }
-  void set_flush_count( const jint value ) { 
-    _flush_count = value;      
+  void clear_flush_count() { 
+    int_field_put(flush_count_offset(), 0);           
   }
-  void clear_flush_count( void ) { 
-    set_flush_count( 0 );           
-  }
-
- private:
-  jubyte receiver_flags(const int size_of_parameters) const;
-
- public:
-  // These two helper methods are used to determine if we need a null check for
-  // receiver without loading the receiver value into a register
-  bool receiver_must_be_nonnull(int size_of_parameters) const {
-    return (receiver_flags(size_of_parameters) & Value::F_MUST_BE_NONNULL) != 0;
+  void set_flush_count(jint value) { 
+    int_field_put(flush_count_offset(), value);      
   }
 
-  bool receiver_must_be_null(int size_of_parameters) const {
-    return (receiver_flags(size_of_parameters) & Value::F_MUST_BE_NULL) != 0;
-  }
-
+  bool reveiver_must_be_nonnull(int size_of_parameters) const;
   void receiver(Value& value, int size_of_parameters) {
     value_at(value, virtual_stack_pointer() - size_of_parameters + 1);
   }
@@ -596,7 +529,7 @@ class VirtualStackFrame: public CompilerObject {
     GUARANTEE((int)reg >= 0 && (int)reg < literals_map_size, "range");
     set_literal(reg, imm32);
 #if ENABLE_ARM_VFP
-    jint* p = literals_mask();
+    jint* p = literals_mask_addr();
     if( reg >= BitsPerInt ) {
       p++;
       reg = Assembler::Register(reg - BitsPerInt);
@@ -614,7 +547,7 @@ class VirtualStackFrame: public CompilerObject {
 #if ENABLE_ARM_VFP
     jint imm32 = get_literal(reg);
     if(imm32 == 0) {
-      const jint* p = literals_mask();
+      const jint* p = literals_mask_addr();
       if( reg >= BitsPerInt ) {
         p++;
         reg = Assembler::Register(reg - BitsPerInt);
@@ -632,17 +565,19 @@ class VirtualStackFrame: public CompilerObject {
   bool has_no_literals(void) const;
   
   jint get_literal(const Assembler::Register reg) const {
-    return _literals_map [reg];
+    const int offset = literals_map_base_offset() + (reg * sizeof(jint));
+    return int_field(offset);    
   }
   
   void set_literal(const Assembler::Register reg, const jint imm32) {
-    _literals_map [reg] = imm32;
+    const int offset = literals_map_base_offset() + (reg * sizeof(jint));
+    int_field_put(offset, imm32);    
   }
   
   void clear_literal(Assembler::Register reg) {
     set_literal( reg, 0 );
 #if ENABLE_ARM_VFP
-    jint* p = literals_mask();
+    jint* p = literals_mask_addr();
     if( reg >= BitsPerInt ) {
       p++;
       reg = Assembler::Register(reg - BitsPerInt);
@@ -665,11 +600,11 @@ class VirtualStackFrame: public CompilerObject {
   bool result_register_contains(const jint imm32) const {
     const jint s0_value = get_literal(Assembler::s0);
     return imm32 == s0_value &&
-      (s0_value || (literals_mask()[0] & (1 << Assembler::s0)));
+      (s0_value || (literals_mask_addr()[0] & (1 << Assembler::s0)));
   }
   
   bool result_register_contains(const jint lo, const jint hi) const {    
-    const jint mask = ~literals_mask()[0];
+    const jint mask = ~literals_mask_addr()[0];
     {
       const jint s0_value = get_literal(Assembler::s0);
       if (lo != s0_value) {
@@ -714,13 +649,13 @@ class VirtualStackFrame: public CompilerObject {
   };
 
   //return the bound_mask bitmap
-  jint bound_mask( void ) const { 
-    return _bound_mask;      
+  jint bound_mask() const { 
+    return int_field(bound_mask_offset());      
   }
 
   //set the bound_mask bitmap
-  void set_bound_mask( const jint value) { 
-    _bound_mask = value;      
+  void set_bound_mask(jint value) { 
+    int_field_put(bound_mask_offset(), value);      
   }
 
   //get the register which hold the array base address from
@@ -815,6 +750,11 @@ class VirtualStackFrame: public CompilerObject {
   //we must make sure the base register is allocated in the frame
   //before we do the preload of array length
   bool is_allocated(const Assembler::Register base_reg) const;
+  
+  static jint bound_mask_offset() {
+    return FIELD_OFFSET(VirtualStackFrameDesc, _bound_mask);
+  }
+
 #else
   void clear_must_be_index_checked_status_of_values(void) {}
   bool is_value_must_be_index_checked(
@@ -841,9 +781,9 @@ class VirtualStackFrame: public CompilerObject {
 #endif
 
   // Debug dump the state of the virtual stack frame.
-  void dump_fp_registers(bool /*as_comment*/) const PRODUCT_RETURN;
-  void dump(bool /*as_comment*/)                    PRODUCT_RETURN;
-  void print( void )                                PRODUCT_RETURN;
+  void dump_fp_registers(bool /*as_comment*/) PRODUCT_RETURN;
+  void dump(bool /*as_comment*/)              PRODUCT_RETURN;
+  void print()                                PRODUCT_RETURN;
 
  private:
   void conform_to_reference_impl(VirtualStackFrame* other);
@@ -892,12 +832,16 @@ class VirtualStackFrame: public CompilerObject {
     return location < locals();
   }
 
-  bool is_mapped_by(const RawLocation* raw_location,
-                    const Assembler::Register reg) const;
+  bool is_mapped_by(RawLocation *raw_location, Assembler::Register reg) const;
 
   // Check if a given location is mapped by a given register.
-  bool is_mapped_by( const int index, const Assembler::Register reg ) const {
+  bool is_mapped_by(int index, Assembler::Register reg) const {
     return is_mapped_by(raw_location_at(index), reg);
+  }
+
+  // Accessors for the stack pointer variable.
+  void set_real_stack_pointer(jint value) { 
+      int_field_put(real_stack_pointer_offset(), value); 
   }
 
   // Returns the type of a expression stack element
@@ -920,25 +864,35 @@ class VirtualStackFrame: public CompilerObject {
 // VM calls and to restore it before returning.
 class PreserveVirtualStackFrameState: public StackObj {
  public:
-  PreserveVirtualStackFrameState(VirtualStackFrame* vsf JVM_TRAPS): _frame(vsf){
-    save(JVM_SINGLE_ARG_NO_CHECK_AT_BOTTOM);    
+  PreserveVirtualStackFrameState(VirtualStackFrame* vsf JVM_TRAPS) : _frame(vsf){ 
+     save(JVM_SINGLE_ARG_NO_CHECK_AT_BOTTOM);    
   }
-  ~PreserveVirtualStackFrameState( void ) { 
-    restore(); 
+  ~PreserveVirtualStackFrameState() { 
+     restore(); 
   }
+
+  void save(JVM_SINGLE_ARG_TRAPS);
+  void restore();
 
  private:
-  void save( JVM_SINGLE_ARG_TRAPS );
-  void restore( void );
+  VirtualStackFrame*  frame() const { return _frame; }
+  VirtualStackFrame*  saved_frame() { return &_saved_frame; }
 
-  VirtualStackFrame*  frame      ( void ) const { return _frame; }
-  VirtualStackFrame*  saved_frame( void ) const { return _saved_frame; }
-
-  VirtualStackFrame* _frame;
-  VirtualStackFrame* _saved_frame;
+  FastOopInStackObj       _must_precede_fast_oop;
+  VirtualStackFrame*      _frame;
+  VirtualStackFrame::Fast _saved_frame;
 };
 
-#if USE_COMPILER_LITERALS_MAP
+class VirtualStackFrameContext: public StackObj {
+ private:
+  FastOopInStackObj       _must_precede_fast_oop;
+  VirtualStackFrame::Fast _saved_frame;
+ 
+ public:
+  VirtualStackFrameContext(VirtualStackFrame* context);
+  ~VirtualStackFrameContext();
+};
+
 class LiteralElementStream {
 public:
   LiteralElementStream(VirtualStackFrame* vsf) {
@@ -956,15 +910,15 @@ public:
   Assembler::Register reg() {
     return (Assembler::Register)_index;
   }
-  int value( void ) const {
-    return _vsf->literals_map()[_index];
+  int value() {
+    int offset = _vsf->literals_map_base_offset() + (_index * sizeof(jint));
+    return _vsf->int_field(offset);
   }
 
 private:
   VirtualStackFrame* _vsf;
   int                _index;
 };
-#endif
 
 #ifdef PRODUCT
 #define REGISTER_REFERENCES_CHECKER

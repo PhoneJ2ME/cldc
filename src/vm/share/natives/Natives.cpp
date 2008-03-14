@@ -190,35 +190,6 @@ ReturnOop Natives::get_jni_class_name(InstanceClass *klass JVM_TRAPS) {
 }
 #endif // ENABLE_DYNAMIC_NATIVE_METHODS || ENABLE_ROM_GENERATOR
 
-#if ENABLE_DYNAMIC_NATIVE_METHODS
-
-address Natives::load_dynamic_native_code(Method* method JVM_TRAPS) {
-  if (Universe::dynamic_lib_count != 0) {
-    int i;
-    address handle = NULL;
-    TypeArray name_array = 
-      Natives::get_native_function_name(method JVM_CHECK_0);
-    const char * name = (const char *)name_array.data();
-    for (i = 0; i < Universe::dynamic_lib_count; i++) {
-      handle = (address)Universe::dynamic_lib_handles()->int_at(i);
-      address fptr = (address)Os::getSymbol(handle, name);
-      if (fptr != NULL) {
-        method->set_native_code(fptr);
-#if ENABLE_COMPILER
-        // The pointer to the old native code is hardcoded 
-        // in compiled code. Must recompile.
-        method->unlink_compiled_code();
-#endif
-        return fptr;
-      }
-    } 
-  }
-
-  Throw::unsatisfied_link_error(method JVM_THROW_0);
-}
-
-#endif
-
 #if ENABLE_STACK_TRACE
 void FrameStream::next() {
   if (_fr.is_java_frame()) {
@@ -241,37 +212,245 @@ bool FrameStream::skip() {
 extern "C" {
 
 #if ENABLE_DYNAMIC_NATIVE_METHODS
-
-#define DEFINE_JAVA_UNIMPLEMENTED_NON_VOID(jtype, ttype, arg)  \
-jtype Java_ ## jtype ## _unimplemented(JVM_SINGLE_ARG_TRAPS) { \
-  UsingFastOops fast_oops;                                     \
-  JavaFrame frame(Thread::current());                          \
-  Method::Fast method = frame.method();                        \
-  jtype (*fptr)(void) = ( jtype (*)())                         \
-    Natives::load_dynamic_native_code(&method JVM_CHECK_0);    \
-  GUARANTEE(fptr != NULL, "Error must have been thrown");      \
-                                                               \
-  return (*fptr)();                                            \
-}
-
-FOR_NON_VOID_TYPES(DEFINE_JAVA_UNIMPLEMENTED_NON_VOID)
-
-#endif // ENABLE_DYNAMIC_NATIVE_METHODS
-
-void Java_void_unimplemented(JVM_SINGLE_ARG_TRAPS) {
+//Leave these as is for now.  Once we decide how many we
+//really need, potentially convert them into macros.
+jboolean Java_unimplemented_bool(JVM_SINGLE_ARG_TRAPS) {
   UsingFastOops fast_oops;
   JavaFrame frame(Thread::current());
   Method::Fast method = frame.method();
+  jboolean i = 0;
+  jboolean (*fptr)(void) = 0;
+  if(Universe::dynamic_lib_count != 0 ) {
+    void* handle = 0;
+    TypeArray n = Natives::get_native_function_name(&method JVM_CHECK_0);
+    for(i=0; i<Universe::dynamic_lib_count; i++) {
+      handle = (void*)Universe::dynamic_lib_handles()->int_at(i);
+      *(void**)(&fptr) = Os::getSymbol(handle, (char *)n.data());
+      if(fptr != 0) break;
+    } 
+  }
+  if(fptr != 0) {
+    method().set_native_code((address)fptr);
+    return (jboolean)(*fptr)();
+  }
+  Throw::unsatisfied_link_error(&method JVM_CHECK_0);
+  return 0;
+}
 
+jbyte Java_unimplemented_byte(JVM_SINGLE_ARG_TRAPS) {
+  UsingFastOops fast_oops;
+  JavaFrame frame(Thread::current());
+  Method::Fast method = frame.method();
+  jbyte i = 0;
+  jbyte (*fptr)(void) = 0;
+  if(Universe::dynamic_lib_count != 0 ) {
+    void* handle = 0;
+    TypeArray n = Natives::get_native_function_name(&method JVM_CHECK_0);
+    for(i=0; i<Universe::dynamic_lib_count; i++) {
+      handle = (void*)Universe::dynamic_lib_handles()->int_at(i);
+      *(void**)(&fptr) = Os::getSymbol(handle, (char *)n.data());
+      if(fptr != 0) break;
+    } 
+  }
+  if(fptr != 0) {
+    method().set_native_code((address)fptr);
+    return (jbyte)(*fptr)();
+  }
+  Throw::unsatisfied_link_error(&method JVM_CHECK_0);
+  return 0;
+}
+
+jchar Java_unimplemented_char(JVM_SINGLE_ARG_TRAPS) {
+  UsingFastOops fast_oops;
+  JavaFrame frame(Thread::current());
+  Method::Fast method = frame.method();
+  jchar i = 0;
+  jchar (*fptr)(void) = 0;
+  if(Universe::dynamic_lib_count != 0 ) {
+    void* handle = 0;
+    TypeArray n = Natives::get_native_function_name(&method JVM_CHECK_0);
+    for(i=0; i<Universe::dynamic_lib_count; i++) {
+      handle = (void*)Universe::dynamic_lib_handles()->int_at(i);
+      *(void**)(&fptr) = Os::getSymbol(handle, (char *)n.data());
+      if(fptr != 0) break;
+    } 
+  }
+  if(fptr != 0) {
+    method().set_native_code((address)fptr);
+    return (jchar)(*fptr)();
+  }
+  Throw::unsatisfied_link_error(&method JVM_CHECK_0);
+  return 0;
+}
+
+jshort Java_unimplemented_short(JVM_SINGLE_ARG_TRAPS) {
+  UsingFastOops fast_oops;
+  JavaFrame frame(Thread::current());
+  Method::Fast method = frame.method();
+  jshort i = 0;
+  jshort (*fptr)(void) = 0;
+  if(Universe::dynamic_lib_count != 0 ) {
+    void* handle = 0;
+    TypeArray n = Natives::get_native_function_name(&method JVM_CHECK_0);
+    for(i=0; i<Universe::dynamic_lib_count; i++) {
+      handle = (void*)Universe::dynamic_lib_handles()->int_at(i);
+      *(void**)(&fptr) = Os::getSymbol(handle, (char *)n.data());
+      if(fptr != 0) break;
+    } 
+  }
+  if(fptr != 0) {
+    method().set_native_code((address)fptr);
+    return (jshort)(*fptr)();
+  }
+  Throw::unsatisfied_link_error(&method JVM_CHECK_0);
+  return 0;
+}
+
+jint Java_unimplemented_int(JVM_SINGLE_ARG_TRAPS) {
+  UsingFastOops fast_oops;
+  JavaFrame frame(Thread::current());
+  Method::Fast method = frame.method();
+  jint i;
+  jint (*fptr)(void) = 0;
+  if(Universe::dynamic_lib_count != 0 ) {
+    void* handle;
+    TypeArray n = Natives::get_native_function_name(&method JVM_CHECK_0);
+    for(i=0; i<Universe::dynamic_lib_count; i++) {
+      handle = (void*)Universe::dynamic_lib_handles()->int_at(i);
+      *(void**)(&fptr) = Os::getSymbol(handle, (char *)n.data());
+      if(fptr != 0) break;
+    } 
+  }
+  if(fptr != 0) {
+    method().set_native_code((address)fptr);
+    return (jint)(*fptr)();
+  }
+  Throw::unsatisfied_link_error(&method JVM_CHECK_0);
+  return 0;
+}
+
+jlong Java_unimplemented_long(JVM_SINGLE_ARG_TRAPS) {
+  UsingFastOops fast_oops;
+  JavaFrame frame(Thread::current());
+  Method::Fast method = frame.method();
+  jint i;
+  jlong (*fptr)(void) = 0;
+  if(Universe::dynamic_lib_count != 0 ) {
+    void* handle;
+    TypeArray n = Natives::get_native_function_name(&method JVM_CHECK_0);
+    for(i=0; i<Universe::dynamic_lib_count; i++) {
+      handle = (void*)Universe::dynamic_lib_handles()->int_at(i);
+      *(void**)(&fptr) = Os::getSymbol(handle, (char *)n.data());
+      if(fptr != 0) break;
+    } 
+  }
+  if(fptr != 0) {
+    method().set_native_code((address)fptr);
+    return (jlong)(*fptr)();
+  }
+  Throw::unsatisfied_link_error(&method JVM_CHECK_0);
+  return 0;
+}
+
+#if ENABLE_FLOAT
+
+jfloat Java_unimplemented_float(JVM_SINGLE_ARG_TRAPS) {
+  UsingFastOops fast_oops;
+  JavaFrame frame(Thread::current());
+  Method::Fast method = frame.method();
+  jint i;
+  jfloat (*fptr)(void) = 0;
+  if(Universe::dynamic_lib_count != 0 ) {
+    void* handle;
+    TypeArray n = Natives::get_native_function_name(&method JVM_CHECK_0);
+    for(i=0; i<Universe::dynamic_lib_count; i++) {
+      handle = (void*)Universe::dynamic_lib_handles()->int_at(i);
+      *(void**)(&fptr) = Os::getSymbol(handle, (char *)n.data());
+      if(fptr != 0) break;
+    } 
+  }
+  if(fptr != 0) {
+    method().set_native_code((address)fptr);
+    return (jfloat)(*fptr)();
+  }
+  Throw::unsatisfied_link_error(&method JVM_CHECK_0);
+  return 0.0;
+}
+
+jdouble Java_unimplemented_double(JVM_SINGLE_ARG_TRAPS) {
+  UsingFastOops fast_oops;
+  JavaFrame frame(Thread::current());
+  Method::Fast method = frame.method();
+  jint i;
+  jdouble (*fptr)(void) = 0;
+  if(Universe::dynamic_lib_count != 0 ) {
+    void* handle;
+    TypeArray n = Natives::get_native_function_name(&method JVM_CHECK_0);
+    for(i=0; i<Universe::dynamic_lib_count; i++) {
+      handle = (void*)Universe::dynamic_lib_handles()->int_at(i);
+      *(void**)(&fptr) = Os::getSymbol(handle, (char *)n.data());
+      if(fptr != 0) break;
+    } 
+  }
+  if(fptr != 0) {
+    method().set_native_code((address)fptr);
+    return (jdouble)(*fptr)();
+  }
+  Throw::unsatisfied_link_error(&method JVM_CHECK_0);
+  return 0;
+}
+
+#endif //ENABLE_FLOAT
+
+jobject Java_unimplemented_object(JVM_SINGLE_ARG_TRAPS) {
+  UsingFastOops fast_oops;
+  JavaFrame frame(Thread::current());
+  Method::Fast method = frame.method();
+  jint i = 0;
+  jobject (*fptr)(void) = 0;
+  if(Universe::dynamic_lib_count != 0 ) {
+    void* handle;
+    TypeArray n = Natives::get_native_function_name(&method JVM_CHECK_0);
+    for(i=0; i<Universe::dynamic_lib_count; i++) {
+      handle = (void*)Universe::dynamic_lib_handles()->int_at(i);
+      *(void**)(&fptr) = Os::getSymbol(handle, (char *)n.data());
+      if(fptr != 0) break;
+    } 
+  }
+  if(fptr != 0) {
+    method().set_native_code((address)fptr);
+    return (jobject)(*fptr)();
+  }
+  Throw::unsatisfied_link_error(&method JVM_NO_CHECK_AT_BOTTOM);
+  return 0;
+}
+
+#endif // ENABLE_DYNAMIC_NATIVE_METHODS 
+
+void Java_unimplemented(JVM_SINGLE_ARG_TRAPS) {
+  UsingFastOops fast_oops;
+  JavaFrame frame(Thread::current());
+  Method::Fast method = frame.method();
 #if ENABLE_DYNAMIC_NATIVE_METHODS
-  void (*fptr)(void) = 
-    (void(*)())Natives::load_dynamic_native_code(&method JVM_CHECK);
-  GUARANTEE(fptr != NULL, "Error must have been thrown");
-
-  (*fptr)();
-#else
-  Throw::unsatisfied_link_error(&method JVM_THROW);
+  //This handles the void return type case.
+  jint i = 0;
+  void (*fptr)(void) = 0;
+  if(Universe::dynamic_lib_count != 0 ) {
+    void* handle;
+    TypeArray n = Natives::get_native_function_name(&method JVM_CHECK);
+    for(i=0; i<Universe::dynamic_lib_count; i++) {
+      handle = (void*)Universe::dynamic_lib_handles()->int_at(i);
+      *(void**)(&fptr) = Os::getSymbol(handle, (char *)n.data());
+      if(fptr != 0) break;
+    } 
+  }
+  if(fptr != 0) {
+    method().set_native_code((address)fptr);
+    (*fptr)();
+    return;
+  }
 #endif
+  Throw::unsatisfied_link_error(&method JVM_NO_CHECK_AT_BOTTOM);
 }
 
 void Java_abstract_method_execution(JVM_SINGLE_ARG_TRAPS) {
@@ -456,9 +635,7 @@ ReturnOop Java_java_lang_System_getProperty0(JVM_SINGLE_ARG_TRAPS) {
     need_to_free = false;
 
     if (jvm_strcmp(name, "microedition.configuration") == 0) {
-#if ENABLE_CLDC_111
-      value = "CLDC-1.1.1";
-#elif ENABLE_CLDC_11
+#if ENABLE_CLDC_11
       value = "CLDC-1.1";
 #else
       value = "CLDC-1.0";
@@ -701,8 +878,7 @@ OopDesc* Java_java_lang_Class_getName(JVM_SINGLE_ARG_TRAPS) {
 
 #if ENABLE_REFLECTION
   if (receiver().is_primitive()) {
-    const char * name = 
-      ParsedTypeSymbol::type_name_for(receiver().type_symbol());
+    char* name = ParsedTypeSymbol::type_name_for(receiver().type_symbol());
     GUARANTEE(name != NULL, "sanity");
     return Universe::new_string(name, jvm_strlen(name) JVM_NO_CHECK_AT_BOTTOM);
   }
@@ -1243,70 +1419,11 @@ void Java_java_lang_Throwable_fillInStackTrace() {
 }
 #endif
 
-#if ENABLE_CLDC_111
-jobject Java_java_lang_Throwable_obtainBackTrace() {
-  UsingFastOops fast;
-  Throwable::Fast throwable = GET_PARAMETER_AS_OOP(0);  
-  ObjArray::Fast backtrace;  
-#if ENABLE_STACK_TRACE
-  SETUP_ERROR_CHECKER_ARG;
-  ObjArray::Fast compr_backtrace = throwable().backtrace();
-  if (compr_backtrace.is_null()) {    
-    return NULL;
-  }
-  
-  TypeArray::Fast offsets = compr_backtrace().obj_at(1);      
-  if (offsets.is_null()) {
-    return NULL;
-  }
-  int length = offsets().length();
-  
-  backtrace = Universe::new_obj_array(3 JVM_CHECK_0);
-  ObjArray::Fast class_names = Universe::new_obj_array(length JVM_CHECK_0);
-  ObjArray::Fast method_names = Universe::new_obj_array(length JVM_CHECK_0);
-  //copy offsets to new backtrace
-  backtrace().obj_at_put(0, &class_names);
-  backtrace().obj_at_put(1, &method_names);
-  backtrace().obj_at_put(2, &offsets);
-  
-  ObjArray::Fast methods = compr_backtrace().obj_at(0);
-  Method::Fast m;
-  Symbol::Fast method_name;
-  Symbol::Fast class_name;
-  if (!methods.is_null() && !offsets.is_null()) {
-    int i;      
-    for (i=0; i<methods().length(); i++) {
-      m = methods().obj_at(i);
-      if (m.is_null()) {          break;        }
-       method_name = m().name();
-#ifndef PRODUCT        
-      // Non-public methods in a romized image may be renamed to
-      // .unknown. to save space. In non-product mode, to aid
-      // debugging, we retrieve the original name using
-      // ROM::get_original_method_name().
-      if (method_name().equals(Symbols::unknown())) {
-        method_name = ROM::get_original_method_name(&m);
-      }
-#endif
-      String::Raw method_name_str = Universe::new_string(&method_name JVM_CHECK_0);      
-      method_names().obj_at_put(i, &method_name_str);
-      
-      InstanceClass::Raw ic = m().holder();
-      class_name = ic().name();
-      String::Raw class_name_str = Universe::new_string(&class_name JVM_CHECK_0);      
-      class_names().obj_at_put(i, &class_name_str);      
-    }
-  }
-#endif
-  return (jobject)backtrace.obj();
-}
-#else
 // public void printStackTrace();
 void Java_java_lang_Throwable_printStackTrace() {
   Throwable::Raw throwable = GET_PARAMETER_AS_OOP(0);
   throwable().print_stack_trace();
 }
-#endif
 
 // static native Object open(String name);
 ReturnOop Java_com_sun_cldc_io_ResourceInputStream_open(JVM_SINGLE_ARG_TRAPS) {
@@ -1540,7 +1657,7 @@ void Natives::register_natives_for(InstanceClass* c JVM_TRAPS) {
 
 #endif /* !ROMIZING || !PRODUCT */
 
-#if ENABLE_TTY_TRACE
+#ifndef PRODUCT
 extern "C" {
 address _current_native_function;
 }

@@ -169,21 +169,11 @@ private:
   static void collect(size_t min_free_after_collection JVM_TRAPS);
 
 #if ENABLE_COMPILER
-  static OopDesc* compiler_area_allocate_code (const int size JVM_TRAPS);
-  static OopDesc* compiler_area_allocate_temp (const int size JVM_TRAPS);  
-  static void compiler_area_initialize( OopDesc** start, OopDesc** end ) {
-    _compiler_area_temp_bottom = start;
-    _compiler_area_temp_top = end;
-    _compiler_area_top = end;
-  }
-  static void compiler_area_terminate( OopDesc** end ) {
-    _compiler_area_top = end;
-#ifndef PRODUCT
-    _compiler_area_temp_top = NULL;
-    _compiler_area_temp_bottom = NULL;
-#endif   
-  }
+  static OopDesc* (*code_allocator) (size_t size JVM_TRAPS);
+  static OopDesc* (*temp_allocator) (size_t size JVM_TRAPS);
 
+  static OopDesc* compiler_area_allocate_code (size_t size JVM_TRAPS);
+  static OopDesc* compiler_area_allocate_temp (size_t size JVM_TRAPS);
 #endif
 
 public:
@@ -242,7 +232,7 @@ public:
     fast_memclear(_inline_allocation_top,
                   DISTANCE(_inline_allocation_top, _inline_allocation_end));
 #endif
-        }
+  	}
 
   // Collection
   static void full_collect(JVM_SINGLE_ARG_TRAPS);
@@ -288,7 +278,7 @@ public:
   {}
 #endif
 
-  static int compiler_area_soft_collect(size_t min_free_after_collection);
+  static size_t compiler_area_soft_collect(size_t min_free_after_collection);
 
   // Global reference support (bitwise mask)
   enum ReferenceType {
@@ -324,7 +314,7 @@ public:
 
   //found the compiled method which contains the instruction pointed 
   //by pc parameter
-  static CompiledMethodDesc* method_contains_instruction_of(void* pc);
+  static CompiledMethodDesc* method_contain_instruction_of(void* pc);
 
   // Finalization support
 private:
@@ -454,8 +444,9 @@ public:
       compiler_area_top = DERIVED(OopDesc**, compiler_area_top,
                                    latest_compiled_method->object_size());
     }
-    compiler_area_terminate( compiler_area_top );
+    _compiler_area_top = compiler_area_top;
   #ifndef PRODUCT
+    _compiler_area_temp_object_bottom = NULL;
     _saved_compiler_area_top = NULL;
   #endif
     if (VerifyGC >= 2) {
@@ -463,11 +454,13 @@ public:
     }
   }
 
-  static int free_memory_for_compiler_without_gc( void ) {
-    GUARANTEE(_compiler_area_temp_bottom != NULL, 
+  static size_t free_memory_for_compiler_without_gc( void ) {
+    GUARANTEE(_compiler_area_temp_object_bottom != NULL, 
               "temp objects must be allocated after new compiled code has "
               "been allocated");
-    return DISTANCE( _compiler_area_temp_bottom, _compiler_area_temp_top);
+
+    const ArrayDesc* filler = (ArrayDesc*)_compiler_area_temp_object_bottom;
+    return filler->_length * sizeof(int);
   }
 #endif
 
@@ -494,11 +487,11 @@ public:
   static int compiler_area_used (void) {
     return DISTANCE(_compiler_area_start, _compiler_area_top);
   }
-  static OopDesc* allocate_code( const int size JVM_TRAPS ) {
-    return compiler_area_allocate_code(size JVM_NO_CHECK);
+  static OopDesc* allocate_code( const size_t size JVM_TRAPS ) {
+    return (*code_allocator) (size JVM_NO_CHECK);
   }
-  static OopDesc* allocate_temp( const int size JVM_TRAPS ) {
-    return compiler_area_allocate_temp(size JVM_NO_CHECK);
+  static OopDesc* allocate_temp( const size_t size JVM_TRAPS ) {
+    return (*temp_allocator) (size JVM_NO_CHECK);
   }
 #endif
 
@@ -581,11 +574,7 @@ public:
   static int code_item_summary();
 
   // Testing
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
-  static bool contains_live(OopDesc** /*target*/);
-#else
-  static bool contains_live(OopDesc** /*target*/) { return false; }
-#endif
+  static bool contains_live(OopDesc** /*target*/) PRODUCT_RETURN0;
   static bool contains_live(const OopDesc* target) {
     return contains_live((OopDesc**) target);
   }
@@ -802,7 +791,6 @@ private:
   inline static OopDesc* rom_oop_from_offset(size_t offset);
   inline static OopDesc* decode_near(OopDesc* obj, OopDesc **heap_start, 
                                      size_t near_mask);
-  inline static FarClassDesc* decode_far_class(const OopDesc* obj);
   inline static FarClassDesc* decode_far_class_with_real_near(OopDesc* obj);
   inline static FarClassDesc* decode_far_class_with_encoded_near(OopDesc* obj,
                                              const QuickVars& qv = _quick_vars);
@@ -945,15 +933,11 @@ private:
 #if ENABLE_INTERNAL_CODE_OPTIMIZER
 public:
   //save the compiler area top before doing code scheduling
-  static void save_compiler_area_top_fast( void ) {
-    _saved_compiler_area_top_quick = _compiler_area_top;
-  }
+  static void save_compiler_area_top_fast();
 
   //restore the compiler area top to the value stored before scheduling.
   //free the memory allocated during code scheduling quickly
-  static void update_compiler_area_top_fast( void ) {
-    _compiler_area_top = _saved_compiler_area_top_quick;
-  }
+  static void update_compiler_area_top_fast();
 private:
   static OopDesc** _saved_compiler_area_top_quick;
 #endif

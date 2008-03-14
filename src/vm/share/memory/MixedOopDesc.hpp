@@ -51,9 +51,14 @@ public:
 #define MIXED_OOP_TYPES_DO(template) \
   template(BufferedFile,            buffered_file)             \
   template(ClassParserState,        class_parser_state)        \
+  template(CompilationQueueElement, compilation_queue_element) \
+  template(CompilerState,           compiler_state)            \
+  template(CompilerContext,         compiler_context)          \
+  template(Entry,                   entry)                     \
   template(FileDecoder,             file_decoder)              \
   template(Inflater,                inflater)                  \
   template(JarFileParser,           jar_file_parser)           \
+  template(LiteralPoolElement,      literal_pool_element)      \
   template(PacketDataBuffer,        packet_data_buffer)        \
   template(PendingLink,             pending_link)              \
   template(ROMizerHashEntry,        romizer_hashentry)         \
