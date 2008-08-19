@@ -535,8 +535,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   }
 
   process_command_line(lpCmdLine);
-  if (_WindowSystem && _argc == 1) {
-    int eembc = 0, hello = 0, mixed = 1, done = 0;
+  if (_WindowSystem && _argc >= 1) {
+    int eembc = 0, hello = 0, mixed = 1, done = 1;
 
     init_gui(hInstance, hPrevInstance, nShowCmd);
     if (!done && MessageBox(NULL, TEXT("EEMBC (mixed)?"),

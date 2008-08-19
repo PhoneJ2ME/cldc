@@ -480,6 +480,10 @@ ifeq ($(compiler), vc8ce)
 export ENABLE_SEGMENTED_ROM_TEXT_BLOCK     := true
 export ENABLE_SEGMENTED_ROM_TEXT_BLOCK__BY := jvm.make
 endif
+ifeq ($(compiler), evc)
+export ENABLE_SEGMENTED_ROM_TEXT_BLOCK     := true
+export ENABLE_SEGMENTED_ROM_TEXT_BLOCK__BY := jvm.make
+endif
 endif
 
 ifeq ($(IsTarget)+$(ROMIZING)+$(ENABLE_SEGMENTED_ROM_TEXT_BLOCK), true+true+true)
@@ -888,9 +892,7 @@ CPP_DEF_FLAGS_debug     = -D_DEBUG -DAZZERT
 CPP_DEF_FLAGS_release   =
 CPP_DEF_FLAGS_product   = -DPRODUCT
 
-ifeq ($(USE_VS2005), true)
 CPP_DEF_FLAGS          += -D_CRT_SECURE_NO_DEPRECATE
-endif
 
 CPP_DEF_FLAGS          += -DWIN32 -D_WINDOWS
 CPP_DEF_FLAGS          += $(CPP_DEF_FLAGS_$(BUILD))
@@ -1277,9 +1279,9 @@ endif
 LIBS                    = commctrl.lib coredll.lib  \
                           winsock.lib
 
-CPP_OPT_FLAGS_debug     = /Zi /Od
-CPP_OPT_FLAGS_release   = /Oxs
-CPP_OPT_FLAGS_product   = /Oxs
+CPP_OPT_FLAGS_debug     = /Zi /Od /Zm200
+CPP_OPT_FLAGS_release   = /Oxs /Zm200
+CPP_OPT_FLAGS_product   = /Oxs /Zm200
 CPP_OPT_FLAGS           =
 CPP_OPT_FLAGS          += $(CPP_OPT_FLAGS_$(BUILD))
 
