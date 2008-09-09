@@ -1,7 +1,7 @@
 /*
  *   
  *
- * Portions Copyright  2000-2007 Sun Microsystems, Inc. All Rights
+ * Portions Copyright  2000-2008 Sun Microsystems, Inc. All Rights
  * Reserved.  Use is subject to license terms.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
@@ -269,7 +269,24 @@ void ObjectHeap::accumulate_current_task_memory_usage( void ) {
 OopDesc** ObjectHeap::current_task_allocation_end ( void ) {
   GUARANTEE( _inline_allocation_top == _task_allocation_start,
     "no allocations should happen here" );
-  int available = available_for_current_task();
+  int available = free_memory() - int(_reserved_memory_deficit);
+  if( available < 0 ) {
+    available = 0;
+  }
+  const TaskMemoryInfo& task_info = get_task_info( _current_task_id );
+  const int estimate = task_info.estimate;
+  {
+    const int unused = task_info.reserve - estimate;
+    if( unused > 0 ) {
+      available += unused;
+    }
+  }
+  {
+    const int unused = task_info.limit - estimate;
+    if( unused < available ) {
+      available = unused;
+    }
+  }
   available = align_size_down( available, BytesPerWord );
 
   OopDesc** allocation_end =
@@ -282,6 +299,31 @@ OopDesc** ObjectHeap::current_task_allocation_end ( void ) {
   }
   GUARANTEE(allocation_end <= _compiler_area_start, "overlap");
   return allocation_end;
+}
+
+int ObjectHeap::available_for_current_task() {
+  OopDesc** const allocation_end = disable_allocation_trap();
+  accumulate_current_task_memory_usage();
+
+  int available = free_memory() - (int)_reserved_memory_deficit;
+  const TaskMemoryInfo& task_info = get_task_info(_current_task_id);
+  const int estimate = task_info.estimate;
+  {
+    const int unused = task_info.reserve - estimate;
+    if (unused > 0) {
+      available += unused;
+    }
+  }
+  {
+    const int unused = task_info.limit - estimate;
+    if (unused < available) {
+      available = unused;
+    }
+  }
+
+  enable_allocation_trap(allocation_end);
+  GUARANTEE(available >= 0, "sanity");
+  return available;
 }
 
 int ObjectHeap::on_task_switch ( const int task_id ) {
@@ -722,359 +764,47 @@ void ObjectHeap::nuke_raw_handles() {
 }
 #endif
 
-inline void ObjectHeap::weak_refs_do(void do_oop(OopDesc**)) {
+inline void ObjectHeap::global_refs_do(void do_oop(OopDesc**), const int mask) {
 #if ENABLE_ISOLATES
   ForTask( task ) {
     Task::Raw t = Task::get_task(task);
-    if (t.not_null()) {
-      WeakRefArray::Raw refs = t().weak_references();
-      if (refs.not_null()) {
-        refs().oops_do(do_oop);
-      }
+    if( t.not_null() ) {
+      RefArray::Raw refs = t().global_references();
+      refs().oops_do( do_oop, mask );
     }
   }
 #else
-  {
-    WeakRefArray::Raw refs = Universe::weak_references()->obj();
-    if (refs.not_null()) {
-      refs().oops_do(do_oop);
-    }
-  }
+  RefArray::current()->oops_do( do_oop, mask );
 #endif
-}
-
-inline int 
-ObjectHeap::make_reference(unsigned type, unsigned owner, unsigned index) {
-  (void)owner;
-  return ((index << RefIndexOffset) | 
-#if ENABLE_ISOLATES
-          (owner << RefOwnerOffset) |
-#endif
-          type);
-}
-
-inline unsigned 
-ObjectHeap::get_reference_type(const int ref_index) {
-  return ref_index & RefTypeMask;
-}
-
-inline unsigned 
-ObjectHeap::get_reference_index(const int ref_index) {
-  return ref_index >> RefIndexOffset;
-}
-
-inline ReturnOop 
-ObjectHeap::get_reference_array(const int ref_index) {
-  GUARANTEE(is_encoded_reference(ref_index), "Must be encoded ref");
-  const unsigned type = get_reference_type(ref_index);
-  const unsigned owner = get_reference_owner(ref_index);
-
-  return get_reference_array(type, owner);
-}
-
-inline bool 
-ObjectHeap::is_encoded_reference(const int ref_index) {
-  return (ref_index & EncodedRefFlag) == EncodedRefFlag;
-}
-
-inline bool 
-ObjectHeap::is_local_reference(const int ref_index) {
-  return get_reference_type(ref_index) == LocalRefType;
-}
-
-inline bool 
-ObjectHeap::is_strong_reference(const int ref_index) {
-  return get_reference_type(ref_index) == StrongGlobalRefType;
-}
-
-inline bool 
-ObjectHeap::is_weak_reference(const int ref_index) {
-  return get_reference_type(ref_index) == WeakGlobalRefType;
-}
-
-inline bool 
-ObjectHeap::is_global_reference(const int ref_index) {
-  return is_strong_reference(ref_index) || is_weak_reference(ref_index);
-}
-
-inline unsigned 
-ObjectHeap::get_reference_owner(const int ref_index) {
-#if ENABLE_ISOLATES
-
-#if ENABLE_JNI
-  if (is_local_reference(ref_index)) {
-    return 0;
-  }
-#else
-  GUARANTEE(is_global_reference(ref_index), 
-            "Local references are not supported");
-#endif
-
-  return (ref_index & RefOwnerMask) >> RefOwnerOffset;
-#else
-  return 0;
-#endif
-}
-
-inline ReturnOop 
-ObjectHeap::get_reference_array(unsigned type, unsigned owner) {
-#if ENABLE_JNI
-  if (type == LocalRefType) {
-    Thread::Raw thread = Thread::current();
-    return thread().local_references();
-  } else 
-#endif
-  {
-    GUARANTEE(type == StrongGlobalRefType || type == WeakGlobalRefType, 
-              "Invalid ref type");
-#if ENABLE_ISOLATES
-    GUARANTEE(0 < owner && owner < MAX_TASKS, "Invalid owner");
-    Task::Raw task = Task::get_task( owner );
-    GUARANTEE( task.not_null(), "Wrong task" );
-    return (type == WeakGlobalRefType) ? 
-      task().weak_references() : task().strong_references();
-#else
-    (void)owner;
-    return (type == WeakGlobalRefType) ? 
-      Universe::weak_references()->obj() : 
-      Universe::strong_references()->obj();
-#endif
-  }
-}
-
-inline void 
-ObjectHeap::set_reference_array(unsigned type, unsigned owner, Array* array) {
-#if ENABLE_JNI
-  if (type == LocalRefType) {
-    Thread::Raw thread = Thread::current();
-    thread().set_local_references(array->obj());
-  } else 
-#endif
-  {
-    GUARANTEE(type == StrongGlobalRefType || type == WeakGlobalRefType, 
-              "Invalid ref type");
-#if ENABLE_ISOLATES
-    GUARANTEE(0 < owner && owner < MAX_TASKS, "Invalid owner");
-    Task::Raw task = Task::get_task( owner );
-    GUARANTEE( task.not_null(), "Wrong task" );
-    if (type == WeakGlobalRefType) {
-      task().set_weak_references(array->obj()); 
-    } else {
-      task().set_strong_references(array->obj());
-    }
-#else
-    (void)owner;
-    if (type == WeakGlobalRefType) {
-      *Universe::weak_references() = array->obj(); 
-    } else {
-      *Universe::strong_references() = array->obj();
-    }
-#endif
-  }
-}
-
-inline OopDesc** ObjectHeap::decode_reference(const int ref_index) {
-  GUARANTEE(ref_index != 0, "Must not be NULL");
-
-  if (!is_encoded_reference(ref_index)) {
-    return (OopDesc**)ref_index;
-  }
-
-  Array::Raw array = get_reference_array(ref_index);
-
-  const unsigned index = get_reference_index(ref_index);
-
-  const int offset = array().base_offset() + index * sizeof(jobject);
-  return array.obj()->obj_field_addr(offset);
-}
-
-#if ENABLE_JNI
-int ObjectHeap::register_local_reference(Oop* referent) {
-  Thread::Raw thread = Thread::current();
-  ObjArray::Raw locals = thread().local_references();
-  JniFrame::Raw frame = thread().jni_frame();
-
-  GUARANTEE(frame.not_null(), "Must have a JNI frame");
-  GUARANTEE(locals.not_null(), "Must have local refs allocated");
-
-  const int local_ref_index = frame().local_ref_index();
-
-  GUARANTEE(local_ref_index < locals().length(), 
-            "Insufficient local capacity");
-
-  locals().obj_at_put(local_ref_index, referent);
-
-  frame().set_local_ref_index(local_ref_index + 1);
-
-  return make_reference(LocalRefType, 0, local_ref_index);
-}
-
-void ObjectHeap::unregister_local_reference(const int ref_index) {
-  GUARANTEE(is_local_reference(ref_index), "Must be a local reference");
-
-  const int index = get_reference_index(ref_index);
-  
-  Thread::Raw thread = Thread::current();
-  ObjArray::Raw locals = thread().local_references();
-
-  GUARANTEE(locals.not_null(), "Must have local refs allocated");
-
-  if (0 <= index && index < locals().length()) {
-    locals().obj_at_clear(index);
-    JniFrame::Raw frame = thread().jni_frame();
-    GUARANTEE(frame.not_null(), "Must have a JNI frame");
-    GUARANTEE(index < frame().local_ref_index(), 
-              "Invalid local reference index");
-    if (index == frame().local_ref_index() - 1) {
-      frame().set_local_ref_index(index);
-    }
-  }
-}
-#endif
-
-int ObjectHeap::register_strong_reference(Oop* referent JVM_TRAPS) {
-  const unsigned owner = TaskContext::current_task_id();
-
-  UsingFastOops fast_oops;
-  ObjArray::Fast array = get_reference_array(StrongGlobalRefType, owner);
-
-  if (array.is_null()) {
-    array = Universe::new_obj_array(16 JVM_NO_CHECK);
-    if (array.is_null()) {
-      Thread::clear_current_pending_exception();
-      return 0;
-    }
-  }
-
-  int index = 0;
-
-  if (referent->not_null()) {
-    const int length = array().length();
-
-    for (index = 1; index < length; index++) {
-      if (array().obj_at(index) == NULL) {
-        break;
-      }
-    }
-
-    if (index >= length) {
-      ObjArray::Raw new_array = 
-        Universe::new_obj_array(length * 2 JVM_NO_CHECK);
-      if (new_array.is_null()) {
-        Thread::clear_current_pending_exception();
-        return 0;
-      }
-      ObjArray::array_copy(&array, 0, &new_array, 0, length JVM_MUST_SUCCEED);
-      array = new_array;
-    }
-
-    array().obj_at_put(index, referent);
-  }
-
-  set_reference_array(StrongGlobalRefType, owner, &array);
-
-  return make_reference(StrongGlobalRefType, owner, index);
-}
-
-int ObjectHeap::register_weak_reference(Oop* referent JVM_TRAPS) {
-  const unsigned owner = TaskContext::current_task_id();
-
-  UsingFastOops fast_oops;
-  WeakRefArray::Fast array = get_reference_array(WeakGlobalRefType, owner);
-
-  if (array.is_null()) {
-    array = WeakRefArray::create(JVM_SINGLE_ARG_NO_CHECK);
-    if (array.is_null()) {
-      Thread::clear_current_pending_exception();
-      return 0;
-    }
-  }
-
-  int index = 0;
-
-  if (referent->not_null()) {
-    const int length = array().length();
-
-    for (index = 1; index < length; index++) {
-      if (array().obj_at(index) == WeakRefArray::unused()) {
-        break;
-      }
-    }
-
-    if (index >= length) {
-      WeakRefArray::Raw new_array = 
-        WeakRefArray::create(length * 2 JVM_NO_CHECK);
-      if (new_array.is_null()) {
-        Thread::clear_current_pending_exception();
-        return 0;
-      }
-      TypeArray::array_copy((TypeArray*)&array, 0, 
-                            (TypeArray*)&new_array, 0, length, 
-                            sizeof(jobject));
-      array = new_array;
-    }
-
-    array().obj_at_put(index, referent);
-  }
-
-  set_reference_array(WeakGlobalRefType, owner, &array);
-
-  return make_reference(WeakGlobalRefType, owner, index);
-}
-
-void ObjectHeap::unregister_strong_reference(const int ref_index) {
-  GUARANTEE(is_strong_reference(ref_index), "Must be a strong reference");
-  
-  ObjArray::Raw array = get_reference_array(ref_index);
-  const unsigned index = get_reference_index(ref_index);
-
-  array().obj_at_clear(index);  
-}
-
-void ObjectHeap::unregister_weak_reference(const int ref_index) {
-  GUARANTEE(is_weak_reference(ref_index), "Must be a weak reference");
-
-  WeakRefArray::Raw array = get_reference_array(ref_index);  
-  const unsigned index = get_reference_index(ref_index);
-
-  array().remove(index);  
 }
 
 int ObjectHeap::register_global_ref_object(Oop* referent,
                                            ReferenceType type JVM_TRAPS) {
-  switch (type) {
-  case WEAK: 
-    return register_weak_reference(referent JVM_NO_CHECK_AT_BOTTOM);
-  default:
-    GUARANTEE(type == STRONG, "Invalid global reference type");
-    return register_strong_reference(referent JVM_NO_CHECK_AT_BOTTOM);
-  }
-}
- 
-void ObjectHeap::unregister_global_ref_object(const int ref_index) {
-  if (is_weak_reference(ref_index)) {
-    unregister_weak_reference(ref_index);
-  } else {
-    GUARANTEE(is_strong_reference(ref_index), 
-              "Invalid global reference type");
-    unregister_strong_reference(ref_index);
-  }
+  const int i = RefArray::current()->add(referent, type JVM_MUST_SUCCEED);
+  return make_global_reference( i );
 }
 
-OopDesc* ObjectHeap::get_global_ref_object(const int ref_index) {
-  return *decode_reference(ref_index);
-}
-
-int ObjectHeap::get_global_reference_owner(const int ref_index) {
-  GUARANTEE(is_global_reference(ref_index), "Not a global ref");
-  return get_reference_owner(ref_index);
-}
-
-#if ENABLE_JNI
-extern "C" OopDesc** decode_handle(const jobject ref) {
-  return ObjectHeap::decode_reference((const int)ref);
-}
+OopDesc* ObjectHeap::get_global_ref_object(const int ref) {
+#if ENABLE_ISOLATES
+  Task::Raw task = Task::get_task( get_global_reference_owner(ref) );
+  GUARANTEE( task.not_null(), "Wrong task" );
+  RefArray::Raw refs = task().global_references();
+#else
+  RefArray::Raw refs = RefArray::current();
 #endif
+  return refs().get( get_global_reference_index( ref ) );
+}
+
+void ObjectHeap::unregister_global_ref_object(const int ref) {
+#if ENABLE_ISOLATES
+  Task::Raw task = Task::get_task( get_global_reference_owner(ref) );
+  GUARANTEE( task.not_null(), "Wrong task" );
+  RefArray::Raw refs = task().global_references();
+#else
+  RefArray::Raw refs = RefArray::current();
+#endif
+  refs().remove( get_global_reference_index( ref ) );
+}
 
 #if !defined(AZZERT) && !ENABLE_ISOLATES
 OopDesc* ObjectHeap::allocate_raw(size_t size JVM_TRAPS) {
@@ -2072,6 +1802,8 @@ inline void ObjectHeap::mark_objects( const bool is_full_collect ) {
     // Mark "young generation" objects referred from "old generation"
     mark_remembered_set();
   }
+  // Mark global references
+  global_refs_do(mark_root_and_stack, STRONG);
 
   // All non-finalizer-reachable roots are marked, handle potential marking
   // stack overflow
@@ -2103,7 +1835,7 @@ inline void ObjectHeap::mark_objects( const bool is_full_collect ) {
   unmark_pending_finalizers();
 
   // Clear all unmarked weak references
-  weak_refs_do(WeakRefArray::clear_non_marked);
+  global_refs_do(RefArray::clear_non_marked, WEAK);
 
   // Mark the pending finalizers once again,
   // so that finalization can happen with them around
@@ -2481,8 +2213,8 @@ void ObjectHeap::write_barrier_oops_update_interior_pointers(OopDesc** start,
 // Update interior pointers that live outside of the heap
 inline void
 ObjectHeap::update_other_interior_pointers( const bool is_full_collect ) {
-  TRACE_OTHER_UPDATE_INTERIOR("weak_references");
-  weak_refs_do(update_interior_pointer);
+  TRACE_OTHER_UPDATE_INTERIOR("global_refs_array");
+  global_refs_do(update_interior_pointer, STRONG|WEAK);
 
   TRACE_OTHER_UPDATE_INTERIOR("Roots");
   roots_do( update_interior_pointer, !is_full_collect );

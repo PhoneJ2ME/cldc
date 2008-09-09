@@ -1,7 +1,7 @@
 /*
  *   
  *
- * Portions Copyright  2000-2007 Sun Microsystems, Inc. All Rights
+ * Portions Copyright  2000-2008 Sun Microsystems, Inc. All Rights
  * Reserved.  Use is subject to license terms.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
@@ -89,8 +89,6 @@ int RegisterAllocator::_register_references[Assembler::number_of_registers]
 #if USE_HOT_ROUTINES
 // Write barrier for individual pointer store.
 void oop_write_barrier(OopDesc** addr, OopDesc* value) {
-  GUARANTEE( !ObjectHeap::is_gc_active(),
-             "The use of write barrier during GC" );
   // prefetch _heap_start and _heap_top to avoid stalls on ARM
   OopDesc ** heap_start = _heap_start;
   OopDesc ** old_generation_end = _old_generation_end;

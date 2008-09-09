@@ -1,7 +1,7 @@
 /*
  *   
  *
- * Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
+ * Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
  * This program is free software; you can redistribute it and/or
@@ -1658,10 +1658,6 @@ jlong Scheduler::time_slice(JVM_SINGLE_ARG_TRAPS) {
     return 100;
   }
 
-  if (Thread::current()->not_null()) {
-    Thread::cache_current_pending_exception();
-  }
-
   Thread *next_thread = get_next_runnable_thread();
   if (!next_thread->equals(Thread::current())) {
     Thread::set_current(next_thread);
@@ -1698,10 +1694,6 @@ jlong Scheduler::time_slice(JVM_SINGLE_ARG_TRAPS) {
 #endif
 
   primordial_to_current_thread();
-
-  if (Thread::current()->not_null()) {
-    Thread::decache_current_pending_exception();
-  }
 
   if (_estimated_event_readiness > 0) {
     _estimated_event_readiness --;

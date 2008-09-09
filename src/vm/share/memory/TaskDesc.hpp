@@ -1,7 +1,7 @@
 /*
  *   
  *
- * Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
+ * Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
  * This program is free software; you can redistribute it and/or
@@ -77,11 +77,6 @@ protected:
   OopDesc*          _string_table;      // string table for this task
   OopDesc*          _symbol_table;      // symbol table for this task
   OopDesc*          _global_references; // global references for this task
-
-  OopDesc*          _strong_references; // strong global references 
-                                        // for this task
-  OopDesc*          _weak_references;   // weak global references 
-                                        // for this task
 #endif //  ENABLE_ISOLATES
 };
 

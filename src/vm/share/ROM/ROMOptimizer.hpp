@@ -1,7 +1,7 @@
 /*
  *   
  *
- * Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
+ * Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
  * This program is free software; you can redistribute it and/or
@@ -138,8 +138,6 @@ private:
   template(ConstantPool,romizer_alternate_constant_pool, "") \
   template(ObjArray, kvm_native_methods_table, "Methods that use KVM-style " \
                                             "native interface") \
-  template(ObjArray, jni_native_methods_table, "Methods that use JNI-style " \
-                                            "native interface") \
   template(ROMVector,precompile_method_list, "") \
   template(ObjArray,     string_table, "") \
   template(ObjArray,     symbol_table, "") \
@@ -184,7 +182,6 @@ private:
   template(Stream*, log_stream, "") \
   template(ROMVector*, disable_compilation_log, "") \
   template(ROMVector*, quick_natives_log, "") \
-  template(ROMVector*, jni_natives_log, "") \
   template(ROMVector*, kvm_natives_log, "") \
   template(ROMVector*, kvm_native_methods_vector, "")
 
@@ -374,21 +371,9 @@ private:
   bool class_list_contains(ObjArray *list, InstanceClass *klass);
   void enable_quick_natives(char* pattern JVM_TRAPS);
   void write_quick_natives_log();
-
-  void enable_jni_natives(char* pattern JVM_TRAPS);
-  void write_jni_natives_log();
-  void update_jni_natives_table(JVM_SINGLE_ARG_TRAPS) {
-    *jni_native_methods_table() = build_method_table(_jni_natives_log 
-                                                     JVM_NO_CHECK_AT_BOTTOM);
-  }
-
   void enable_kvm_natives(char* pattern JVM_TRAPS);
+  void update_kvm_natives_table(JVM_SINGLE_ARG_TRAPS);
   void write_kvm_natives_log();
-  void update_kvm_natives_table(JVM_SINGLE_ARG_TRAPS) {
-    *kvm_native_methods_table() = build_method_table(_kvm_natives_log 
-                                                     JVM_NO_CHECK_AT_BOTTOM);
-  }
-  ReturnOop build_method_table(const ROMVector* methods JVM_TRAPS);
 #if USE_AOT_COMPILATION
   void enable_precompile(char* pattern JVM_TRAPS);
 #endif
@@ -518,7 +503,7 @@ private:
   void use_unique_object_at(Oop *owner, int offset, ROMLookupTable *table
                             JVM_TRAPS);
 
-#if USE_REFLECTION
+#if ENABLE_REFLECTION
   void resolve_constant_pool(JVM_SINGLE_ARG_TRAPS);
 #else
   void resolve_constant_pool(JVM_SINGLE_ARG_TRAPS) {JVM_IGNORE_TRAPS;}

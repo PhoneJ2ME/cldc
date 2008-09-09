@@ -1,7 +1,7 @@
 /*
  *
  *
- * Portions Copyright  2000-2007 Sun Microsystems, Inc. All Rights
+ * Portions Copyright  2000-2008 Sun Microsystems, Inc. All Rights
  * Reserved.  Use is subject to license terms.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
@@ -52,29 +52,6 @@ int Method::vtable_index() const {
 
   return -1;
 }
-
-#if ENABLE_JNI
-
-int Method::method_table_index() const {
-  // Retrieve the vtbale index from the vtable by searching
-  InstanceClass::Raw klass = holder();
-  ObjArray::Raw methods = klass().methods();
-
-  OopDesc *this_obj = obj();
-  OopDesc **base = (OopDesc **)methods().base_address();
-  const int len = methods().length();
-  for (int index = 0; index < len; index++) {
-    if (this_obj != *base) {
-      base ++;
-    } else {
-      return index;
-    }
-  }
-
-  return -1;
-}
-
-#endif
 
 #if ENABLE_COMPILER
 
@@ -1078,18 +1055,11 @@ void Method::check_bytecodes(JVM_SINGLE_ARG_TRAPS) {
                 raw_hi = Bytes::swap_u4(raw_hi);
                 raw_lo = Bytes::swap_u4(raw_lo);
               }
-              // Note: need both comparisons to handle overflow
-              if (raw_lo > raw_hi || raw_hi - raw_lo < 0) {
-                goto error;
-              }
               fields = 3 + raw_hi - raw_lo + 1;
             } else {
               int raw_npairs = get_native_aligned_int(a_bci + wordSize);
               if (Bytes::is_Java_byte_ordering_different()) {
                 raw_npairs = Bytes::swap_u4(raw_npairs);
-              }
-              if (raw_npairs < 0) {
-                goto error;
               }
               fields = 2 + 2 * raw_npairs;
             }
@@ -2677,7 +2647,7 @@ void Method::iterate(OopVisitor* visitor) {
     visitor->do_uint(&id, variable_part_offset(), true);
   }
 
-#if USE_REFLECTION
+#if ENABLE_REFLECTION
   {
     NamedField id("thrown_exceptions", true);
     visitor->do_oop(&id, thrown_exceptions_offset(), true);
@@ -2891,7 +2861,7 @@ int Method::generate_fieldmap(TypeArray* field_map) {
 #endif
   //variable info
   field_map->byte_at_put(map_index++, T_SYMBOLIC);
-#if USE_REFLECTION
+#if ENABLE_REFLECTION
   //thrown exceptions
   field_map->byte_at_put(map_index++, T_OBJECT);
 #endif
@@ -2958,7 +2928,7 @@ void Method::iterate_oopmaps(oopmaps_doer do_map, void* param) {
   OOPMAP_ENTRY_4(do_map, param, T_OBJECT, line_var_table);
 #endif
   OOPMAP_ENTRY_4(do_map, param, T_INT,    variable_part);
-#if USE_REFLECTION
+#if ENABLE_REFLECTION
   OOPMAP_ENTRY_4(do_map, param, T_OBJECT, thrown_exceptions);
 #endif
   OOPMAP_ENTRY_4(do_map, param, T_SHORT,  access_flags);

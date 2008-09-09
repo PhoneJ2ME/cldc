@@ -1,25 +1,25 @@
 /*
  *
  *
- * Portions Copyright  2000-2007 Sun Microsystems, Inc. All Rights
+ * Portions Copyright  2000-2008 Sun Microsystems, Inc. All Rights
  * Reserved.  Use is subject to license terms.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
- *
+ * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
  * 2 only, as published by the Free Software Foundation.
- *
+ * 
  * This program is distributed in the hope that it will be useful, but
  * WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
  * General Public License version 2 for more details (a copy is
  * included at /legal/license.txt).
- *
+ * 
  * You should have received a copy of the GNU General Public License
  * version 2 along with this work; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA
- *
+ * 
  * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
  * Clara, CA 95054 or visit www.sun.com if you need additional
  * information or have any questions.
@@ -428,25 +428,34 @@ void RegisterAllocator::dump_notation(const Register reg){
 
 
 #ifndef PRODUCT
-void RegisterAllocator::print( void ) {
+void RegisterAllocator::print() {
 #if USE_DEBUG_PRINTING
-  for( Assembler::Register reg = Assembler::first_register;
+  for (Assembler::Register reg = Assembler::first_register;
        reg <= Assembler::last_register;
-       reg = Assembler::Register(reg + 1) ) {
+       reg = (Assembler::Register) ((int) reg + 1)) {
     if (is_referenced(reg)) {
-      TTY_TRACE_CR(("register_references[%s] = %d",
-                    register_name(reg), references(reg)));
+#if ARM || defined(HITACHI_SH)
+      const char* name = Disassembler::reg_name(reg);
+#else
+      const char* name = Assembler::name_for_long_register(reg);
+#endif
+      TTY_TRACE_CR(("register_references[%s] = %d", name, references(reg)));
     }
   }
 #endif
 }
 
-void RegisterAllocator::guarantee_all_free( void ) {
-  for( Assembler::Register reg = Assembler::first_register;
+void RegisterAllocator::guarantee_all_free() {
+  for (Assembler::Register reg = Assembler::first_register;
        reg <= Assembler::last_register;
-       reg = Assembler::Register(reg + 1) ) {
+       reg = (Assembler::Register) ((int) reg + 1)) {
     if (is_referenced(reg)) {
-      TTY_TRACE_CR(("register %s has not been released:", register_name(reg) ));
+#if ARM || defined(HITACHI_SH)
+      const char* name = Disassembler::reg_name(reg);
+#else
+      const char* name = Assembler::name_for_long_register(reg);
+#endif
+      TTY_TRACE_CR(("register %s has not been released:", name));
       print();
       SHOULD_NOT_REACH_HERE();
     }

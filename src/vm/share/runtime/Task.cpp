@@ -1,7 +1,7 @@
 /*
  *   
  *
- * Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
+ * Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
  * This program is free software; you can redistribute it and/or
@@ -436,6 +436,7 @@ void Task::cleanup_terminated_task(int id JVM_TRAPS) {
           *Universe::current_dictionary() = Universe::system_dictionary();
           StringTable::current()->set_null();
           SymbolTable::current()->set_null();
+          RefArray::current()->set_null();
           Task::current()->set_null();
           _current_task = NULL;
           Universe::update_relative_pointers();

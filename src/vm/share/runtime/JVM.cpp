@@ -1,7 +1,7 @@
 /*
  *   
  *
- * Portions Copyright  2000-2007 Sun Microsystems, Inc. All Rights
+ * Portions Copyright  2000-2008 Sun Microsystems, Inc. All Rights
  * Reserved.  Use is subject to license terms.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
@@ -66,10 +66,6 @@ extern "C" {
 
 extern "C" void loopgen_check_oopmaps();
 extern "C" void romgen_check_oopmaps();
-
-#if ENABLE_JNI
-extern "C" void jni_initialize();
-#endif
 
 ReturnOop JVM::resolve_class(char* class_name JVM_TRAPS) {
   UsingFastOops fast_oops;
@@ -263,7 +259,7 @@ void JVM::run() {
   // so that one can look at the executable binary
   // with a text browser and look at the copyright notice:
 const char *JVM::copyright =
-   " Portions Copyright  2000-2007 Sun Microsystems, Inc. All Rights"
+   " Portions Copyright  2000-2008 Sun Microsystems, Inc. All Rights"
    " Reserved.  Use is subject to license terms."
    " DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER"
    " "
@@ -324,10 +320,6 @@ inline bool JVM::initialize( void ) {
   loopgen_check_oopmaps();
   romgen_check_oopmaps();
   initialize_non_product();
-#endif
-
-#if ENABLE_JNI
-  jni_initialize();
 #endif
 
   GUARANTEE(AssemblerLoopFlags::GeneratedInterpreterLoop(),
@@ -927,15 +919,8 @@ extern "C" jlong JVM_JavaMilliSeconds() {
   return Os::java_time_millis();
 }
 
-int JVM_IsStarted(void) {
-  return (int)JVM::is_started();
-}
-
 int JVM_CleanUp(void) {
-  if (!JVM::is_started()) {
-    return 0;
-  }
-  GUARANTEE(SlaveMode, "sanity");  
+  GUARANTEE(SlaveMode, "sanity");
   JVM::cleanup();
   return JVM::exit_code();
 }

@@ -1,7 +1,7 @@
 /*
  *
  *
- * Portions Copyright  2000-2007 Sun Microsystems, Inc. All Rights
+ * Portions Copyright  2000-2008 Sun Microsystems, Inc. All Rights
  * Reserved.  Use is subject to license terms.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
@@ -96,7 +96,7 @@ class Method: public Oop {
     NUMBER_OF_RESULT_STORAGE_TYPES
   };
 
-#if USE_REFLECTION
+#if ENABLE_REFLECTION
   static int thrown_exceptions_offset() {
     return FIELD_OFFSET(MethodDesc, _thrown_exceptions);
   }
@@ -248,10 +248,6 @@ class Method: public Oop {
   // vtable index
   int vtable_index() const;
 
-#if ENABLE_JNI
-  int method_table_index() const;
-#endif
-
   // access flag
   AccessFlags access_flags() const {
     AccessFlags af;
@@ -311,7 +307,7 @@ public:
     obj_field_put(exception_table_offset(), value);
   }
 
-#if USE_REFLECTION
+#if ENABLE_REFLECTION
   ReturnOop thrown_exceptions() const {
     return obj_field(thrown_exceptions_offset());
   }

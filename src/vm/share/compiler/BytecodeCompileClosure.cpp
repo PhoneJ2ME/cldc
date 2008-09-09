@@ -1,7 +1,7 @@
 /*
  *
  *
- * Portions Copyright  2000-2007 Sun Microsystems, Inc. All Rights
+ * Portions Copyright  2000-2008 Sun Microsystems, Inc. All Rights
  * Reserved.  Use is subject to license terms.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
@@ -2198,17 +2198,6 @@ void BytecodeCompileClosure::bytecode_epilog(JVM_SINGLE_ARG_TRAPS) {
 }
 
 void BytecodeCompileClosure::throw_null_pointer_exception(JVM_SINGLE_ARG_TRAPS) {
-#if ENABLE_INLINE
-  if (Compiler::is_inlining()) {
-    // Cannot handle abruptly terminated methods when inlining.
-    // Deferencing null is a rare case for real-world applications anyway,
-    // so we just abort current compilation discarding any generated code.
-    // The current method is marked as impossible to compile to prevent  
-    // inlining on the next compilation attempt for the caller
-    Compiler::abort_active_compilation(true JVM_THROW);
-  }
-#endif
-
   NullCheckStub* error =
     NullCheckStub::allocate_or_share(JVM_SINGLE_ARG_NO_CHECK);
   if( error ) {

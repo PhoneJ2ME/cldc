@@ -1,7 +1,7 @@
 /*
  *   
  *
- * Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
+ * Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
  * This program is free software; you can redistribute it and/or
@@ -27,7 +27,11 @@
 // This file contains the shared part of the source and binary assembler.
 // Ideally, this structure should match the structure for the ARM port.
 
-class Assembler: public AssemblerCommon {
+#if ENABLE_COMPILER
+class Assembler: public CompilerObject {
+#else
+class Assembler: public GlobalObj {
+#endif
  public:
   enum Condition {
     // Order is relevant!
@@ -145,7 +149,7 @@ class Assembler: public AssemblerCommon {
   // for platform-independant code
   static Register reg(Register r)               { return r; }
 
-#if USE_DEBUG_PRINTING
+#ifndef PRODUCT
   // Name accessors.
   static const char* name_for_byte_register(const Register reg);
   static const char* name_for_work_register(const Register reg);

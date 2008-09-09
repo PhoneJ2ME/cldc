@@ -1,7 +1,7 @@
 /*
  *   
  *
- * Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
+ * Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
  * This program is free software; you can redistribute it and/or
@@ -87,7 +87,6 @@ public:
   FileStream  _main_stream;             // used to generate ROMImage.cpp
   FileStream  _reloc_stream;            // used to generate ROMImage.cpp
   FileStream  _kvm_stream;              // used to generate KvmNatives.cpp
-  FileStream  _jni_stream;              // used to generate JniAdapters.cpp
 
 private:
   virtual FileStream* main_stream() {
@@ -255,8 +254,6 @@ class SourceObjectWriter : public ObjectWriter {
     WORDS_PER_LINE = 4
   };
 
-  static bool is_method_in_table(const Method * method, 
-                                 const ObjArray * table);
 public:
   SourceObjectWriter(FileStream *declare, FileStream *stream,
                      FileStream *reloc,
@@ -305,17 +302,7 @@ public:
   void print_oopmap_declarations();
   void count(Oop *object, int adjustment);
   void count(class MemCounter& counter, int bytes) PRODUCT_RETURN;
-
-  bool is_jni_native(const Method * method) {
-    ObjArray::Raw table = _writer->_optimizer.jni_native_methods_table();
-    return is_method_in_table(method, &table);
-  }
-  void write_jni_method_adapter(Method *method, char *name);
-
-  bool is_kvm_native(const Method * method) {
-    ObjArray::Raw table = _writer->_optimizer.kvm_native_methods_table();
-    return is_method_in_table(method, &table);
-  }
+  bool is_kvm_native(Method *method);
   void write_kvm_method_stub(Method *method, char *name);
   void put_c_function(Method *owner, address addr, Stream *stream JVM_TRAPS);
   void put_oopmap(Oop *owner, address addr);

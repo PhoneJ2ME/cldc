@@ -1,7 +1,7 @@
 /*
  *   
  *
- * Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
+ * Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
  * This program is free software; you can redistribute it and/or
@@ -67,7 +67,6 @@ public:
   template(WTKThreadRecord,         profiler_info)             \
   template(VMEvent,                 vm_event)                  \
   template(VMEventModifier,         vm_event_modifier)         \
-  template(JniFrame,                jni_frame)                 \
   template(ROMProfile,              rom_profile)         
 
 #define MIXED_OOP_ENUM_DECLARE(x, y) \

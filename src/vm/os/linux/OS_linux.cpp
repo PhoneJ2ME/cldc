@@ -1,7 +1,7 @@
 /*
  *    
  *
- * Portions Copyright  2000-2007 Sun Microsystems, Inc. All Rights
+ * Portions Copyright  2000-2008 Sun Microsystems, Inc. All Rights
  * Reserved.  Use is subject to license terms.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
@@ -914,7 +914,7 @@ static void ignoreit() {}
 
 extern "C" void jvm_set_vfp_fast_mode();
 void Os::initialize() {
-#if USE_ARM_VFP_RUN_FAST_MODE
+#if ENABLE_ARM_VFP && !CROSS_GENERATOR
   if (RunFastMode) {
     // Linux by default does not use RunFast mode. This option makes
     // it easy to test the VM's compatibility with RunFast mode.

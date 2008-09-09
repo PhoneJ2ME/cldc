@@ -1,7 +1,7 @@
 /*
  *
  *
- * Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
+ * Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
  * This program is free software; you can redistribute it and/or
@@ -227,8 +227,6 @@
 #define JavaNearDesc  JVMJavaNearDesc
 #define JavaOop  JVMJavaOop
 #define JavaVTable  JVMJavaVTable
-#define JniFrame  JVMJniFrame
-#define JniFrameDesc  JVMJniFrameDesc
 #define JvmTimer  JVMJvmTimer
 #define KvmNativesMatcher  JVMKvmNativesMatcher
 #define LargeObject  JVMLargeObject
@@ -475,7 +473,6 @@
 #define WTKProfiler  JVMWTKProfiler
 #define WTKThreadRecord  JVMWTKThreadRecord
 #define WTKThreadRecordDesc  JVMWTKThreadRecordDesc
-#define WeakRefArray  JVMWeakRefArray
 #define WeakReference  JVMWeakReference
 #define ZeroDivisorCheckStub  JVMZeroDivisorCheckStub
 
@@ -520,8 +517,6 @@ class JarFileParser;
 class JavaClass;
 class JavaClassObj;
 class JavaNear;
-class JniFrame;                   // Used by ENABLE_JNI only
-class JniFrameDesc;               // Used by ENABLE_JNI only
 class MetaClass;
 class Method;
 class MethodDesc;
@@ -569,7 +564,6 @@ class TypeArrayClassDesc;
 class TypeArrayDesc;
 class VirtualStackFrame;
 class VirtualStackFrameDesc;
-class WeakRefArray;         // Used by ENABLE_JNI only
 
 //----------------------------------------------------------------------------
 // Constants
@@ -2004,7 +1998,7 @@ extern "C" {
   void disable_cpu_variant();
 #endif
 
-#if USE_REFLECTION || ENABLE_JAVA_DEBUGGER
+#if ENABLE_REFLECTION || ENABLE_JAVA_DEBUGGER
   void entry_return_void();
   void entry_return_word();
   void entry_return_long();
@@ -2015,23 +2009,6 @@ extern "C" {
 
 #if ENABLE_JAVA_DEBUGGER
   void shared_call_vm_oop_return();
-#endif
-
-#if ENABLE_JNI
-  void    invoke_entry_void();
-  jint    invoke_entry_word();
-  jlong   invoke_entry_long();
-  jfloat  invoke_entry_float();
-  jdouble invoke_entry_double();
-  void    invoke_entry_return_point();
-
-  void invoke_entry_void_return();
-  void invoke_entry_word_return();
-  void invoke_entry_long_return();
-  void invoke_entry_float_return();
-  void invoke_entry_double_return();
-
-  void default_return_point();
 #endif
 
   // InterpreterRuntime.cpp

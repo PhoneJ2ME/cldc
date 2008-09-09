@@ -1,7 +1,7 @@
 /*
  *   
  *
- * Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
+ * Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
  * This program is free software; you can redistribute it and/or
@@ -813,6 +813,9 @@ bool Universe::bootstrap_without_rom(const JvmPathChar* classpath) {
   // Allocate tables used for class loading
   *class_list() = new_obj_array(50 JVM_CHECK_0);
 
+  // Global reference support
+  *global_refs_array() = Universe::new_int_array(5 JVM_CHECK_0);
+
 #if ENABLE_ISOLATES
   *mirror_list() = setup_mirror_list(50 JVM_CHECK_0);
 #endif
@@ -959,7 +962,7 @@ bool Universe::bootstrap_without_rom(const JvmPathChar* classpath) {
   load_root_class(incompatible_class_change_error_class(),
                   Symbols::java_lang_IncompatibleClassChangeError());
 
-#if USE_REFLECTION
+#if ENABLE_REFLECTION
   load_root_class(boolean_class(),   Symbols::java_lang_Boolean());
   load_root_class(character_class(), Symbols::java_lang_Character());
   load_root_class(float_class(),     Symbols::java_lang_Float());
@@ -1323,10 +1326,8 @@ ReturnOop Universe::new_entry_activation(Method* method, jint length JVM_TRAPS)
 
   if (entry.not_null()) {
     entry().set_method(method);
-#if USE_REFLECTION || ENABLE_JAVA_DEBUGGER
+#if ENABLE_REFLECTION || ENABLE_JAVA_DEBUGGER
     entry().set_return_point((address) entry_return_void);
-#elif ENABLE_JNI
-    entry().set_return_point((address) default_return_point);
 #endif
   }
   return entry;
@@ -1813,6 +1814,10 @@ ReturnOop Universe::new_task(int id JVM_TRAPS) {
     SymbolTable::Raw table = SymbolTable::initialize(64 JVM_CHECK_0);
     task().set_symbol_table(table);
   }
+  {
+    RefArray::Raw array = RefArray::initialize(JVM_SINGLE_ARG_CHECK_0);
+    task().set_global_references(array);
+  }
 
 #if ENABLE_MULTIPLE_PROFILES_SUPPORT
   // Initialize new task with default profile id.
@@ -2213,6 +2218,7 @@ void Universe::init_task_list(JVM_SINGLE_ARG_TRAPS) {
   *current_task_obj()   = allocate_task(JVM_SINGLE_ARG_CHECK);
   *symbol_table()       = SymbolTable::initialize(64 JVM_CHECK);
   *string_table()       = StringTable::initialize(64 JVM_CHECK);
+  *global_refs_array()  = RefArray::initialize(JVM_SINGLE_ARG_CHECK);
 #endif
 }
 

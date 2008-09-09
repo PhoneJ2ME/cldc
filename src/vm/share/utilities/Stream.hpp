@@ -1,7 +1,7 @@
 /*
  *   
  *
- * Portions Copyright  2000-2007 Sun Microsystems, Inc. All Rights
+ * Portions Copyright  2000-2008 Sun Microsystems, Inc. All Rights
  * Reserved.  Use is subject to license terms.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
@@ -107,7 +107,7 @@ public:
 #endif
 
 #if !defined(PRODUCT) || ENABLE_TTY_TRACE || ENABLE_PERFORMANCE_COUNTERS \
-    || ENABLE_WTK_PROFILER || USE_AOT_COMPILATION
+    || ENABLE_WTK_PROFILER
   void put(char ch);
 #endif
 
@@ -271,6 +271,8 @@ private:
  * Binary output stream for creating files
  * that contain raw binary (non-character) data.
  */
+#define BFS_BUFFER_SIZE 1024
+
 class BufferedFileStreamState {
 public:
   int _indentation;
@@ -300,7 +302,7 @@ public:
     close();
   }
   inline void flush_buffer(bool force) {
-    if (force || _bfs_pos >= BINARY_STREAM_BUFFER_SIZE) {
+    if (force || _bfs_pos >= BFS_BUFFER_SIZE) {
       do_flush();
     }
   }

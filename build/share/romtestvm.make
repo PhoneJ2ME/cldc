@@ -1,7 +1,7 @@
 #
 #   
 #
-# Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
+# Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
 # 
 # This program is free software; you can redistribute it and/or
@@ -107,7 +107,7 @@ ENABLE_SOFT_FLOAT             = $(JVM_ENABLE_SOFT_FLOAT)
 ENABLE_JAVA_DEBUGGER          = $(JVM_ENABLE_JAVA_DEBUGGER)
 ENABLE_MEMORY_PROFILER        = $(JVM_ENABLE_MEMORY_PROFILER)
 ENABLE_ISOLATES               = $(JVM_ENABLE_ISOLATES)
-ENABLE_EXTENDED_API           = $(JVM_ENABLE_EXTENDED_API)
+ENABLE_REFLECTION             = $(JVM_ENABLE_REFLECTION)
 ENABLE_DYNAMIC_NATIVE_METHODS = $(JVM_ENABLE_DYNAMIC_NATIVE_METHODS)
 ENABLE_METHOD_TRAPS           = $(JVM_ENABLE_METHOD_TRAPS)
 ENABLE_PROFILER               = $(JVM_ENABLE_PROFILER)
@@ -122,8 +122,6 @@ OBJS                 = ../../target/$(BUILD)/jvmspi$(OBJ_SUFFIX) \
                        ROMImage$(OBJ_SUFFIX) \
                        NativesTable$(OBJ_SUFFIX) \
                        InternalNatives$(OBJ_SUFFIX) \
-                       JniNatives$(OBJ_SUFFIX)  \
-                       JniAdapters$(OBJ_SUFFIX) \
                        KniNatives$(OBJ_SUFFIX) \
                        SniNatives$(OBJ_SUFFIX) \
                        IsolateTestNatives$(OBJ_SUFFIX)
@@ -191,63 +189,47 @@ $(ANI_ROMTESTVM): $(ANI_OBJS) $(JVMX_LIB) $(JVMTEST_LIB) $(JVM_LIB)
 
 ROMImage$(OBJ_SUFFIX): ../ROMImage.cpp
 	@echo compiling $< ...
-	@$(CPP) $(CPP_FLAGS) $(CPP_OPT_FLAGS) -c $< -o $@
+	@$(CPP) $(CPP_FLAGS) -c $< -o $@
 
 NativesTable$(OBJ_SUFFIX): ../NativesTable.cpp
 	@echo compiling $< ...
-	@$(CPP) $(CPP_FLAGS) $(CPP_OPT_FLAGS) -c $< -o $@
-
-# If JNI is enabled, romgen writes KNI-to-JNI wrappers for all JNI native 
-# methods to JniAdapters.cpp. 
-# Otherwise it writes stubs for all JNI native methods to JniAdapters.cpp.
-JniAdapters$(OBJ_SUFFIX): ../JniAdapters.cpp
-	@echo compiling $< ...
-	@$(CPP) $(CPP_FLAGS) $(CPP_OPT_FLAGS) -c $< -o $@
-
-# Use ROM image as a marker to regenerate $(JNI_ADAPTERS).
-JniAdapters$(OBJ_SUFFIX): ../ROMImage.cpp
-../ROMImage.cpp: ../JniAdapters.cpp
-../JniAdapters.cpp:
+	@$(CPP) $(CPP_FLAGS) -c $< -o $@
 
 InternalNatives$(OBJ_SUFFIX): $(TEST_SRC_DIR)/natives/InternalNatives.cpp
 	@echo compiling $< ...
-	@$(CPP) $(CPP_FLAGS) $(CPP_OPT_FLAGS) -c $< -o $@
+	@$(CPP) $(CPP_FLAGS) -c $< -o $@
 
 DLLNatives$(OBJ_SUFFIX): $(TEST_SRC_DIR)/natives/DLLNatives.cpp
 	@echo compiling $< ...
-	@$(CPP) $(CPP_FLAGS) $(CPP_OPT_FLAGS) -c $< -o $@
-
-JniNatives$(OBJ_SUFFIX): $(TEST_SRC_DIR)/natives/JniNatives.cpp
-	@echo compiling $< ...
-	@$(CPP) $(CPP_FLAGS) $(CPP_OPT_FLAGS) -c $< -o $@
+	@$(CPP) $(CPP_FLAGS) -c $< -o $@
 
 KniNatives$(OBJ_SUFFIX): $(TEST_SRC_DIR)/natives/KniNatives.cpp
 	@echo compiling $< ...
-	@$(CPP) $(CPP_FLAGS) $(CPP_OPT_FLAGS) -c $< -o $@
+	@$(CPP) $(CPP_FLAGS) -c $< -o $@
 
 SniNatives$(OBJ_SUFFIX): $(TEST_SRC_DIR)/natives/SniNatives.cpp
 	@echo compiling $< ...
-	@$(CPP) $(CPP_FLAGS) $(CPP_OPT_FLAGS) -c $< -o $@
+	@$(CPP) $(CPP_FLAGS) -c $< -o $@
 
 IsolateTestNatives$(OBJ_SUFFIX): $(TEST_SRC_DIR)/natives/IsolateTestNatives.cpp
 	@echo compiling $< ...
-	@$(CPP) $(CPP_FLAGS) $(CPP_OPT_FLAGS) -c $< -o $@
+	@$(CPP) $(CPP_FLAGS) -c $< -o $@
 
 AniNatives$(OBJ_SUFFIX): $(TEST_SRC_DIR)/natives/AniNatives.cpp
 	@echo compiling $< ...
-	@$(CPP) $(CPP_FLAGS) $(CPP_OPT_FLAGS) -c $< -o $@
+	@$(CPP) $(CPP_FLAGS) -c $< -o $@
 
 AmsMain$(OBJ_SUFFIX): $(TEST_SRC_DIR)/natives/AmsMain.cpp
 	@echo compiling $< ...
-	@$(CPP) $(CPP_FLAGS) $(CPP_OPT_FLAGS) -c $< -o $@
+	@$(CPP) $(CPP_FLAGS) -c $< -o $@
 
 AniMain$(OBJ_SUFFIX): $(TEST_SRC_DIR)/natives/AniMain.cpp
 	@echo compiling $< ...
-	@$(CPP) $(CPP_FLAGS) $(CPP_OPT_FLAGS) -c $< -o $@
+	@$(CPP) $(CPP_FLAGS) -c $< -o $@
 
 AniNativesDummies$(OBJ_SUFFIX): $(TEST_SRC_DIR)/natives/AniNativesDummies.cpp
 	@echo compiling $< ...
-	@$(CPP) $(CPP_FLAGS) $(CPP_OPT_FLAGS) -c $< -o $@
+	@$(CPP) $(CPP_FLAGS) -c $< -o $@
 
 #----------------------------------------------------------------------
 #
