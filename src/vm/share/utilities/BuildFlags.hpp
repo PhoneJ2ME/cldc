@@ -1,25 +1,25 @@
 /*
- *
+ *   
  *
  * Portions Copyright  2000-2007 Sun Microsystems, Inc. All Rights
  * Reserved.  Use is subject to license terms.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
- *
+ * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
  * 2 only, as published by the Free Software Foundation.
- *
+ * 
  * This program is distributed in the hope that it will be useful, but
  * WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
  * General Public License version 2 for more details (a copy is
  * included at /legal/license.txt).
- *
+ * 
  * You should have received a copy of the GNU General Public License
  * version 2 along with this work; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA
- *
+ * 
  * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
  * Clara, CA 95054 or visit www.sun.com if you need additional
  * information or have any questions.
@@ -172,9 +172,6 @@
 // ENABLE_CLDC_11                1,1  Support CLDC 1.1 Specification instead
 //                                    of CLDC 1.0.
 //
-// ENABLE_CLDC_111               0,0  Support CLDC 1.1.1 Specification
-//                                    instead of CLDC 1.0.
-//
 // ENABLE_CODE_OPTIMIZER         0,0  Enable optimization of code generated
 //                                    by dynamic compiler for a specific CPU.
 //
@@ -191,19 +188,19 @@
 //
 // ENABLE_DISPATCH_TABLE_PADDING 0,0  Add extra entries to the dispatch table
 //
-// ENABLE_DYNAMIC_NATIVE_METHODS 0,0  Add ability to execute user classes
+// ENABLE_DYNAMIC_NATIVE_METHODS 0,0  Add ability to execute user classes 
 //                                    containing native methods.
 //
 // ENABLE_DYNAMIC_RESTRICTED_PACKAGE 0,0 Allow restricted packages to
 //                                    be dynamically specified.
 //
-// ENABLE_FAST_CRC32             1,1  Use fast CRC32 routine? Adds 1KB
+// ENABLE_FAST_CRC32             1,1  Use fast CRC32 routine? Adds 1KB 
 //                                    footprint.
 //
 // ENABLE_FAST_MEM_ROUTINES      1,1  Use built-in memcmp and memcpy routines
 //                                    in the generated interpreter loop.
 //
-// ENABLE_INLINEASM_INTERPRETER  0,0  If true, the interpreter loop is
+// ENABLE_INLINEASM_INTERPRETER  0,0  If true, the interpreter loop is 
 //                                    generated as a C file with
 //                                    inlined assembly code.  This
 //                                    option is used on x86 only.
@@ -224,7 +221,7 @@
 //                                    pushed, the stack pointer's value
 //                                    increases.
 //
-// ENABLE_EXTENDED_API           0,0  Enable Java API extensions
+// ENABLE_REFLECTION             0,0  Add Reflection support
 //
 // ENABLE_RVDS                   0,0  Support for ARM RealView
 //                                    Developer Suite (2.0 or later)
@@ -241,11 +238,11 @@
 //
 // ENABLE_HEAP_NEARS_IN_HEAP     0,0  Ensure all nears of romized HEAP objects and prototypical nears
 //                                    of all classes are in ROM HEAP block by cloning those nears
-//                                    from ROM TEXT and DATA blocks to the ROM HEAP block.
-//                                    Speeds up GC, but slightly increases footprint.
+//                                    from ROM TEXT and DATA blocks to the ROM HEAP block. 
+//                                    Speeds up GC, but slightly increases footprint. 
 //
 // ENABLE_PREINITED_TASK_MIRRORS 1,1  Put TaskMirror to a separate section of SystemROM image
-//                                    to allow loading them during startup of each task.
+//                                    to allow loading them during startup of each task.                                   
 //
 // ENABLE_LIB_IMAGES             0,0  (unsupported) allow loading of multiple
 //                                    binary images into the same task.
@@ -306,7 +303,7 @@
 //                                    and loading) of binary application
 //                                    image files for fast class loading.
 //
-// ENABLE_MONET_COMPILATION      0,0  Enable on-device method precompilation
+// ENABLE_MONET_COMPILATION      0,0  Enable on-device method precompilation 
 //                                    Requires ENABLE_MONET.
 //
 // ENABLE_MONET_DEBUG_DUMP       1,0  Create debug dump files that describe
@@ -320,7 +317,7 @@
 //                                    Java method invocation.
 //                                    Used for startup time measurements.
 //
-// ENABLE_PCSL                   0,0  Enable support for the Portable Common
+// ENABLE_PCSL                   0,0  Enable support for the Portable Common 
 //                                    Services Library.
 //
 // ENABLE_PERFORMANCE_COUNTERS   1,0  Enable coarse-grain performance counters.
@@ -331,12 +328,6 @@
 // ENABLE_DETAILED_PERFORMANCE_COUNTERS 0,0  Enable fine-grain performance
 //                                    counters. These counters may skew
 //                                    execution time.
-//
-// ENABLE_EVENT_LOGGER           0,0  Enable event logging. Used for debugging,
-//                                    performance and pause measurements.
-//
-// ENABLE_EXTENDED_EVENT_LOGGER  0,0  Enable event type extension. Used for debugging,
-//                                    performance and pause measurements.
 //
 // ENABLE_PRODUCT_PRINT_STACK    -,0  Include the debug function
 //                                    pss() in product build (useful
@@ -367,7 +358,7 @@
 //
 // ENABLE_SEMAPHORE              1,1  Include com.sun.cldc.util.Semaphore class
 //
-// ENABLE_ROM_GENERATOR          1,0  Include code for generating
+// ENABLE_ROM_GENERATOR          1,0  Include code for generating 
 //                                    (source or binary) ROM image.
 //
 // ENABLE_INTERPRETER_GENERATOR  1,-  Include code for generating interpreter
@@ -427,7 +418,7 @@
 //                                    code of that method.
 //
 // ENABLE_COMPRESSED_VSF         0,0  Compiler-specific.
-//                                    Include table of compressed VSF
+//                                    Include table of compressed VSF 
 //                                    in the Relocation of CompiledMethod
 //                                    to reduce the produced code size.
 //
@@ -469,7 +460,7 @@
 // ENABLE_INLINE                        1,1 Inline simple methods into their
 //                                          callers in compiled code.
 //
-// ENABLE_REMEMBER_ARRAY_CHECK          0,0 Remember the length
+// ENABLE_REMEMBER_ARRAY_CHECK          0,0 Remember the length 
 //                                          checking result of a un-changed
 //                                          local variable.
 //
@@ -483,7 +474,7 @@
 //                                          prediction.
 //
 // ENABLE_CSE                           0,0 Eliminate memory access related
-//                                          common byte code
+//                                          common byte code  
 //
 // ENABLE_HARDWARE_TIMER_FOR_TICKS      0,0 Nucleus-XScale only.  Include code
 //                                          to set up a hardware timer to
@@ -506,17 +497,9 @@
 //
 // ENABLE_JVMPI_PROFILE_VERIFY          0,0 To support JVMPI profiler
 //                                          verification.
-//
+// 
 // ENABLE_CODE_PATCHING                 0,0 Use code patching mechanism for
 //                                          timer tick checking optimizations.
-//
-// ENABLE_CONDITIONAL_BRANCH_OPTIMIZATIONS 1,1 Use flags set by arithmetic
-//                                          instructions
-//
-// ENABLE_FREQUENT_FORCED_GC_SUPPRESSION 0,0 Enable garbage collection
-//                                           optimization
-//
-// ENABLE_JNI                           0,0 Enable (partial) JNI support.
 //
 //============================================================================
 // ENABLE_FLAGS_END }}
@@ -635,9 +618,9 @@
 #define USE_BINARY_IMAGE_LOADER       ENABLE_MONET
 
 #if defined(PRODUCT) && ENABLE_MONET
-#  define USE_PRODUCT_BINARY_IMAGE_GENERATOR 1
+#define USE_PRODUCT_BINARY_IMAGE_GENERATOR 1
 #else
-#  define USE_PRODUCT_BINARY_IMAGE_GENERATOR 0
+#define USE_PRODUCT_BINARY_IMAGE_GENERATOR 0
 #endif
 
 #if USE_BINARY_IMAGE_GENERATOR || USE_BINARY_IMAGE_LOADER
@@ -649,9 +632,9 @@
 #if !defined(PRODUCT) || ENABLE_VERIFY_ONLY || \
      ENABLE_ROM_GENERATOR || ENABLE_PERFORMANCE_COUNTERS || \
      USE_PRODUCT_BINARY_IMAGE_GENERATOR
-#  define USE_JAR_ENTRY_ENUMERATOR 1
+#define USE_JAR_ENTRY_ENUMERATOR 1
 #else
-#  define USE_JAR_ENTRY_ENUMERATOR 0
+#define USE_JAR_ENTRY_ENUMERATOR 0
 #endif
 
 // GenerateSystemROMImage is hard-wired: with MONET enabled, we always
@@ -681,9 +664,9 @@
 // AOT compilation is supported only for ARM
 #if ENABLE_COMPILER && defined(ARM) && \
      (USE_SOURCE_IMAGE_GENERATOR || ENABLE_MONET_COMPILATION)
-#  define USE_AOT_COMPILATION 1
+#define USE_AOT_COMPILATION 1
 #else
-#  define USE_AOT_COMPILATION 0
+#define USE_AOT_COMPILATION 0
 #endif
 
 #if !ENABLE_APPENDED_CALLINFO && !ENABLE_EMBEDDED_CALLINFO
@@ -721,7 +704,7 @@
 #endif
 
 //
-// USE_SINGLE_METHOD_FLUSHING         During code patching use the single
+// USE_SINGLE_METHOD_FLUSHING         During code patching use the single 
 //                                    flush icache for the method instead of
 //                                    several flushes for each instruction.
 //
@@ -753,8 +736,10 @@
 #define ENABLE_INTERNAL_CODE_OPTIMIZER 0
 #endif
 
-#if ENABLE_INTERPRETER_GENERATOR && defined(PRODUCT)
-#  error "ENABLE_INTERPRETER_GENERATOR" cannot be defined for PRODUCT build
+#if ENABLE_INTERPRETER_GENERATOR
+#ifdef PRODUCT
+#error "ENABLE_INTERPRETER_GENERATOR" cannot be defined for PRODUCT build
+#endif
 #endif
 
 #if ENABLE_ROM_JAVA_DEBUGGER
@@ -779,12 +764,12 @@
 #endif
 #endif
 
-#ifndef USE_ROM_LOGGING
-#  if ENABLE_ROM_GENERATOR && !defined(PRODUCT)
-#    define USE_ROM_LOGGING 1
-#  else
-#    define USE_ROM_LOGGING 0
-#  endif
+#ifndef USE_ROM_LOGGING 
+#if ENABLE_ROM_GENERATOR && !defined(PRODUCT)
+#define USE_ROM_LOGGING 1
+#else
+#define USE_ROM_LOGGING 0
+#endif
 #endif
 
 #ifndef USE_GENERIC_BIT_SETTING_FUNCS
@@ -822,19 +807,16 @@
 // work with the way we use macros (e.g., #if ARM && LINUX). So
 // let's change it to something more pleasant.
 #ifdef ARM
-#  undef ARM
-#  define ARM 1
+#undef ARM
+#define ARM 1
 #endif
 
 #if defined(ARM) && !ENABLE_INTERPRETER_GENERATOR && !CROSS_GENERATOR
-#  define ARM_EXECUTABLE 1
+#define ARM_EXECUTABLE 1
 #else
-#  define ARM_EXECUTABLE 0
+#define ARM_EXECUTABLE 0
 #endif
 
-//
-// USE_LITERAL_POOL                   Compiled code needs a literal pool
-//
 // USE_COMPILER_FPU_MAP               If true, the VirtualStackFrame class
 //                                    include extra information for FPU
 //                                    registers.
@@ -842,26 +824,24 @@
 // USE_COMPILER_LITERALS_MAP          If true, the VirtualStackFrame class
 //                                    include extra information for literals.
 
-#if ENABLE_COMPILER && ( defined(ARM) || defined(HITACHI_SH) )
-#  define USE_LITERAL_POOL 1
+#if !defined(ARM) && !defined(HITACHI_SH)
+#define USE_COMPILER_FPU_MAP 1
 #else
-#  define USE_LITERAL_POOL 0
+#define USE_COMPILER_FPU_MAP 0
 #endif
-
-
-#define USE_COMPILER_FPU_MAP     !USE_LITERAL_POOL
-#define USE_COMPILER_LITERALS_MAP USE_LITERAL_POOL
 
 #if ENABLE_COMPILER || ENABLE_ROM_GENERATOR || ENABLE_INTERPRETER_GENERATOR
-#  define USE_COMPILER_STRUCTURES 1
+#define USE_COMPILER_STRUCTURES 1
 #else
-#  define USE_COMPILER_STRUCTURES 0
+#define USE_COMPILER_STRUCTURES 0
 #endif
 
+#define USE_COMPILER_LITERALS_MAP (ARM | defined(HITACHI_SH))
+
 #if ENABLE_COMPILER && defined(ARM) && !ENABLE_EMBEDDED_CALLINFO
-#  define USE_COMPILER_GLUE_CODE 1
+#define USE_COMPILER_GLUE_CODE 1
 #else
-#  define USE_COMPILER_GLUE_CODE 0
+#define USE_COMPILER_GLUE_CODE 0
 #endif
 
 // USE_UNICODE_FOR_FILENAMES          Use 16-bit unicode chars for filenames
@@ -879,19 +859,12 @@
 
 // MAX_METHOD_TO_COMPILE              Default size for the MaxMethodToCompile
 //                                    run-time option. The system default
-//                                    is 6000 bytes. Platforms can override
+//                                    is 6000 bytes. Platforms can override 
 //                                    this in Globals_<os_family>.hpp or in
 //                                    Makefiles.
 #ifndef MAX_METHOD_TO_COMPILE
 #define MAX_METHOD_TO_COMPILE 6000
 #endif
-
-// BINARY_STREAM_BUFFER_SIZE          Binary file stream buffer size in bytes 
-//                                    for buffered binary file writing.
-#ifndef BINARY_STREAM_BUFFER_SIZE
-#define BINARY_STREAM_BUFFER_SIZE 1024
-#endif
-
 
 /*
  * Bracing comments that contain parseable source code:
@@ -945,7 +918,7 @@
 #define SUPPORTS_CUSTOM_HEAP_ADJUSTMENT 0
 #endif
 
-#ifndef SUPPORTS_PROFILER_CONTROL
+#ifndef SUPPORTS_PROFILER_CONTROL 
 #define SUPPORTS_PROFILER_CONTROL 0
 #endif
 
@@ -955,9 +928,9 @@
 
 
 #ifndef HOST_LITTLE_ENDIAN
-// This should have be set in makefiles, but need to set a default value
+// This should have be set in makefiles, but need to set a default value 
 // for win32_i386_ide build.
-#  define HOST_LITTLE_ENDIAN 1
+#define HOST_LITTLE_ENDIAN 1
 #endif
 
 // USE_SET_HEAP_LIMIT                 Set this to 0 in Globals_<os>.hpp
@@ -965,8 +938,8 @@
 //                                    the JVM_SetHeapLimit API to
 //                                    implement a user-administered
 //                                    space in the Java heap.
-#ifndef USE_SET_HEAP_LIMIT
-#  define USE_SET_HEAP_LIMIT 1
+#ifndef USE_SET_HEAP_LIMIT 
+#define USE_SET_HEAP_LIMIT 1
 #endif
 
 // ISOLATES_PARAM                     A function parameter that needs to be
@@ -974,9 +947,9 @@
 //                                    ENABLE_ISOLATES is true.
 
 #if ENABLE_ISOLATES
-#  define ISOLATES_PARAM(code) code,
+#define ISOLATES_PARAM(code) code,
 #else
-#  define ISOLATES_PARAM(code)
+#define ISOLATES_PARAM(code)
 #endif
 
 // These are the 3 choices for loading Monet images. Note that we never
@@ -986,9 +959,9 @@
 // USE_IMAGE_MAPPING                  Load the Monet image(s) using an
 //                                    OS-specific file mapping API (such as
 //                                    mmap() on Linux). This is the most
-//                                    efficient method of loading images,
-//                                    since it potentially supports
-//                                    direct-mapping of Flash to reduce
+//                                    efficient method of loading images, 
+//                                    since it potentially supports 
+//                                    direct-mapping of Flash to reduce 
 //                                    RAM consumption.
 //
 // USE_IMAGE_PRELOADING               Load the Monet image(s) at the beginning
@@ -1044,23 +1017,23 @@
 // USE_VERBOSE_ERROR_MSG              Use a descriptive character string
 //                                    in errors thrown by the VM
 
-#if ENABLE_INTERPRETER_GENERATOR || USE_SOURCE_IMAGE_GENERATOR
+#if ENABLE_INTERPRETER_GENERATOR || USE_SOURCE_IMAGE_GENERATOR 
 // The loopgen and source romgen always need the debug printing code.
-#  define USE_DEBUG_PRINTING        1
-#  define USE_COMPILER_COMMENTS     ENABLE_COMPILER
-#  define USE_COMPILER_DISASSEMBLER ENABLE_COMPILER
-#  define USE_OOP_VISITOR           1
+#define USE_DEBUG_PRINTING        1
+#define USE_COMPILER_COMMENTS     ENABLE_COMPILER
+#define USE_COMPILER_DISASSEMBLER ENABLE_COMPILER
+#define USE_OOP_VISITOR           1
 #else
-#  define USE_DEBUG_PRINTING        (ENABLE_TTY_TRACE && !defined(PRODUCT))
-#  define USE_COMPILER_COMMENTS     (ENABLE_COMPILER && ENABLE_TTY_TRACE)
-#  define USE_COMPILER_DISASSEMBLER (ENABLE_COMPILER && ENABLE_TTY_TRACE)
-#  define USE_OOP_VISITOR           USE_DEBUG_PRINTING
+#define USE_DEBUG_PRINTING        (ENABLE_TTY_TRACE && !defined(PRODUCT))
+#define USE_COMPILER_COMMENTS     (ENABLE_COMPILER && ENABLE_TTY_TRACE)
+#define USE_COMPILER_DISASSEMBLER (ENABLE_COMPILER && ENABLE_TTY_TRACE)
+#define USE_OOP_VISITOR           USE_DEBUG_PRINTING
 #endif
 
 #if defined(PRODUCT) || (!ENABLE_TTY_TRACE)
-#  define USE_VERBOSE_ERROR_MSG 0
+#define USE_VERBOSE_ERROR_MSG 0
 #else
-#  define USE_VERBOSE_ERROR_MSG 1
+#define USE_VERBOSE_ERROR_MSG 1
 #endif
 
 /*
@@ -1075,18 +1048,18 @@
 // Leaf method frame omission is implemented only on ARM compiler.
 //
 #if ARM && !(ENABLE_THUMB_COMPILER||ENABLE_THUMB_REGISTER_MAPPING)
-#  define OMIT_LEAF_FRAME_DEFAULT true
+#define OMIT_LEAF_FRAME_DEFAULT true
 #else
-#  define OMIT_LEAF_FRAME_DEFAULT false
+#define OMIT_LEAF_FRAME_DEFAULT false
 #endif
 
 // By default, do not generate compiler assertions in AOT (since AOT romgen
 // is built in DEBUG mode by default.)
 //
 #if defined(AZZERT) && !USE_SOURCE_IMAGE_GENERATOR
-#  define COMPILER_ASSERTION_DEFAULT 1
+#define COMPILER_ASSERTION_DEFAULT 1
 #else
-#  define COMPILER_ASSERTION_DEFAULT 0
+#define COMPILER_ASSERTION_DEFAULT 0
 #endif
 
 
@@ -1101,9 +1074,9 @@
 //                                    after a timer tick.
 
 #if (ENABLE_THUMB_COMPILER||ENABLE_THUMB_REGISTER_MAPPING) && !ENABLE_ARM_V6T2
-#  define USE_INDIRECT_EXECUTION_SENSOR_UPDATE 1
+#define USE_INDIRECT_EXECUTION_SENSOR_UPDATE 1
 #else
-#  define USE_INDIRECT_EXECUTION_SENSOR_UPDATE 0
+#define USE_INDIRECT_EXECUTION_SENSOR_UPDATE 0
 #endif
 
 #if ENABLE_THUMB_COMPILER
@@ -1131,74 +1104,48 @@
 //                    which case a lot of code can be conditionally compiled
 //                    out.
 #if defined(ROMIZING) && (defined(PRODUCT) || !ENABLE_SYSTEM_ROM_OVERRIDE)
-#  define ROMIZED_PRODUCT 1
+#define ROMIZED_PRODUCT 1
 #else
-#  define ROMIZED_PRODUCT 0
+#define ROMIZED_PRODUCT 0
 #endif
 
-#if ENABLE_MEMORY_PROFILER && !ENABLE_JAVA_DEBUGGER
-#  error "ENABLE_JAVA_DEBUGGER must be true for ENABLE_MEMORY_PROFILER build"
+#if ENABLE_MEMORY_PROFILER
+#if !ENABLE_JAVA_DEBUGGER
+#error "ENABLE_JAVA_DEBUGGER must be true for ENABLE_MEMORY_PROFILER build"
+#endif
 #endif
 
 #if ENABLE_INLINED_ARRAYCOPY && !ENABLE_COMPILER_TYPE_INFO
-#  error "ENABLE_COMPILER_TYPE_INFO must be set for ENABLE_INLINED_ARRAYCOPY"
+#error "ENABLE_COMPILER_TYPE_INFO must be set for ENABLE_INLINED_ARRAYCOPY"
 #endif
 
 //
-// USE_FP_RESULT_IN_VFP_REGISTER      Return floating point retult in VFP
-//                                    registers.
+// USE_FP_RESULT_IN_VFP_REGISTER      Return floating point retult in VFP 
+//                                    registers. 
 //
-#define USE_FP_RESULT_IN_VFP_REGISTER (ENABLE_ARM_VFP)
+#if ENABLE_ARM_VFP
+#define USE_FP_RESULT_IN_VFP_REGISTER 1
+#else
+#define USE_FP_RESULT_IN_VFP_REGISTER 0
+#endif
 
 //
 // ENABLE_ARM9_VFP_BUG_WORKAROUND  Workaround for ARM9 + VFP hardware bugs
 //
 //
 #if ENABLE_ARM_VFP
-#  ifndef ENABLE_ARM9_VFP_BUG_WORKAROUND
-#    define ENABLE_ARM9_VFP_BUG_WORKAROUND 0
-#  endif
+#ifndef ENABLE_ARM9_VFP_BUG_WORKAROUND
+#define ENABLE_ARM9_VFP_BUG_WORKAROUND 0
 #endif
-
-#define USE_ARM_VFP_LITERALS (ENABLE_ARM_VFP)
+#endif
 
 //
 // USE_EMBEDDED_VTABLE_BITMAP      Embed a vtable bitmap in JavaClassDesc,
 //                                 one bit per virtual method to mark
 //                                 overridden methods
 //
-#define USE_EMBEDDED_VTABLE_BITMAP (ENABLE_COMPILER && ENABLE_INLINE)
-
-//
-// USE_EVENT_LOGGER                Enable JVM event logging
-//
-#if ENABLE_EVENT_LOGGER || ENABLE_EXTENDED_EVENT_LOGGER ||\
-    (ENABLE_PERFORMANCE_COUNTERS && USE_DEBUG_PRINTING)
-#  define USE_EVENT_LOGGER 1
+#if ENABLE_COMPILER && ENABLE_INLINE
+#define USE_EMBEDDED_VTABLE_BITMAP 1
 #else
-#  define USE_EVENT_LOGGER 0
-#endif
-
-//
-// USE_HIGH_RESOLUTION_TIMER       Implement access to OS timer
-//
-#define USE_HIGH_RESOLUTION_TIMER (ENABLE_PERFORMANCE_COUNTERS ||\
-  ENABLE_PROFILER || ENABLE_WTK_PROFILER || ENABLE_TTY_TRACE ||\
-  USE_EVENT_LOGGER)
-
-//
-// USE_REFLECTION                  Enable Reflection support
-//
-#define USE_REFLECTION ENABLE_EXTENDED_API
-
-#define ENABLE_VSF_MERGE_TEST  0
-
-#ifndef ARM
-#  define USE_EVENT_LOG_TIMER_DOWNSAMPLING  1
-#else
-#  define USE_EVENT_LOG_TIMER_DOWNSAMPLING  0
-#endif
-
-#if ENABLE_JNI && !ENABLE_FLOAT
-#  error "ENABLE_FLOAT must be set for ENABLE_JNI"
+#define USE_EMBEDDED_VTABLE_BITMAP 0
 #endif

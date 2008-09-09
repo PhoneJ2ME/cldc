@@ -104,14 +104,11 @@ public:
       print("%g", d);
     }
   }
-#endif
 
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE || ENABLE_PERFORMANCE_COUNTERS \
-    || ENABLE_WTK_PROFILER || USE_AOT_COMPILATION
   void put(char ch);
 #endif
 
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
+#ifndef PRODUCT
   void inc() { _indentation++; };
   void dec() { _indentation--; };
   void dec_cr() { dec(); cr(); }
@@ -141,7 +138,7 @@ extern Stream* tty;        // tty output
 
 #if !defined(PRODUCT) || ENABLE_ROM_GENERATOR || ENABLE_MEMORY_PROFILER \
     || ENABLE_WTK_PROFILER || ENABLE_PERFORMANCE_COUNTERS || ENABLE_PROFILER \
-    || ENABLE_DYNAMIC_NATIVE_METHODS || ENABLE_TTY_TRACE || USE_EVENT_LOGGER
+    || ENABLE_DYNAMIC_NATIVE_METHODS || ENABLE_TTY_TRACE
 
 class FileStreamState {
 public:
@@ -213,7 +210,7 @@ private:
 
 #endif // !defined(PRODUCT) || ENABLE_ROM_GENERATOR
 
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
+#ifndef PRODUCT
 
 /**
  * Redirection and duplication of output into 2 streams.
@@ -235,8 +232,7 @@ public:
   Stream* stream1() { return _stream1; }
   Stream* stream2() { return _stream2; }
 };
-
-#endif // !defined(PRODUCT) || ENABLE_TTY_TRACE
+#endif // !PRODUCT
 
 #if ENABLE_PERFORMANCE_COUNTERS || USE_DEBUG_PRINTING || ENABLE_JVMPI_PROFILE
 /**
@@ -271,6 +267,8 @@ private:
  * Binary output stream for creating files
  * that contain raw binary (non-character) data.
  */
+#define BFS_BUFFER_SIZE 1024
+
 class BufferedFileStreamState {
 public:
   int _indentation;
@@ -300,7 +298,7 @@ public:
     close();
   }
   inline void flush_buffer(bool force) {
-    if (force || _bfs_pos >= BINARY_STREAM_BUFFER_SIZE) {
+    if (force || _bfs_pos >= BFS_BUFFER_SIZE) {
       do_flush();
     }
   }

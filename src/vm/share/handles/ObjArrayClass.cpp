@@ -44,8 +44,7 @@ ReturnOop ObjArrayClass::get_array_class(jint distance JVM_TRAPS) {
     return obj();
   }
   UsingFastOops fast_oops;
-  ObjArrayClass::Fast ac =
-    compute_higher_dimension(JVM_SINGLE_ARG_ZCHECK_0(ac));
+  ObjArrayClass::Fast ac = compute_higher_dimension(JVM_SINGLE_ARG_ZCHECK(ac));
   return ac().get_array_class(distance - 1 JVM_NO_CHECK_AT_BOTTOM_0);
 }
 
@@ -53,7 +52,7 @@ ReturnOop ObjArrayClass::multi_allocate(int rank, JavaFrame* frame JVM_TRAPS) {
   UsingFastOops fast_oops;
   int length = frame->expression_at(rank - 1)->as_int();
   ObjArray::Fast result = Universe::allocate_array(this, length, oopSize        
-                                                   JVM_ZCHECK_0(result));
+                                                   JVM_ZCHECK(result));
   JavaClass::Fast lower;
   if (rank > 1) {
     // Allocate all the sub arrays
@@ -75,7 +74,7 @@ ReturnOop ObjArrayClass::multi_allocate(int rank, JavaFrame* frame JVM_TRAPS) {
         }
       }
       for (int index = 0; index < length; index++) {  
-        JavaOop::Raw temp = oc->multi_allocate(rank-1, frame JVM_ZCHECK_0(temp));
+        JavaOop::Raw temp = oc->multi_allocate(rank-1, frame JVM_ZCHECK(temp));
         result().obj_at_put(index, &temp);
       }                    
     } else {
@@ -88,7 +87,7 @@ ReturnOop ObjArrayClass::multi_allocate(int rank, JavaFrame* frame JVM_TRAPS) {
       }
       for (int index = 0; index < length; index++) {          
         JavaOop::Raw temp = Universe::new_type_array(ta, sub_length 
-                                                     JVM_ZCHECK_0(temp));
+                                                     JVM_ZCHECK(temp));
         result().obj_at_put(index, &temp);
       }                    
     }

@@ -219,16 +219,13 @@ public:
  bool remove_if_not_currently_shared(); 
  bool is_shared(const Task* const task);
 #ifdef AZZERT
- bool is_shared( void ) const;
+ bool is_shared();
 #endif
 #else
   void add_to_global_binary_images();
-#ifdef AZZERT
-  bool is_shared( void ) const { return false; }
 #endif
-#endif
-  void remove_from_global_binary_images();
-#else // ENABLE_ISOLATES
+  bool remove_from_global_binary_images();
+#else
   void add_to_global_binary_images() {}
   void remove_from_global_binary_images() {}
 #endif  
@@ -333,17 +330,7 @@ public:
 #endif
   static void oops_do(void do_oop(OopDesc**), bool do_all_data_objects,
                       bool do_method_variable_parts);
-
-  static size_t get_max_offset( void ) {
-#if ENABLE_SEGMENTED_ROM_TEXT_BLOCK
-    const size_t text_size = _text_total_size;
-#else
-    const size_t text_size = _rom_text_block_size;
-#endif
-    const size_t data_size = _rom_data_block_size;
-    const size_t max_offset = text_size > data_size ? text_size : data_size;
-    return max_offset << 1;
-  }
+  static size_t get_max_offset();
 
 #if !defined(PRODUCT) || USE_PRODUCT_BINARY_IMAGE_GENERATOR
   static bool is_synchronized_method_allowed(Method *method);
@@ -352,7 +339,7 @@ public:
                PRODUCT_RETURN0;
 #endif
 
-#if ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+#if ENABLE_JVMPI_PROFILE
   static ReturnOop get_original_class_name(ClassInfo* /*clsinfo*/);
   static ReturnOop get_original_method_name(const Method* /*method*/);
   static ReturnOop get_original_fields(InstanceClass* /*ic*/);
@@ -390,7 +377,7 @@ public:
 
   static bool is_valid_text_object(const OopDesc* /*obj*/) PRODUCT_RETURN0;
 
-  static bool is_restricted_package(const char* name, int len);
+  static bool is_restricted_package(char *name, int len);
   static ReturnOop string_from_table(String *string, juint hash_value);
   static ReturnOop symbol_for(utf8 s, juint hash_value, int len);
 
@@ -402,8 +389,7 @@ public:
 
 #if ENABLE_MULTIPLE_PROFILES_SUPPORT
   static bool class_is_hidden_in_profile(const JavaClass* const jc);
-  static bool is_restricted_package_in_profile(const char *name, 
-                                               int name_len);
+  static bool is_restricted_package_in_profile(char *name, int name_len);
   static int profiles_count() { return _rom_profiles_count; }
   static const char **profiles_names() { return _rom_profiles_names; }
 #endif
@@ -611,7 +597,7 @@ private:
   static void relocate_pointer_to_heap(OopDesc** p);
   static void decompress_strings();
 
-#if ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+#if ENABLE_JVMPI_PROFILE
   static void initialize_original_class_name_list(JVM_SINGLE_ARG_TRAPS);
 
   static void initialize_original_method_info_list(JVM_SINGLE_ARG_TRAPS);
@@ -680,7 +666,7 @@ public:
  *===================================================================*/
 
 #if !defined(PRODUCT) || USE_PRODUCT_BINARY_IMAGE_GENERATOR \
-       || ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+       || ENABLE_JVMPI_PROFILE
   /*
    * [Original Class Names]
    *

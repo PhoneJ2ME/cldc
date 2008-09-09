@@ -112,7 +112,6 @@
  template(FileStreamState, declare_stream_state, "") \
  template(FileStreamState, main_stream_state, "") \
  template(FileStreamState, reloc_stream_state, "") \
- template(FileStreamState, jni_stream_state, "") \
  template(FileStreamState, kvm_stream_state, "")
 
 #define ROMWRITER_INT_FIELDS_DO_BINARY(template) \
@@ -452,11 +451,12 @@ public:
     }
 
     // We can't find the object, create a new entry for it
-    ROMizerHashEntry::Raw entry = ROMizerHashEntry::allocate(JVM_SINGLE_ARG_CHECK_0);
+    UsingFastOops level1;
+    ROMizerHashEntry::Fast entry = ROMizerHashEntry::allocate(JVM_SINGLE_ARG_CHECK_0);
     // The above may have caused a GC, we need to recalc the object hash and
     // bucket
     bucket = info_hashcode(object);
-    ROMizerHashEntry::Raw next = info_table()->obj_at(bucket);
+    ROMizerHashEntry::Fast next = info_table()->obj_at(bucket);
     entry().set_referent(object);
     entry().set_next(&next);
     _number_of_hashed_objects ++;
@@ -600,9 +600,7 @@ public:
   virtual void combine_output_files() {}
   void append_file_to(OsFile_Handle dst, const JvmPathChar *src_name);
 
-  static void record_class_loading_failure(Symbol *class_name,
-                                           Symbol *exception_class_name
-                                           JVM_TRAPS);
+  static void record_name_of_bad_class(Symbol *class_name JVM_TRAPS);
 
   // Count number of methods to be written into the image.
   int count_methods();

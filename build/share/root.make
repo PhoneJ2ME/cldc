@@ -85,17 +85,13 @@ GEN_DIR    = ../generated
 CLASSES    = $(JVMBuildSpace)/classes
 CLDC_ZIP   = $(JVMBuildSpace)/classes.zip
 
-ifeq ($(ENABLE_CLDC_111), true)
-CLDC_LIB   = cldc1.1.1
-else
-ifeq ($(ENABLE_EXTENDED_API),true)
+ifeq ($(ENABLE_REFLECTION),true)
 CLDC_LIB   = cldc1.1plus
 else
 ifneq ($(ENABLE_CLDC_11), false)
 CLDC_LIB   = cldc1.1
 else
 CLDC_LIB   = cldc1.0
-endif
 endif
 endif
 

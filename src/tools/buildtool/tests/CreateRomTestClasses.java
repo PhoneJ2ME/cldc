@@ -128,7 +128,6 @@ public class CreateRomTestClasses {
             "util/",
             "bench/NativeMethod.class",
             "rom/",
-            "vm/share/natives/jni",
             "vm/share/natives/sni",
             "vm/share/natives/kni",
             "vm/share/runtime/JVM/JVM_SetHeapLimit1",

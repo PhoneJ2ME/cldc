@@ -169,21 +169,11 @@ private:
   static void collect(size_t min_free_after_collection JVM_TRAPS);
 
 #if ENABLE_COMPILER
-  static OopDesc* compiler_area_allocate_code (const int size JVM_TRAPS);
-  static OopDesc* compiler_area_allocate_temp (const int size JVM_TRAPS);  
-  static void compiler_area_initialize( OopDesc** start, OopDesc** end ) {
-    _compiler_area_temp_bottom = start;
-    _compiler_area_temp_top = end;
-    _compiler_area_top = end;
-  }
-  static void compiler_area_terminate( OopDesc** end ) {
-    _compiler_area_top = end;
-#ifndef PRODUCT
-    _compiler_area_temp_top = NULL;
-    _compiler_area_temp_bottom = NULL;
-#endif   
-  }
+  static OopDesc* (*code_allocator) (size_t size JVM_TRAPS);
+  static OopDesc* (*temp_allocator) (size_t size JVM_TRAPS);
 
+  static OopDesc* compiler_area_allocate_code (size_t size JVM_TRAPS);
+  static OopDesc* compiler_area_allocate_temp (size_t size JVM_TRAPS);
 #endif
 
 public:
@@ -242,7 +232,7 @@ public:
     fast_memclear(_inline_allocation_top,
                   DISTANCE(_inline_allocation_top, _inline_allocation_end));
 #endif
-        }
+  	}
 
   // Collection
   static void full_collect(JVM_SINGLE_ARG_TRAPS);
@@ -288,69 +278,43 @@ public:
   {}
 #endif
 
-  static int compiler_area_soft_collect(size_t min_free_after_collection);
+  static size_t compiler_area_soft_collect(size_t min_free_after_collection);
 
   // Global reference support (bitwise mask)
   enum ReferenceType {
     STRONG = 0x01,
     WEAK   = 0x02
   };
-
- private:
-  enum {
-    EncodedRefFlag = 0x1,
-    StrongGlobalRefFlag = 0x2,
-    WeakGlobalRefFlag = 0x4,
-    RefOwnerOffset = 3,
-    RefIndexOffset = 
-      RefOwnerOffset + (ENABLE_ISOLATES ? LOG_MAX_TASKS : 0),
-    RefTypeMask = (1 << RefOwnerOffset) - 1,
-    RefOwnerMask = (1 << RefIndexOffset) - (1 << RefOwnerOffset),
-
-    LocalRefType        = EncodedRefFlag,
-    StrongGlobalRefType = EncodedRefFlag | StrongGlobalRefFlag,
-    WeakGlobalRefType   = EncodedRefFlag | WeakGlobalRefFlag,
-  };
-
-  static int make_reference(unsigned type, unsigned owner, unsigned index);
-  static unsigned get_reference_type(const int ref_index);
-  static unsigned get_reference_owner(const int ref_index);
-  static unsigned get_reference_index(const int ref_index);
-  static ReturnOop get_reference_array(const int ref_index);
-
-  static ReturnOop get_reference_array(unsigned type, unsigned owner);
-  static void set_reference_array(unsigned type, unsigned owner, Array* array);
-
-  static bool is_encoded_reference(const int ref_index);
-  static bool is_local_reference(const int ref_index);
-  static bool is_strong_reference(const int ref_index);
-  static bool is_weak_reference(const int ref_index);
-  static bool is_global_reference(const int ref_index);
-
- public:
-
-  static OopDesc** decode_reference(const int ref_index);
-
-#if ENABLE_JNI
-  static int register_local_reference(Oop* referent);
-  static void unregister_local_reference(const int ref_index);
-#endif
-
-  static int register_strong_reference(Oop* referent JVM_TRAPS);
-  static int register_weak_reference(Oop* referent JVM_TRAPS);
-
-  static void unregister_strong_reference(const int ref_index);
-  static void unregister_weak_reference(const int ref_index);
-
   static int register_global_ref_object(Oop* referent,
-                                        ReferenceType type JVM_TRAPS);
-  static void unregister_global_ref_object(const int ref_index);
-  static OopDesc* get_global_ref_object(const int ref_index);
-  static int get_global_reference_owner(const int ref_index);
+                       ReferenceType type JVM_TRAPS); // Cannot throw OOME
+  static void unregister_global_ref_object  (const int ref_index);
+  static OopDesc* get_global_ref_object     (const int ref_index);
+  static int make_global_reference( const int i ) {
+#if ENABLE_ISOLATES
+    return (i << LOG_MAX_TASKS) | _current_task_id;
+#else
+    return i;
+#endif
+  }
+  static int get_global_reference_owner( const int ref ) {
+#if ENABLE_ISOLATES
+    return ref & (MAX_TASKS-1);
+#else
+    (void)ref;
+    return 0;
+#endif
+  }
+  static int get_global_reference_index( const int ref ) {
+#if ENABLE_ISOLATES
+    return ref >> LOG_MAX_TASKS;
+#else
+    return ref;
+#endif
+  }
 
   //found the compiled method which contains the instruction pointed 
   //by pc parameter
-  static CompiledMethodDesc* method_contains_instruction_of(void* pc);
+  static CompiledMethodDesc* method_contain_instruction_of(void* pc);
 
   // Finalization support
 private:
@@ -453,31 +417,13 @@ public:
     return _heap_size;
   }
 
-  static int available_for_current_task( void ) {
-    int available = free_memory();
-#if ENABLE_COMPILER
-    available += compiler_area_free(); 
-#endif
 #if ENABLE_ISOLATES
-    available -= _reserved_memory_deficit;
-    const TaskMemoryInfo& task_info = get_task_info(_current_task_id);
-    const int estimate = task_info.estimate;
-    {
-      const int unused = task_info.reserve - estimate;
-      if (unused > 0) {
-        available += unused;
-      }
-    }
-    {
-      const int unused = task_info.limit - estimate;
-      if (unused < available) {
-        available = unused;
-      }
-    }
-#endif
-    // available amount can be negative if compiler area contains evictable code
-    return available;
+  static int available_for_current_task();
+#else
+  static inline int available_for_current_task() {
+    return free_memory();
   }
+#endif
 
   static OopDesc** mark_area_end (void) {
     return _large_object_area_bottom;
@@ -493,25 +439,28 @@ public:
 
   static void update_compiler_area_top(const OopDesc* latest_compiled_method) {
     OopDesc** compiler_area_top = _saved_compiler_area_top;
-    _saved_compiler_area_top = NULL;
-
     if( latest_compiled_method ) {
       GUARANTEE(latest_compiled_method == (OopDesc*)compiler_area_top, "sanity");
       compiler_area_top = DERIVED(OopDesc**, compiler_area_top,
                                    latest_compiled_method->object_size());
     }
-    compiler_area_terminate( compiler_area_top );
-
+    _compiler_area_top = compiler_area_top;
+  #ifndef PRODUCT
+    _compiler_area_temp_object_bottom = NULL;
+    _saved_compiler_area_top = NULL;
+  #endif
     if (VerifyGC >= 2) {
       verify();
     }
   }
 
-  static int free_memory_for_compiler_without_gc( void ) {
-    GUARANTEE(_compiler_area_temp_bottom != NULL, 
+  static size_t free_memory_for_compiler_without_gc( void ) {
+    GUARANTEE(_compiler_area_temp_object_bottom != NULL, 
               "temp objects must be allocated after new compiled code has "
               "been allocated");
-    return DISTANCE( _compiler_area_temp_bottom, _compiler_area_temp_top);
+
+    const ArrayDesc* filler = (ArrayDesc*)_compiler_area_temp_object_bottom;
+    return filler->_length * sizeof(int);
   }
 #endif
 
@@ -533,20 +482,16 @@ public:
     return compiler_area_tail(_compiler_area_start);
   }
   static int compiler_area_free (void) {
-    OopDesc** compiler_area_top = _saved_compiler_area_top;
-    if( !_saved_compiler_area_top ) {
-      compiler_area_top = _compiler_area_top;
-    }
-    return compiler_area_tail(compiler_area_top);
+    return compiler_area_tail(_compiler_area_top);
   }
   static int compiler_area_used (void) {
     return DISTANCE(_compiler_area_start, _compiler_area_top);
   }
-  static OopDesc* allocate_code( const int size JVM_TRAPS ) {
-    return compiler_area_allocate_code(size JVM_NO_CHECK);
+  static OopDesc* allocate_code( const size_t size JVM_TRAPS ) {
+    return (*code_allocator) (size JVM_NO_CHECK);
   }
-  static OopDesc* allocate_temp( const int size JVM_TRAPS ) {
-    return compiler_area_allocate_temp(size JVM_NO_CHECK);
+  static OopDesc* allocate_temp( const size_t size JVM_TRAPS ) {
+    return (*temp_allocator) (size JVM_NO_CHECK);
   }
 #endif
 
@@ -629,11 +574,7 @@ public:
   static int code_item_summary();
 
   // Testing
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
-  static bool contains_live(OopDesc** /*target*/);
-#else
-  static bool contains_live(OopDesc** /*target*/) { return false; }
-#endif
+  static bool contains_live(OopDesc** /*target*/) PRODUCT_RETURN0;
   static bool contains_live(const OopDesc* target) {
     return contains_live((OopDesc**) target);
   }
@@ -850,15 +791,14 @@ private:
   inline static OopDesc* rom_oop_from_offset(size_t offset);
   inline static OopDesc* decode_near(OopDesc* obj, OopDesc **heap_start, 
                                      size_t near_mask);
-  inline static FarClassDesc* decode_far_class(const OopDesc* obj);
   inline static FarClassDesc* decode_far_class_with_real_near(OopDesc* obj);
   inline static FarClassDesc* decode_far_class_with_encoded_near(OopDesc* obj,
                                              const QuickVars& qv = _quick_vars);
   inline static OopDesc* decode_destination(OopDesc* obj,
                                              const QuickVars& qv = _quick_vars);
 
-  // Weak reference support
-  static void weak_refs_do(void do_oop(OopDesc**));
+  // Global reference support
+  static void global_refs_do(void do_oop(OopDesc**), const int mask);
 
   // Finalization support
   static void discover_finalizer_reachable_objects();
@@ -993,15 +933,11 @@ private:
 #if ENABLE_INTERNAL_CODE_OPTIMIZER
 public:
   //save the compiler area top before doing code scheduling
-  static void save_compiler_area_top_fast( void ) {
-    _saved_compiler_area_top_quick = _compiler_area_top;
-  }
+  static void save_compiler_area_top_fast();
 
   //restore the compiler area top to the value stored before scheduling.
   //free the memory allocated during code scheduling quickly
-  static void update_compiler_area_top_fast( void ) {
-    _compiler_area_top = _saved_compiler_area_top_quick;
-  }
+  static void update_compiler_area_top_fast();
 private:
   static OopDesc** _saved_compiler_area_top_quick;
 #endif

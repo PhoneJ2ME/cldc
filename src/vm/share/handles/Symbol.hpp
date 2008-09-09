@@ -96,8 +96,6 @@ class Symbol: public Oop {
 
 #ifndef PRODUCT
   void iterate(OopVisitor* visitor);
-#endif
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
   void print_value_on(Stream* st);
 #endif
 

@@ -211,7 +211,7 @@ OopDesc* ROM::_romized_heap_marker;
 #endif
 OopDesc** _romized_heap_top;
 
-#if !defined(PRODUCT) || ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+#if !defined(PRODUCT) || ENABLE_JVMPI_PROFILE
 OopDesc* ROM::_original_class_name_list;
 OopDesc* ROM::_original_method_info_list;
 OopDesc* ROM::_original_fields_list;
@@ -356,10 +356,10 @@ void ROM::check_consistency() {
 }
 #endif
 
-#if !defined(PRODUCT) || ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+#if !defined(PRODUCT) || ENABLE_JVMPI_PROFILE
 // Init the symbols for debug or JVMPI interface.
 void ROM::init_debug_symbols(JVM_SINGLE_ARG_TRAPS) {
-#if ENABLE_ROM_DEBUG_SYMBOLS || ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+#if ENABLE_ROM_DEBUG_SYMBOLS || ENABLE_JVMPI_PROFILE
   // Initialize mapping from renamed ".unknown." methods/field
   // to their original names (non-product build only)
     if (LoadROMDebugSymbols
@@ -382,53 +382,55 @@ void ROM::init_debug_symbols(JVM_SINGLE_ARG_TRAPS) {
 
 
 #if (!defined(PRODUCT) && ENABLE_ROM_DEBUG_SYMBOLS) \
-       || ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+       || ENABLE_JVMPI_PROFILE
 
 void ROM::initialize_original_class_name_list(JVM_SINGLE_ARG_TRAPS) {
-  const int count = _rom_original_class_info_count;
+  int count = _rom_original_class_info_count;
 
-  if( count == 0 ) {
+  ObjArray name_list;
+  if (count == 0) {
     _original_class_name_list = NULL;
     return;
+  } else {
+    name_list = Universe::new_obj_array(count JVM_CHECK);
+    _original_class_name_list = name_list.obj();
   }
 
-  ObjArray name_list = Universe::new_obj_array(count JVM_CHECK);
-  _original_class_name_list = name_list.obj();
-
-  for( int i=0; i < count; i++ ) {
-    const OriginalClassInfo* clsinfo = &_rom_original_class_info[i];
-    if( clsinfo->name != NULL ) {
+  for (int i=0; i<count; i++) {
+    const OriginalClassInfo *clsinfo = &_rom_original_class_info[i];
+    if (clsinfo->name != NULL) {
       // +1 to skip the first char, which is the type of this symbol 
       // (always == 3 in this case).
-      Symbol::Raw name = SymbolTable::symbol_for(clsinfo->name+1 JVM_CHECK);
+      Symbol name = SymbolTable::symbol_for(clsinfo->name+1 JVM_CHECK);
       name_list.obj_at_put(i, &name);
     }
   }
 }
 
 void ROM::initialize_original_method_info_list(JVM_SINGLE_ARG_TRAPS) {
-  const int count = _rom_original_class_info_count;
+  int count = _rom_original_class_info_count;
 
-  if( count == 0 ) {
+  ObjArray info_list;
+  if (count == 0) {
     _original_method_info_list = NULL;
     return;
+  } else {
+    info_list = Universe::new_obj_array(count JVM_CHECK);
+    _original_method_info_list = info_list.obj();
   }
 
-  ObjArray info_list = Universe::new_obj_array(count JVM_CHECK);
-  _original_method_info_list = info_list.obj();
+  for (int i=0; i<count; i++) {
+    const OriginalClassInfo *clsinfo = &_rom_original_class_info[i];
+    const OriginalMethodInfo *minfo = clsinfo->methods;
 
-  for( int i = 0; i < count; i++ ) {
-    const OriginalClassInfo* clsinfo = &_rom_original_class_info[i];
-    const OriginalMethodInfo* minfo = clsinfo->methods;
-
-    for( int n = 0; n < clsinfo->num_methods; n++, minfo++ ) {
+    for (int n=0; n<clsinfo->num_methods; n++, minfo++) {
       Method method = (OopDesc*)minfo->method;
       if (method.not_null()) {
         ObjArray old  = info_list.obj_at(i);
         ObjArray info = Universe::new_obj_array(3 JVM_CHECK);
         // +1 to skip the first char, which is the type of this symbol 
         // (always == 3 in this case).
-        Symbol::Raw name = SymbolTable::symbol_for(minfo->name+1 JVM_CHECK);
+        Symbol name = SymbolTable::symbol_for(minfo->name+1 JVM_CHECK);
 
         info.obj_at_put(INFO_OFFSET_METHOD, &method);
         info.obj_at_put(INFO_OFFSET_NAME,   &name);
@@ -503,15 +505,15 @@ void ROM::initialize_alternate_constant_pool(JVM_SINGLE_ARG_TRAPS) {
   }
 }
 
-#endif //!PRODUCT || ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+#endif //!PRODUCT || ENABLE_JVMPI_PROFILE
 
-bool ROM::is_restricted_package(const char *name, int pkg_length) {
+bool ROM::is_restricted_package(char *name, int pkg_length) {
 
   char *rp = (char*)&_rom_restricted_packages[0];
   char *rp2;
 
   while (*rp) {
-    const int len = *((unsigned char*)rp); // may be up to 255;
+    int len = *((unsigned char*)rp); // may be up to 255;
     rp ++;
    
     //Checking for the asterisk case...
@@ -526,15 +528,36 @@ bool ROM::is_restricted_package(const char *name, int pkg_length) {
       }
     }
 
-    if( len == pkg_length && jvm_memcmp(rp, name, pkg_length) == 0 ) {
-      return true; // we have a match. The package is restricted.
+    if (len == pkg_length) {
+      if (jvm_memcmp(rp, name, pkg_length) == 0) {
+        return true; // we have a match. The package is restricted.
+      }
     }
     rp += len;
   }
   return false;
 }
 
-void ROM::relocate_data_block( void ) {
+size_t ROM::get_max_offset() {
+#if ENABLE_SEGMENTED_ROM_TEXT_BLOCK
+  size_t text_size = _text_total_size;
+#else
+  size_t text_size = _rom_text_block_size;
+#endif
+  size_t data_size = _rom_data_block_size;
+  size_t max_offset;
+
+  if (text_size > data_size) {
+    max_offset = text_size;
+  } else {
+    max_offset = data_size;
+  }
+
+  max_offset <<= 1;
+  return max_offset;
+}
+
+void ROM::relocate_data_block() {
   OopDesc* obj = (OopDesc*)_rom_data_block;
   OopDesc* end = DERIVED(OopDesc*, _rom_data_block, _rom_data_block_size);
 
@@ -630,7 +653,7 @@ void ROM::oops_do(void do_oop(OopDesc**), bool do_all_data_objects,
 #ifdef PRODUCT
   (void)do_method_variable_parts;
 
-#if ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+#if ENABLE_JVMPI_PROFILE
   if (UseROM || GenerateROMImage) {
     do_oop((OopDesc**)&_original_class_name_list);
     do_oop((OopDesc**)&_original_method_info_list);
@@ -659,7 +682,7 @@ void ROM::oops_do(void do_oop(OopDesc**), bool do_all_data_objects,
     ObjArray::Raw list = Task::current()->binary_images();
 #endif
 
-    if( list.not_null() ) {
+    if (list.not_null()) {
       for (int i=0; i<list().length(); i++) {
         ROMBundle *bundle = (ROMBundle*)list().obj_at(i);
         if (bundle == NULL) {
@@ -763,7 +786,7 @@ ReturnOop ROM::compiled_method_from_address(const address addr) {
 }
 #endif // ENABLE_COMPILER && ENABLE_APPENDED_CALLINFO
 
-#if !defined(PRODUCT) || ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+#if !defined(PRODUCT) || ENABLE_JVMPI_PROFILE
 ReturnOop ROM::get_original_class_name(ClassInfo *clsinfo) {
   if (!GenerateROMImage && _original_class_name_list == NULL) {
     return Symbols::unknown()->obj();
@@ -921,7 +944,7 @@ void ROM::dispose() {
   ROMBundle::set_current( NULL );
 #endif
 
-#if !defined( PRODUCT) || ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+#if !defined( PRODUCT) || ENABLE_JVMPI_PROFILE
   _original_class_name_list = NULL;
   _original_method_info_list = NULL;
   _original_fields_list = NULL;
@@ -1043,20 +1066,6 @@ ReturnOop ROM::symbol_for(utf8 s, juint hash_value, int len) {
 
 #if USE_BINARY_IMAGE_LOADER || USE_BINARY_IMAGE_GENERATOR
 
-#if ENABLE_DYNAMIC_NATIVE_METHODS
-
-#define TEMPLATE(jtype, ttype, arg) arg(Java_ ## jtype ## _unimplemented)
-
-#define UNIMPLEMENTED_METHOD_ENTRIES_DO(template) \
-  FOR_ALL_TYPES_ARG(TEMPLATE, template)
-
-#else
-
-#define UNIMPLEMENTED_METHOD_ENTRIES_DO(template) \
-  template(Java_void_unimplemented)
-
-#endif
-
 #define METHOD_ENTRIES_DO(template) \
   template(interpreter_method_entry) \
   template(interpreter_fast_method_entry_0) \
@@ -1082,7 +1091,7 @@ ReturnOop ROM::symbol_for(utf8 s, juint hash_value, int len) {
   template(shared_fast_getint_static_accessor)   \
   template(shared_fast_getlong_static_accessor)  \
   \
-  UNIMPLEMENTED_METHOD_ENTRIES_DO(template)    \
+  template(Java_unimplemented)                 \
   template(Java_abstract_method_execution)     \
   template(Java_incompatible_method_execution) \
   \
@@ -1233,7 +1242,7 @@ void ROM::ROM_print_hrticks(void print_hrticks(const char *name,
 #endif
 
 #if ENABLE_MULTIPLE_PROFILES_SUPPORT
-bool ROM::is_restricted_package_in_profile(const char *name, int name_len) {
+bool ROM::is_restricted_package_in_profile(char *name, int name_len) {
   const int current_profile_id = Universe::current_profile_id();  
   if (current_profile_id == Universe::DEFAULT_PROFILE_ID) {
     return false;

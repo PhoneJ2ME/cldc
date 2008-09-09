@@ -50,7 +50,6 @@ void SourceROMWriter::save_file_streams() {
   _declare_stream.save(&_declare_stream_state);
   _main_stream.save(&_main_stream_state);
   _reloc_stream.save(&_reloc_stream_state);
-  _jni_stream.save(&_jni_stream_state);
   _kvm_stream.save(&_kvm_stream_state);
 }
 
@@ -60,7 +59,6 @@ void SourceROMWriter::restore_file_streams() {
   _declare_stream.restore(&_declare_stream_state);
   _main_stream.restore(&_main_stream_state);
   _reloc_stream.restore(&_reloc_stream_state);
-  _jni_stream.restore(&_jni_stream_state);
   _kvm_stream.restore(&_kvm_stream_state);
 
   _comment_stream = &_main_stream;
@@ -244,26 +242,9 @@ void SourceROMWriter::init_streams() {
 
   _summary_log_stream.open(FilePath::rom_summary_file);
   _optimizer_log_stream.open(FilePath::rom_optimizer_file);
-  _jni_stream.open(FilePath::rom_jni_adapters_file);
   _kvm_stream.open(FilePath::rom_kvm_natives_file);
   
   write_copyright(&_summary_log_stream, false);
-
-  write_copyright(&_jni_stream, true);
-  _jni_stream.cr();
-  _jni_stream.print_cr("#include \"jvmconfig.h\"");
-  _jni_stream.print_cr("#include \"ROMImage.hpp\"");
-  _jni_stream.print_cr("#include \"kni.h\"");
-
-#if ENABLE_JNI
-  _jni_stream.print_cr("#include \"jni.h\"");
-  _jni_stream.cr();
-  _jni_stream.print_cr("extern \"C\" JNIEnv _jni_env;");
-  _jni_stream.cr();
-  _jni_stream.print_cr("extern \"C\" void * decode_handle(void*);");
-#endif
-
-  _jni_stream.cr();
 
   _kvm_stream.print_cr("#include \"jvmconfig.h\"");
   _kvm_stream.print_cr("#include \"ROMImage.hpp\"");
@@ -1244,9 +1225,12 @@ void SourceROMWriter::write_original_class_info_table(JVM_SINGLE_ARG_TRAPS) {
   int i;
   int class_count = number_of_romized_java_classes();
 
-  // Enable the original info output in Romized files.
-  main_stream()->print_cr(
-   "#if ENABLE_ROM_DEBUG_SYMBOLS || ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE");
+#if ENABLE_JVMPI_PROFILE
+  // Enalbe the original info output in Romized files.
+  main_stream()->print_cr("#if ENABLE_ROM_DEBUG_SYMBOLS || ENABLE_JVMPI_PROFILE");
+#else
+  main_stream()->print_cr("#if ENABLE_ROM_DEBUG_SYMBOLS");
+#endif
 
   write_original_info_strings(JVM_SINGLE_ARG_CHECK);
 
@@ -1669,7 +1653,6 @@ void SourceROMWriter::combine_output_files() {
   _declare_stream.close();
   _main_stream.close();
   _reloc_stream.close();
-  _jni_stream.close();
   _kvm_stream.close();
 
   _summary_log_stream.close();
@@ -1841,18 +1824,19 @@ bool SourceROMWriter::may_skip_constant_pool(Method *method) {
 
 void SourceROMWriter::fixup_image(JVM_SINGLE_ARG_TRAPS) {
   JarFileParser::flush_caches();
-  SymbolTable::current()                        ->set_null();
-  StringTable::current()                        ->set_null();
-  Universe::gc_block_stackmap()                 ->set_null();
-  Universe::verifier_stackmap_cache()           ->set_null();
-  Universe::verifier_instruction_starts_cache() ->set_null();
-  Universe::verifier_vstack_tags_cache()        ->set_null();
-  Universe::verifier_vstack_classes_cache()     ->set_null();
-  Universe::verifier_vlocals_tags_cache()       ->set_null();
-  Universe::verifier_vlocals_classes_cache()    ->set_null();
+  SymbolTable::current()			->set_null();
+  StringTable::current()			->set_null();
+  Universe::gc_block_stackmap()			->set_null();
+  Universe::verifier_stackmap_cache()		->set_null();
+  Universe::verifier_instruction_starts_cache()	->set_null();
+  Universe::verifier_vstack_tags_cache()	->set_null();
+  Universe::verifier_vstack_classes_cache()	->set_null();
+  Universe::verifier_vlocals_tags_cache()	->set_null();
+  Universe::verifier_vlocals_classes_cache()	->set_null();
 
   ROMWriter::fixup_image(JVM_SINGLE_ARG_CHECK);
 }
+
 
 #if ENABLE_COMPILER
 void SourceROMWriter::write_aot_symbol_table(JVM_SINGLE_ARG_TRAPS) {

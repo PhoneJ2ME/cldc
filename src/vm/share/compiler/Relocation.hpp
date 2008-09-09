@@ -42,10 +42,10 @@
 //   }
 //
 // Relocation information is represented as a 0 terminated string of 16 bits:
-//   4 bits indicating the relocation type
-//  12 bits indicating the byte offset from the previous relocInfo address
+//   3 bits indicating the relocation type
+//  13 bits indicating the byte offset from the previous relocInfo address
 
-class Relocation {
+class Relocation: public StackObj {
  public:
   enum Kind {
     oop_type = 0,         // embedded oop
@@ -70,8 +70,8 @@ class Relocation {
   }
 
   enum Constants {
-    type_width   = 4,
-    offset_width = 12
+    type_width   = CallInfoRecord::type_width,
+    offset_width = CallInfoRecord::length_width
   };
 
   enum VSFConstants {
@@ -90,31 +90,36 @@ class Relocation {
 };
 
 class RelocationStream : public Relocation {
- protected:
-  RelocationStream(void) {}
-
-  void initialize(CompiledMethod* compiled_method) {
-    _current_relocation_offset  = compiled_method->end_offset();
-    decrement();
-    _current_code_offset        = 0;
-    _current_oop_relocation_offset = _current_relocation_offset;
-    _current_oop_code_offset    = 0;
+ public:
+  jint current_relocation_offset() const {
+    return _current_relocation_offset;
   }
+
+  jushort* current_address() const {
+    return _compiled_method->obj()->
+           ushort_field_addr(_current_relocation_offset);
+  }
+  
+  void save_state(CompilerState* compiler_state);
+#if ENABLE_INLINE
+  void restore_state(CompilerState* compiler_state);
+  void set_compiled_method(CompiledMethod* method);
+#endif
+
+ protected:
+  RelocationStream(CompiledMethod* compiled_method);
+  RelocationStream(CompilerState* compiler_state,
+                   CompiledMethod* compiled_method);
 
   void decrement(const jint items = 1) {
     _current_relocation_offset -= items * sizeof(jushort);
   }
 
-  jushort* current_address( OopDesc* method ) const {
-    return method->ushort_field_addr(_current_relocation_offset);
-  }
-
-  jint _current_relocation_offset;
-  jint _current_code_offset;
-  jint _current_oop_relocation_offset;
-  jint _current_oop_code_offset;
-
-  friend class BinaryAssemblerCommon;
+  CompiledMethod* _compiled_method;
+  jint            _current_relocation_offset;
+  jint            _current_code_offset;
+  jint            _current_oop_relocation_offset;
+  jint            _current_oop_code_offset;
 };
 
 inline int sign_extend(int x, int field_length) {
@@ -123,9 +128,7 @@ inline int sign_extend(int x, int field_length) {
 
 class RelocationReader: public RelocationStream {
  private: 
-  CompiledMethod* _compiled_method;
-
-  void update_current( void ) {
+  void update_current() {
     _current_code_offset += 
       sign_extend(bitfield(current(), 0, offset_width), offset_width);
   }
@@ -134,9 +137,8 @@ class RelocationReader: public RelocationStream {
   void skip_callinfo();
 #endif
  public:
-  RelocationReader(CompiledMethod* compiled_method) {
-    _compiled_method = compiled_method;
-    initialize( compiled_method );
+  RelocationReader(CompiledMethod* compiled_method)
+      : RelocationStream(compiled_method) {
 #if ENABLE_APPENDED_CALLINFO
     skip_callinfo();
 #endif
@@ -150,23 +152,23 @@ class RelocationReader: public RelocationStream {
 #endif
 
   // Tells whether we are at the end of the stream.
-  bool at_end( void ) const {
+  bool at_end() const {
     return current() == 0;
   }
 
   // Accessors for current relocation pair
-  Kind kind( void ) const {
+  Kind kind() const {
     return (Kind) bitfield(current(), offset_width, type_width);
   }
-  int code_offset( void ) {
+  int code_offset() {
     return _current_code_offset;
   }
 
   // Advance to next relocation pair
-  void advance( void );
+  void advance();
 
-  jushort current(const jint offset = 0) const {
-    return current_address( _compiled_method->obj() )[-offset];
+  jushort current(jint offset = 0) const {
+    return current_address()[-offset];
   }
 
   void print_comment_on(Stream* st) {
@@ -202,6 +204,68 @@ class RelocationReader: public RelocationStream {
 #if !defined(PRODUCT) || ENABLE_ROM_GENERATOR || ENABLE_TTY_TRACE
   static int code_length(CompiledMethod* cm);
 #endif
+};
+
+class RelocationWriter: public RelocationStream {
+ public:
+   RelocationWriter(CompiledMethod* compiled_method)
+       : RelocationStream(compiled_method)
+   {}
+
+   RelocationWriter(CompilerState* compiler_state,
+                    CompiledMethod* compiled_method)
+       : RelocationStream(compiler_state, compiled_method)
+   {}
+
+   void set_assembler(BinaryAssembler* value);
+   
+   void emit(Kind kind, jint code_offset);
+   void emit(Kind kind, jint code_offset, jint param) {
+     GUARANTEE(has_param(kind), "Sanity");
+     emit(kind, code_offset);
+     emit_ushort((jushort) param);
+   }
+   void emit_oop(jint code_offset);
+   void emit_sentinel() {
+     emit_ushort(0);
+   }
+   void emit_comment(jint code_offset, const char* comment);
+   void emit_dummy(jint code_offset) {
+     emit(comment_type, code_offset);
+     emit_ushort(0);
+   }
+   void emit_vsf(jint code_offset, VirtualStackFrame* frame);
+
+   // Returns the size of the relocation data in bytes.
+   jint size() const {
+     return _compiled_method->end_offset()
+          - _current_relocation_offset
+          - sizeof(jushort);
+   }
+
+#if ENABLE_CODE_PATCHING
+   void emit_checkpoint_info_record(int code_offset, 
+                                    unsigned int original_instruction,
+                                    int stub_position);
+#endif 
+
+   // This is called after the compiled method has been expanded in-place
+   // (by moving the relocation data to higher address)
+   void move(int delta) {
+     _current_relocation_offset += delta;
+     GUARANTEE(_current_relocation_offset >= 0, "sanity");
+     GUARANTEE(_current_relocation_offset < 
+               (int)_compiled_method->object_size(), "sanity");
+     _current_oop_relocation_offset += delta;
+     GUARANTEE(_current_oop_relocation_offset >= 0, "sanity");
+     GUARANTEE(_current_oop_relocation_offset < 
+               (int)_compiled_method->object_size(), "sanity");
+   }
+ private:
+   void emit_ushort(jushort value);
+   jint compute_embedded_offset(jint code_offset);
+
+   BinaryAssembler* _assembler;
 };
 
 #endif

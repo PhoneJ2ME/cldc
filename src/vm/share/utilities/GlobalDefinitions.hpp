@@ -62,7 +62,6 @@
 #define BinaryAssembler  JVMBinaryAssembler
 #define BinaryFileStream  JVMBinaryFileStream
 #define BinaryFileStreamState  JVMBinaryFileStreamState
-#define BinaryLabel  JVMBinaryLabel
 #define BinaryObjectWriter  JVMBinaryObjectWriter
 #define BinaryROMWriter  JVMBinaryROMWriter
 #define Bitset  JVMBitset
@@ -111,11 +110,13 @@
 #define CodeSummary  JVMCodeSummary
 #define CompilationContinuation  JVMCompilationContinuation
 #define CompilationQueueElement  JVMCompilationQueueElement
+#define CompilationQueueElementDesc  JVMCompilationQueueElementDesc
 #define CompiledMethod  JVMCompiledMethod
 #define CompiledMethodCache  JVMCompiledMethodCache
 #define CompiledMethodDesc  JVMCompiledMethodDesc
 #define Compiler  JVMCompiler
 #define CompilerLiteralAccessor  JVMCompilerLiteralAccessor
+#define CompilerState  JVMCompilerState
 #define CompilerStatePointers  JVMCompilerStatePointers
 #define CompilerStatic  JVMCompilerStatic
 #define CompilerStaticPointers  JVMCompilerStaticPointers
@@ -143,6 +144,7 @@
 #define Entry  JVMEntry
 #define EntryActivation  JVMEntryActivation
 #define EntryActivationDesc  JVMEntryActivationDesc
+#define EntryDesc  JVMEntryDesc
 #define EntryFrame  JVMEntryFrame
 #define EntryStub  JVMEntryStub
 #define ErrorMessage  JVMErrorMessage
@@ -227,8 +229,6 @@
 #define JavaNearDesc  JVMJavaNearDesc
 #define JavaOop  JVMJavaOop
 #define JavaVTable  JVMJavaVTable
-#define JniFrame  JVMJniFrame
-#define JniFrameDesc  JVMJniFrameDesc
 #define JvmTimer  JVMJvmTimer
 #define KvmNativesMatcher  JVMKvmNativesMatcher
 #define LargeObject  JVMLargeObject
@@ -237,7 +237,6 @@
 #define LinkedBasicOop  JVMLinkedBasicOop
 #define LiteralAccessor  JVMLiteralAccessor
 #define LiteralElementStream  JVMLiteralElementStream
-#define LiteralPoolElement  JVMLiteralPoolElement
 #define LiteralStream  JVMLiteralStream
 #define LiveRange  JVMLiveRange
 #define LoaderContext  JVMLoaderContext
@@ -352,6 +351,7 @@
 #define Relocation  JVMRelocation
 #define RelocationReader  JVMRelocationReader
 #define RelocationStream  JVMRelocationStream
+#define RelocationWriter  JVMRelocationWriter
 #define RemoteTracer  JVMRemoteTracer
 #define RobocopInstruction  JVMRobocopInstruction
 #define RobocopTemplate  JVMRobocopTemplate
@@ -475,7 +475,6 @@
 #define WTKProfiler  JVMWTKProfiler
 #define WTKThreadRecord  JVMWTKThreadRecord
 #define WTKThreadRecordDesc  JVMWTKThreadRecordDesc
-#define WeakRefArray  JVMWeakRefArray
 #define WeakReference  JVMWeakReference
 #define ZeroDivisorCheckStub  JVMZeroDivisorCheckStub
 
@@ -496,21 +495,23 @@ class CharacterStream;
 class ClassClassDesc;
 class ClassInfo;
 class CompilationQueueElement;
+class CompilationQueueElementDesc;
 class CompiledMethod;
 class CompiledMethodDesc;
 class Compiler;
+class CompilerState;
 class CodeGenerator;
 class ConstantPool;
 class ConstantPoolDesc;
 class ConstantPoolRewriter;
 class Entry;
+class EntryDesc;
 class EntryActivation;
 class FarClass;
 class FarClassDesc;
 class Field;
 class FilePath;
 class FinalizerConsDesc;
-class FPURegisterMap;
 class Frame;
 class InstanceClass;
 class InstanceClassDesc;
@@ -520,8 +521,6 @@ class JarFileParser;
 class JavaClass;
 class JavaClassObj;
 class JavaNear;
-class JniFrame;                   // Used by ENABLE_JNI only
-class JniFrameDesc;               // Used by ENABLE_JNI only
 class MetaClass;
 class Method;
 class MethodDesc;
@@ -569,7 +568,6 @@ class TypeArrayClassDesc;
 class TypeArrayDesc;
 class VirtualStackFrame;
 class VirtualStackFrameDesc;
-class WeakRefArray;         // Used by ENABLE_JNI only
 
 //----------------------------------------------------------------------------
 // Constants
@@ -1230,18 +1228,6 @@ extern jint global_check_count;
         if (!(cond)) { \
           GUARANTEE(CURRENT_HAS_PENDING_EXCEPTION, \
                     "JVM_ZCHECK sanity check"); \
-          return; \
-        } \
-        GUARANTEE(!CURRENT_HAS_PENDING_EXCEPTION,  \
-                    "JVM_ZCHECK sanity check 2"); \
-        _IGNORE_ME_(0
-
-#define JVM_SINGLE_ARG_ZCHECK_0(cond) \
-          _traps_ptr); \
-        INC_COUNTER; \
-        if (!(cond)) { \
-          GUARANTEE(CURRENT_HAS_PENDING_EXCEPTION, \
-                    "JVM_ZCHECK sanity check"); \
           return 0; \
         } \
         GUARANTEE(!CURRENT_HAS_PENDING_EXCEPTION,  \
@@ -1249,9 +1235,8 @@ extern jint global_check_count;
         _IGNORE_ME_(0
 
 #define JVM_ZCHECK(cond)                  , JVM_SINGLE_ARG_ZCHECK(cond)
-#define JVM_ZCHECK_0(cond)                , JVM_SINGLE_ARG_ZCHECK_0(cond)
-#define JVM_OZCHECK(obj)                  , JVM_SINGLE_ARG_ZCHECK_0(((obj).not_null()))
-#define JVM_SINGLE_ARG_OZCHECK(obj)         JVM_SINGLE_ARG_ZCHECK_0(((obj).not_null()))
+#define JVM_OZCHECK(obj)                  , JVM_SINGLE_ARG_ZCHECK(((obj).not_null()))
+#define JVM_SINGLE_ARG_OZCHECK(obj)         JVM_SINGLE_ARG_ZCHECK(((obj).not_null()))
 
 // Single-argument signature versions of the JVM_CHECK and THROW macros below:
 #define JVM_SINGLE_ARG_CHECK \
@@ -1341,21 +1326,13 @@ extern jint global_check_count;
 #define JVM_SINGLE_ARG_ZCHECK(cond) \
           ); \
         if (!(cond)) { \
-          return; \
-        } \
-        _IGNORE_ME_(0
-
-#define JVM_SINGLE_ARG_ZCHECK_0(cond) \
-          ); \
-        if (!(cond)) { \
           return 0; \
         } \
         _IGNORE_ME_(0
 
 #define JVM_ZCHECK(cond)                  JVM_SINGLE_ARG_ZCHECK(cond)
-#define JVM_ZCHECK_0(cond)                JVM_SINGLE_ARG_ZCHECK_0(cond)
-#define JVM_OZCHECK(obj)                  JVM_SINGLE_ARG_ZCHECK_0(((obj).not_null()))
-#define JVM_SINGLE_ARG_OZCHECK(obj)       JVM_SINGLE_ARG_ZCHECK_0(((obj).not_null()))
+#define JVM_OZCHECK(obj)                  JVM_SINGLE_ARG_ZCHECK(((obj).not_null()))
+#define JVM_SINGLE_ARG_OZCHECK(obj)       JVM_SINGLE_ARG_ZCHECK(((obj).not_null()))
 
 // In product builds we minimize the amount of code these macros expand to,
 // forgoing syntax checks that are present otherwise (see non-product above)
@@ -1780,12 +1757,12 @@ enum {
   template(x, OopDesc**, compiler_area_start)       \
   template(x, OopDesc**, compiler_area_top)         \
   template(x, OopDesc**, large_object_area_bottom)  \
-  template(x, OopDesc**, compiler_area_temp_top)    \
-  template(x, OopDesc**, compiler_area_temp_bottom) \
+  template(x, OopDesc**, compiler_area_temp_object_bottom) \
                                                            \
   /* frequently used values by Compiler*/                  \
   template(x, Method*,            compiler_method)         \
   template(x, CodeGenerator*,     compiler_code_generator) \
+  template(x, VirtualStackFrame*, compiler_frame)          \
   template(x, int,                compiler_bci)            \
                                                            \
   template(x, BytecodeCompileClosure*,  compiler_closure)  \
@@ -1845,11 +1822,11 @@ struct JVMFastGlobals {
 #define _compiler_area_start          jvm_fast_globals.compiler_area_start
 #define _compiler_area_top            jvm_fast_globals.compiler_area_top
 #define _large_object_area_bottom     jvm_fast_globals.large_object_area_bottom
-#define _compiler_area_temp_top       jvm_fast_globals.compiler_area_temp_top
-#define _compiler_area_temp_bottom    jvm_fast_globals.compiler_area_temp_bottom
+#define _compiler_area_temp_object_bottom jvm_fast_globals.compiler_area_temp_object_bottom
 
 #define _compiler_method              jvm_fast_globals.compiler_method
 #define _compiler_code_generator      jvm_fast_globals.compiler_code_generator
+#define _compiler_frame               jvm_fast_globals.compiler_frame
 #define _compiler_bci                 jvm_fast_globals.compiler_bci
 
 #define _compiler_closure             jvm_fast_globals.compiler_closure
@@ -2004,7 +1981,7 @@ extern "C" {
   void disable_cpu_variant();
 #endif
 
-#if USE_REFLECTION || ENABLE_JAVA_DEBUGGER
+#if ENABLE_REFLECTION || ENABLE_JAVA_DEBUGGER
   void entry_return_void();
   void entry_return_word();
   void entry_return_long();
@@ -2015,23 +1992,6 @@ extern "C" {
 
 #if ENABLE_JAVA_DEBUGGER
   void shared_call_vm_oop_return();
-#endif
-
-#if ENABLE_JNI
-  void    invoke_entry_void();
-  jint    invoke_entry_word();
-  jlong   invoke_entry_long();
-  jfloat  invoke_entry_float();
-  jdouble invoke_entry_double();
-  void    invoke_entry_return_point();
-
-  void invoke_entry_void_return();
-  void invoke_entry_word_return();
-  void invoke_entry_long_return();
-  void invoke_entry_float_return();
-  void invoke_entry_double_return();
-
-  void default_return_point();
 #endif
 
   // InterpreterRuntime.cpp
@@ -2089,43 +2049,20 @@ extern "C" {
   ReturnOop get_incompatible_class_change_error(JVM_SINGLE_ARG_TRAPS);
 
   // Natives.cpp
+  void Java_unimplemented(JVM_SINGLE_ARG_TRAPS);
 #if ENABLE_DYNAMIC_NATIVE_METHODS
-
+  jboolean  Java_unimplemented_bool(JVM_SINGLE_ARG_TRAPS);
+  jbyte     Java_unimplemented_byte(JVM_SINGLE_ARG_TRAPS);
+  jchar     Java_unimplemented_char(JVM_SINGLE_ARG_TRAPS);
+  jshort    Java_unimplemented_short(JVM_SINGLE_ARG_TRAPS);
+  jint      Java_unimplemented_int(JVM_SINGLE_ARG_TRAPS);
 #if ENABLE_FLOAT
-#define FOR_FLOAT_TYPES_ARG(template, arg) \
-   template(jfloat,  T_FLOAT,  arg)            \
-   template(jdouble, T_DOUBLE, arg)    
-#else
-#define FOR_FLOAT_TYPES_ARG(template, arg)
+  jfloat  Java_unimplemented_float(JVM_SINGLE_ARG_TRAPS);
+  jdouble Java_unimplemented_double(JVM_SINGLE_ARG_TRAPS);
 #endif
-
-#define FOR_NON_VOID_TYPES_ARG(template, arg) \
-   template(jboolean, T_BOOLEAN, arg)         \
-   template(jbyte,    T_BYTE,    arg)         \
-   template(jchar,    T_CHAR,    arg)         \
-   template(jshort,   T_SHORT,   arg)         \
-   template(jint,     T_INT,     arg)         \
-   template(jlong,    T_LONG,    arg)         \
-   template(jobject,  T_OBJECT,  arg)         \
-   template(jarray,   T_ARRAY,   arg)         \
-   FOR_FLOAT_TYPES_ARG(template, arg)
-
-#define FOR_NON_VOID_TYPES(template) FOR_NON_VOID_TYPES_ARG(template, 0)
-
-#define FOR_ALL_TYPES_ARG(template, arg)          \
-   template(void,     T_VOID,    arg)             \
-   FOR_NON_VOID_TYPES_ARG(template, arg)
-
-#define FOR_ALL_TYPES(template) FOR_ALL_TYPES_ARG(template, 0)
-
-#define DECLARE_JAVA_UNIMPLEMENTED(jtype, ttype, arg) \
-  jtype Java_ ## jtype ## _unimplemented(JVM_SINGLE_ARG_TRAPS);
-
-  FOR_NON_VOID_TYPES(DECLARE_JAVA_UNIMPLEMENTED)
-
+  jlong   Java_unimplemented_long(JVM_SINGLE_ARG_TRAPS);
+  jobject Java_unimplemented_object(JVM_SINGLE_ARG_TRAPS);
 #endif
-
-  void Java_void_unimplemented(JVM_SINGLE_ARG_TRAPS);
 
   void Java_abstract_method_execution(JVM_SINGLE_ARG_TRAPS);
   void Java_illegal_method_execution(JVM_SINGLE_ARG_TRAPS);
@@ -2513,7 +2450,7 @@ extern "C" int   jvm_memcmp(const void *s1, const void *s2, int n);
 #define DIRTY_HEAP(start, length)
 #endif
 
-#if ARM_EXECUTABLE && ENABLE_ZERO_YOUNG_GENERATION && !ENABLE_ARM_V7
+#if ARM_EXECUTABLE && ENABLE_ZERO_YOUNG_GENERATION
 extern "C" void fast_memclear(void* start, int length);
 #else
 inline void fast_memclear(void* start, int length) {

@@ -384,7 +384,7 @@ public abstract class Calendar {
 /* #endif */
         );
     }
-    setTimeInMillis(0);
+    setTimeInMillis(System.currentTimeMillis());
   }
 
   /**
@@ -587,21 +587,17 @@ public abstract class Calendar {
     }
     case AM_PM: {
       if (hour_12hr != -1) {
-        am_pm_12hr = -1;
-      } else {
-        am_pm_12hr = value;
-        hour_12hr = (packed_time >> 22) % 12;
-      }
-
-      if (value == PM) {
-        if (hour_12hr != 12) {
-          hour_12hr += 12;
+        if (value == PM) {
+          if (hour_12hr != 12)
+            hour_12hr += 12;
         }
-      } else if (hour_12hr == 12) {
+        else if (hour_12hr == 12)
           hour_12hr = 0;
+        packed_time = (packed_time & 4194303) | (hour_12hr << 22);
+        hour_12hr = am_pm_12hr = -1;
       }
-      packed_time = (packed_time & 4194303) | (hour_12hr << 22);
-      hour_12hr = -1;
+      else
+        am_pm_12hr = value;
       break;
     }
     case MINUTE:

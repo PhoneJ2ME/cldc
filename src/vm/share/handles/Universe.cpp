@@ -671,7 +671,7 @@ bool Universe::bootstrap_with_rom(const JvmPathChar* classpath) {
   Task::init_first_task(JVM_SINGLE_ARG_CHECK_0);
 #endif
 
-#if !defined(PRODUCT) || ENABLE_JVMPI_PROFILE || ENABLE_TTY_TRACE
+#if !defined(PRODUCT) || ENABLE_JVMPI_PROFILE
   {
     const int task = ObjectHeap::start_system_allocation();
     ROM::init_debug_symbols(JVM_SINGLE_ARG_NO_CHECK);
@@ -812,6 +812,9 @@ bool Universe::bootstrap_without_rom(const JvmPathChar* classpath) {
 
   // Allocate tables used for class loading
   *class_list() = new_obj_array(50 JVM_CHECK_0);
+
+  // Global reference support
+  *global_refs_array() = Universe::new_int_array(5 JVM_CHECK_0);
 
 #if ENABLE_ISOLATES
   *mirror_list() = setup_mirror_list(50 JVM_CHECK_0);
@@ -959,7 +962,7 @@ bool Universe::bootstrap_without_rom(const JvmPathChar* classpath) {
   load_root_class(incompatible_class_change_error_class(),
                   Symbols::java_lang_IncompatibleClassChangeError());
 
-#if USE_REFLECTION
+#if ENABLE_REFLECTION
   load_root_class(boolean_class(),   Symbols::java_lang_Boolean());
   load_root_class(character_class(), Symbols::java_lang_Character());
   load_root_class(float_class(),     Symbols::java_lang_Float());
@@ -1103,14 +1106,12 @@ void Universe::load_jar_entry(char* name, int length, JarFileParser* jf_parser
         }
 #if ENABLE_ROM_GENERATOR
         if (GenerateROMImage) {
-          Throwable::Raw exception = Thread::current_pending_exception();
-
-          Thread::clear_current_pending_exception();
-
-          InstanceClass::Raw exception_klass = exception.blueprint();
-          Symbol::Raw exception_klass_name = exception_klass().name();
-          ROMWriter::record_class_loading_failure(
-            &class_name, &exception_klass_name JVM_CHECK);
+          JavaOop::Raw exception = Thread::current_pending_exception();
+          InstanceClass::Raw klass = exception.blueprint();
+          if (klass().is_subtype_of(Universe::error_class())) {
+            Thread::clear_current_pending_exception();
+            ROMWriter::record_name_of_bad_class(&class_name JVM_CHECK);
+          }
         }
 #endif
         Thread::clear_current_pending_exception();
@@ -1299,8 +1300,8 @@ ReturnOop Universe::new_type_array(TypeArrayClass* klass, jint length JVM_TRAPS)
   return allocate_array(klass, length, klass->scale() JVM_NO_CHECK_AT_BOTTOM);
 }
 
-ReturnOop Universe::new_method(const int code_length,
-                               const AccessFlags access_flags JVM_TRAPS)
+ReturnOop Universe::new_method(int code_length, AccessFlags &access_flags
+                               JVM_TRAPS)
 {
   Method::Raw m = allocate_method(code_length JVM_NO_CHECK);
   if (m.not_null()) {
@@ -1323,10 +1324,8 @@ ReturnOop Universe::new_entry_activation(Method* method, jint length JVM_TRAPS)
 
   if (entry.not_null()) {
     entry().set_method(method);
-#if USE_REFLECTION || ENABLE_JAVA_DEBUGGER
+#if ENABLE_REFLECTION || ENABLE_JAVA_DEBUGGER
     entry().set_return_point((address) entry_return_void);
-#elif ENABLE_JNI
-    entry().set_return_point((address) default_return_point);
 #endif
   }
   return entry;
@@ -1335,29 +1334,11 @@ ReturnOop Universe::new_entry_activation(Method* method, jint length JVM_TRAPS)
 ReturnOop Universe::new_instance(InstanceClass* klass JVM_TRAPS) {
   InstanceSize instance_size = klass->instance_size();
   OopDesc* result = ObjectHeap::allocate(instance_size.fixed_value() 
-                                         JVM_ZCHECK_0(result));
+                                         JVM_ZCHECK(result));
   result->initialize(klass->prototypical_near());
-  AccessFlags flags = klass->access_flags();
-  if (flags.has_finalizer()) {
+  if (klass->has_finalizer()) {
     UsingFastOops fast_oops;
     Oop::Fast obj(result);  // create handle, call below can gc
-    if (flags.has_unresolved_finalizer()) {
-      UsingFastOops fast_oops2;
-      ObjArray::Fast methods = klass->methods();
-      Method::Fast finalize_method = 
-        InstanceClass::find_method(&methods, Symbols::finalize_name(),
-                                   Symbols::void_signature());
-#if ENABLE_DYNAMIC_NATIVE_METHODS
-      address finalizer = 
-        Natives::load_dynamic_native_code(&finalize_method JVM_CHECK_0);
-      GUARANTEE(finalizer != NULL, "Error must be thrown");
-
-      flags.clear_has_unresolved_finalizer();
-      klass->set_access_flags(flags);
-#else 
-      Throw::unsatisfied_link_error(&finalize_method JVM_THROW_0)
-#endif
-    }
     ObjectHeap::register_finalizer_reachable_object(&obj JVM_CHECK_0);
     return obj;
   }
@@ -1399,7 +1380,7 @@ ReturnOop Universe::new_instance_class(int vtable_length,
       InstanceClassDesc::allocation_size(static_field_size, oop_map_size,
                                          vtable_length);
   InstanceClassDesc* raw = (InstanceClassDesc*)
-        ObjectHeap::allocate(object_size JVM_ZCHECK_0(raw));
+        ObjectHeap::allocate(object_size JVM_ZCHECK(raw));
   raw->initialize(instance_class_class()->prototypical_near(), object_size,
       instance_size, NULL);
   InstanceClass::Fast result = ReturnOop(raw);
@@ -1655,11 +1636,7 @@ ReturnOop Universe::new_string(CharacterStream* stream, int lead_spaces,
                                int trail_spaces JVM_TRAPS) {
   UsingFastOops fast_oops;
   String::Fast s = new_instance(string_class() JVM_CHECK_0);
-  const jint stream_length = stream->length();
-  GUARANTEE(stream_length >= 0 || stream_length == UTF8Stream::UTF8_ERROR,
-            "Unexpected length value");
-  const jint length = (stream_length != UTF8Stream::UTF8_ERROR) ? 
-    stream_length + lead_spaces + trail_spaces : 0;
+  jint length = stream->length() + lead_spaces + trail_spaces;
   s().set_offset(0);
   s().set_count(length);
   TypeArray::Fast t = new_char_array(length JVM_CHECK_0);
@@ -1722,15 +1699,29 @@ ReturnOop Universe::new_mixed_oop(int type, size_t size, int pointer_count
   return (ReturnOop)result;
 }
 
-#if ENABLE_JAVA_DEBUGGER
-ReturnOop Universe::new_refnode(JVM_SINGLE_ARG_TRAPS) {
-  RefNodeDesc* result = (RefNodeDesc*)
-    ObjectHeap::allocate(RefNodeDesc::allocation_size() JVM_NO_CHECK);
-  if (result) {
-    result->initialize(refnode_class()->prototypical_near());
+#if ENABLE_COMPILER
+ReturnOop Universe::new_mixed_oop_in_compiler_area(int type, size_t size, 
+                                                   int pointer_count
+                                                   JVM_TRAPS) {
+  OopDesc* p = (OopDesc*) ObjectHeap::allocate_temp(size JVM_NO_CHECK);
+  if (p) {
+    p->initialize(mixed_oop_class()->prototypical_near());
+    ((MixedOopDesc*)p)->initialize(type, size, pointer_count);
   }
+  return p;
+}
+#endif
+
+#if ENABLE_JAVA_DEBUGGER
+
+ReturnOop Universe::new_refnode(JVM_SINGLE_ARG_TRAPS)
+{
+  RefNodeDesc* result = (RefNodeDesc*)
+      ObjectHeap::allocate(RefNodeDesc::allocation_size() JVM_ZCHECK(result));
+  result->initialize(refnode_class()->prototypical_near());
   return result;
 }
+
 #endif
 
 #if ENABLE_ISOLATES
@@ -1746,8 +1737,8 @@ void Universe::allocate_boundary_near_list(JVM_SINGLE_ARG_TRAPS) {
 
   *boundary_near_list() = new_obj_array(MAX_TASKS JVM_CHECK);
   for (int i=0; i<MAX_TASKS; i++) {
-    OopDesc* p = allocate_near(boundary_class() JVM_ZCHECK(p));
-    boundary_near_list()->obj_at_put(i, p);
+    Near::Raw n = allocate_near(boundary_class() JVM_CHECK);
+    boundary_near_list()->obj_at_put(i, &n);
   }
 }
 
@@ -1813,6 +1804,10 @@ ReturnOop Universe::new_task(int id JVM_TRAPS) {
     SymbolTable::Raw table = SymbolTable::initialize(64 JVM_CHECK_0);
     task().set_symbol_table(table);
   }
+  {
+    RefArray::Raw array = RefArray::initialize(JVM_SINGLE_ARG_CHECK_0);
+    task().set_global_references(array);
+  }
 
 #if ENABLE_MULTIPLE_PROFILES_SUPPORT
   // Initialize new task with default profile id.
@@ -1820,6 +1815,12 @@ ReturnOop Universe::new_task(int id JVM_TRAPS) {
 #endif // ENABLE_MULTIPLE_PROFILES_SUPPORT
   update_relative_pointers();
   return task;
+}
+
+ReturnOop Universe::new_task_mirror(int statics_size, 
+                                    int vtable_length JVM_TRAPS) {
+  return allocate_task_mirror(statics_size, 
+                              vtable_length JVM_NO_CHECK_AT_BOTTOM);
 }
 #endif
 
@@ -1915,31 +1916,46 @@ ReturnOop Universe::allocate_array(FarClass* klass, int length,
 ReturnOop Universe::generic_allocate_array(Allocator* allocate, 
                                           FarClass* klass, 
                                           int length,
-                                          int scale JVM_TRAPS)
-{
-  if( unsigned(length) <= 0x08000000) {
-    GUARANTEE(!klass->is_null(), 
-              "Cannot allocate array with element type NULL");
-    const size_t size = ArrayDesc::allocation_size(length, scale);
-    ArrayDesc* result = (ArrayDesc*) (*allocate)(size JVM_NO_CHECK);
-    if (result) {
-      result->initialize(klass->prototypical_near(), length);
+                                          int scale JVM_TRAPS) {
+  // Check if length is negative
+  if (length >= 0) {
+    if (length <= 0x08000000) {
+      GUARANTEE(!klass->is_null(), 
+                "Cannot allocate array with element type NULL");
+      size_t size = ArrayDesc::allocation_size(length, scale);
+      ArrayDesc* result = (ArrayDesc*) (*allocate)(size JVM_NO_CHECK);
+      if (result) {
+        result->initialize(klass->prototypical_near(), length);
+      }
+      return result;
+    } else {
+      // Maximum allocation: 128MB for bytes ... 1024MB for longs
+      //
+      // Make sure the (length * scale) operation won't overflow 32-bit values.
+      // In reality we're never going to allocate such big arrays
+      // anyway because our heap is small.
+      Throw::out_of_memory_error(JVM_SINGLE_ARG_THROW_0);
     }
-    return result;
-  }
-
-  if (length < 0) {
+  } else {
     Throw::throw_exception(Symbols::java_lang_NegativeArraySizeException()
                            JVM_THROW_0);
-  } else {
-    // Maximum allocation: 128MB for bytes ... 1024MB for longs
-    //
-    // Make sure the (length * scale) operation won't overflow 32-bit values.
-    // In reality we're never going to allocate such big arrays
-    // anyway because our heap is small.
-    Throw::out_of_memory_error(JVM_SINGLE_ARG_THROW_0);
   }
 }
+
+#if ENABLE_COMPILER
+ReturnOop Universe::allocate_array_in_compiler_area(FarClass* klass, 
+                                                    int length, int scale
+                                                    JVM_TRAPS) {
+  // This function is called only by the compiler with "friendly parameters"
+  GUARANTEE(length >= 0 && length <= 0x08000000, "sanity");
+  const size_t size = ArrayDesc::allocation_size(length, scale);
+  ArrayDesc* p = (ArrayDesc*) ObjectHeap::allocate_temp(size JVM_NO_CHECK);
+  if (p) {
+    p->initialize(klass->prototypical_near(), length);
+  }
+  return p;
+}
+#endif
 
 ReturnOop Universe::allocate_method(int length JVM_TRAPS) {
   size_t size = MethodDesc::allocation_size(length);
@@ -1962,15 +1978,13 @@ ReturnOop Universe::allocate_constant_pool(int length JVM_TRAPS) {
 }
 
 ReturnOop Universe::allocate_task(JVM_SINGLE_ARG_TRAPS) {
-  Task::Raw task = new_mixed_oop(MixedOopDesc::Type_Task,
+    Task::Raw task = new_mixed_oop(MixedOopDesc::Type_Task,
                        TaskDesc::allocation_size(),
                        TaskDesc::pointer_count()
                        JVM_NO_CHECK_AT_BOTTOM);
 
 #if USE_BINARY_IMAGE_LOADER && ENABLE_LIB_IMAGES    
-  if( task.not_null() ) {
     task().set_classes_in_images(ROM::number_of_system_classes());
-  }
 #endif
 
   return task;
@@ -2064,7 +2078,7 @@ ReturnOop Universe::new_obj_array_class(JavaClass* element_class JVM_TRAPS) {
   jint object_size = JavaClassDesc::allocation_size(0, 0);
 
   ObjArrayClassDesc* raw =
-      (ObjArrayClassDesc*) ObjectHeap::allocate(object_size JVM_ZCHECK_0(raw));
+      (ObjArrayClassDesc*) ObjectHeap::allocate(object_size JVM_ZCHECK(raw));
   raw->initialize(obj_array_class_class()->prototypical_near(),
                   object_size,
                   InstanceSize::size_obj_array,
@@ -2213,6 +2227,7 @@ void Universe::init_task_list(JVM_SINGLE_ARG_TRAPS) {
   *current_task_obj()   = allocate_task(JVM_SINGLE_ARG_CHECK);
   *symbol_table()       = SymbolTable::initialize(64 JVM_CHECK);
   *string_table()       = StringTable::initialize(64 JVM_CHECK);
+  *global_refs_array()  = RefArray::initialize(JVM_SINGLE_ARG_CHECK);
 #endif
 }
 
@@ -2237,6 +2252,12 @@ void Universe::create_first_task(const JvmPathChar* classpath JVM_TRAPS) {
   Task::current()->set_sys_classpath(Universe::empty_obj_array()->obj());
 }
 
+/*
+ * Update global pointers such as _class_list to refer to the given task_id
+ */
+void Universe::set_current_task(int task_id) {
+  TaskContext::set_current_task(task_id);
+}
 #if ENABLE_ISOLATES
 ReturnOop Universe::copy_strings_to_byte_arrays(OopDesc* strings JVM_TRAPS) {
   UsingFastOops fastoops;

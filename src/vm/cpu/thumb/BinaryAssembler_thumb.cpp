@@ -35,6 +35,105 @@
 
 #include "incls/_BinaryAssembler_thumb.cpp.incl"
 
+BinaryAssembler::BinaryAssembler(CompilerState* compiler_state, 
+                                 CompiledMethod* compiled_method) 
+  : _relocation(compiler_state, compiled_method)
+{
+  _compiled_method = compiled_method;
+  _code_offset           = compiler_state->code_size();
+  _first_literal         = compiler_state->first_literal();
+  _first_unbound_literal = compiler_state->first_unbound_literal();
+  _last_literal          = compiler_state->last_literal();
+  _first_unbound_branch_literal
+                         = compiler_state->first_unbound_branch_literal();
+  _last_unbound_branch_literal
+                         = compiler_state->last_unbound_branch_literal();
+  _unbound_literal_count = compiler_state->unbound_literal_count();
+  _unbound_branch_literal_count
+                         = compiler_state->unbound_branch_literal_count();
+  _code_offset_to_force_literals
+                         = compiler_state->code_offset_to_force_literals();
+  _code_offset_to_desperately_force_literals
+                 = compiler_state->code_offset_to_desperately_force_literals();
+
+  _relocation.set_assembler(this);
+  CodeInterleaver::initialize(this);
+}
+
+void BinaryAssembler::save_state(CompilerState *compiler_state) {
+  compiler_state->set_code_size(_code_offset);
+  compiler_state->set_first_literal(&_first_literal);
+  compiler_state->set_first_unbound_literal(&_first_unbound_literal);
+  compiler_state->set_last_literal(&_last_literal);
+  compiler_state->set_first_unbound_branch_literal(
+                    &_first_unbound_branch_literal);
+  compiler_state->set_last_unbound_branch_literal(
+                    &_last_unbound_branch_literal);
+
+  compiler_state->set_unbound_literal_count(_unbound_literal_count);
+  compiler_state->set_unbound_branch_literal_count(
+                     _unbound_branch_literal_count);
+  compiler_state->set_code_offset_to_force_literals(
+                     _code_offset_to_force_literals);
+  compiler_state->set_code_offset_to_desperately_force_literals(
+                     _code_offset_to_desperately_force_literals);
+
+  _relocation.save_state(compiler_state);
+}
+
+ReturnOop
+BinaryAssembler::LiteralPoolElement::allocate(const Oop* oop, 
+                                              int imm32 JVM_TRAPS) {
+
+  if (ObjectHeap::free_memory_for_compiler_without_gc() > allocation_size()) {
+    // We can allocate only if we have enough space -- there are
+    // many RawLocation operations in VirtualStackFrame that would
+    // fail if a GC happens.
+    AllocationDisabler::suspend();
+    LiteralPoolElement::Raw result = 
+        Universe::new_mixed_oop_in_compiler_area(
+                                MixedOopDesc::Type_LiteralPoolElement,
+                                allocation_size(), pointer_count()
+                                JVM_MUST_SUCCEED);
+
+    AllocationDisabler::resume();
+    GUARANTEE(!CURRENT_HAS_PENDING_EXCEPTION, "must not fail");
+
+    result().set_literal_int(imm32);
+    result().set_literal_oop(oop);
+    result().set_bci(not_yet_defined_bci);
+
+    return result;
+
+  } else {
+    // IMPL_NOTE: consider whether it should be fixed. 
+    CodeGenerator* cg = Compiler::current()->code_generator();
+    while (!cg->has_overflown_compiled_method()) {
+      cg->nop(); cg->nop();
+      cg->nop(); cg->nop();
+    }
+    return NULL;
+  }
+}
+
+// Usage of Labels
+//
+// free  : label has not been used yet
+// bound : label location has been determined, label position is
+//          corresponding code offset 
+// linked: label location has not been determined yet, label position is code
+//          offset of last instruction referring to the label
+//
+// Label positions are always code offsets in order to be (code) relocation
+// transparent.  Linked labels point to a chain of (linked) instructions that
+// eventually need to be fixed up to point to the bound label position. Each
+// instruction refers to the previous instruction that also refers to the
+// same label. The last instruction in the chain (i.e., the first instruction
+// to refer to the label) refers to itself.  
+// 
+// These instructions use pc-relative addressing and thus are relocation
+// transparent.  
+
 void BinaryAssembler::branch_helper(Label& L, bool link, bool is_near,
                                     Condition cond) {
   (void)link; // IMPL_NOTE -- is this needed?
@@ -53,7 +152,7 @@ void BinaryAssembler::branch_helper(Label& L, bool link, bool is_near,
         long_branch = false;
       }
     } else {
-      Method::Raw m = compiled_method()->method();
+      Method::Raw m = _compiled_method->method();
       if (m().code_size() < 50) {
         long_branch = false;
       }
@@ -121,6 +220,39 @@ void BinaryAssembler::branch_helper(CompilationQueueElement* cqe,
   branch_helper(target, link, is_near, cond);
   cqe->set_entry_label(target);
 }    
+
+void BinaryAssembler::emit_raw(int instr) {
+  if (has_room_for(BytesPerInt)) {
+    jint offset = _code_offset;
+    CompiledMethod *cm = _compiled_method;
+    cm->int_field_put(offset_at(offset), instr);
+    offset += BytesPerInt;
+    CodeInterleaver *cil = _interleaver;
+    _code_offset = offset;
+    if (cil != NULL) {
+      TTY_TRACE_CR(("emitting int instr"));
+      cil->emit();
+    }
+  } else {
+    _code_offset += BytesPerInt;
+  }
+}
+
+void BinaryAssembler::emit_raw(short instr) {
+  if (has_room_for(BytesPerShort)) {
+    jint offset = _code_offset;
+    CompiledMethod *cm = _compiled_method;
+    cm->short_field_put(offset_at(offset), instr);
+    offset += BytesPerShort;
+    CodeInterleaver *cil = _interleaver;
+    _code_offset = offset;
+    if (cil != NULL) {
+      cil->emit();
+    }
+  } else {
+    _code_offset += BytesPerShort;
+  }
+}
 
 void BinaryAssembler::bind(Label& L, int alignment) {
   (void)alignment; // IMPL_NOTE: is this needed?
@@ -262,12 +394,15 @@ void BinaryAssembler::access_literal_pool(Register rd,
   literal->set_label(L);
 }
     
-void BinaryAssembler::ldr_literal(Register rd, OopDesc* obj, int imm32,
+void BinaryAssembler::ldr_literal(Register rd, const Oop* oop, int imm32,
                                   Condition cond) {
   SETUP_ERROR_CHECKER_ARG;
-  LiteralPoolElement* e = find_literal(obj, imm32 JVM_NO_CHECK);
-  if( e ) {
-    ldr_from(rd, e, cond);
+  LiteralPoolElement::Raw e = find_literal(oop, imm32 JVM_CHECK);
+  if (e.not_null()) {
+    AllocationDisabler allocation_not_allowed_in_this_block;
+    ldr_from(rd, &e, cond);
+  } else { 
+    GUARANTEE(has_overflown_compiled_method(), "Must have signalled overflow");
   }
 }
 
@@ -331,7 +466,7 @@ void BinaryAssembler::ldr_oop(Register rd, const Oop* oop, Condition cond) {
   }
 #endif
 
-  ldr_literal(rd, oop->obj(), 0, cond);
+  ldr_literal(rd, oop, 0, cond);
 }
 
 extern "C" { 
@@ -347,69 +482,82 @@ void BinaryAssembler::mov_imm(Register rd, address target, Condition cond) {
   }
   if (GenerateROMImage) { 
     GUARANTEE(target != 0, "Must not be null address");
-    ldr_literal(rd, compiled_method()->obj(), (int)target, cond);
+    ldr_literal(rd, compiled_method(), (int)target, cond);
   } else { 
-    ldr_literal(rd, NULL, (int)target, cond);
+    Oop::Raw null_oop;            // ::Raw since don't need to tell GC about NULL
+    ldr_literal(rd, &null_oop, (int)target, cond);
   }
 }
 
 void BinaryAssembler::ldr_big_integer(Register rd, int imm32, Condition cond){
-  ldr_literal(rd, NULL, imm32, cond);
+  Oop::Raw null_oop;            // ::Raw since don't need to tell GC about NULL
+  ldr_literal(rd, &null_oop, imm32, cond);
 }    
 
-LiteralPoolElement* BinaryAssembler::find_literal(OopDesc* obj, int imm32 JVM_TRAPS)
-{
-  LiteralPoolElement* literal = _first_literal;
-  for(; literal; literal = literal->next() ) {
-    if( literal->is_bound() ) { 
-      // This literal is too far away to use.  We could discard it
-      // but it's not really worth the effort.
-      continue;
-    }
-    if( literal->matches(obj, imm32)) { 
-      return literal;
+ReturnOop BinaryAssembler::find_literal(const Oop* oop, int imm32 JVM_TRAPS){
+
+  {
+    AllocationDisabler allocation_not_allowed_in_this_block;
+    LiteralPoolElementDesc *ptr;
+    OopDesc *oopdesc = (OopDesc*)oop->obj();
+    for (ptr = (LiteralPoolElementDesc*)_first_literal.obj();
+         ptr; ptr = ptr->_next) {
+      if (ptr->is_bound()) { 
+        // This literal is too far away to use.  We could discard it
+        // but it's not really worth the effort.
+        continue;
+      }
+      if (ptr->matches(oopdesc, imm32)) { 
+        return (ReturnOop)ptr;
+      }
     }
   }
 
-  GUARANTEE( obj || imm32 != 0, "Invalid literal");
-  
-  literal = LiteralPoolElement::allocate(obj, imm32 JVM_NO_CHECK);
-  // Add this literal to the end of the literal pool list
 
-  append_literal( literal );
+  GUARANTEE(oop->not_null() || imm32 != 0, "Invalid literal");
+  
+  LiteralPoolElement::Raw literal =
+    LiteralPoolElement::allocate(oop, imm32 JVM_CHECK_0);
+  // Add this literal to the end of the literal pool list
+  if(literal.not_null()) {
+    AllocationDisabler allocation_not_allowed_in_this_block;
+    append_literal(&literal);
+  }
   return literal;
 }
 
 void BinaryAssembler::append_branch_literal(int branch_pos JVM_TRAPS) {
-  LiteralPoolElement* literal =
-    LiteralPoolElement::allocate(NULL, branch_pos JVM_ZCHECK(literal) );
+  Oop::Raw null_oop;
+  LiteralPoolElement::Raw literal = LiteralPoolElement::allocate(&null_oop, branch_pos
+                                                                  JVM_CHECK);
   // Add this literal to the end of the literal pool list
-  if( _first_unbound_branch_literal == NULL ) {
+  if (_first_unbound_branch_literal.is_null()) {
     // This is the first branch bridge that hasn't yet been written out.
-    _first_unbound_branch_literal = literal;
+    _first_unbound_branch_literal = &literal;
   } else {
-    _last_unbound_branch_literal->set_next(literal);    
+    _last_unbound_branch_literal().set_next(&literal);    
   }
-  _last_unbound_branch_literal = literal;
+  _last_unbound_branch_literal = &literal;
   _unbound_branch_literal_count++;
   
-  Label L = literal->label();
+  Label L = literal().label();
   if (!L.is_bound()) { 
     L.link_to(branch_pos);    
   }
-  literal->set_label(L);
+  literal().set_label(L);
 }  
 
 void BinaryAssembler::append_literal(LiteralPoolElement* literal) {
-  if( !_first_literal ) {
-    GUARANTEE(_last_literal == NULL, "No literals");
-    GUARANTEE(_first_unbound_literal == NULL, "No unknown literals");
+  if (_first_literal.is_null()) {
+    GUARANTEE(_last_literal.is_null(), "No literals");
+    GUARANTEE(_first_unbound_literal.is_null(), "No unknown literals");
     _first_literal = literal;
   } else { 
-    _last_literal->set_next(literal);
+    _last_literal().set_next(literal);
+
   }
   _last_literal = literal;
-  if( !_first_unbound_literal ) {
+  if (_first_unbound_literal.is_null()) {
     // This is the first literal that hasn't yet been written out.
     _first_unbound_literal = literal;
   }
@@ -426,12 +574,12 @@ void BinaryAssembler::write_value_literals() {
     nop();
   }
     
-  LiteralPoolElement* literal = _first_unbound_literal; 
-  for(; literal; literal = literal->next()) { 
-    write_literal( literal );
+  LiteralPoolElement::Raw literal = _first_unbound_literal.obj(); 
+  for (; !literal.is_null(); literal = literal().next()) { 
+    write_literal(&literal);
   }
   // Indicate that there are no more not-yet-written literals
-  _first_unbound_literal = literal;
+  _first_unbound_literal = (OopDesc*)NULL;
   zero_literal_count();
 }
 
@@ -440,12 +588,12 @@ void BinaryAssembler::write_branch_literals() {
     nop(); // IMPL_NOTE: this doesn't seem necessary
   }
     
-  LiteralPoolElement* literal = _first_unbound_branch_literal; 
-  for (; literal; literal = literal->next() ) { 
+  LiteralPoolElement::Raw literal = _first_unbound_branch_literal.obj(); 
+  for (; !literal.is_null(); literal = literal().next()) { 
     // Emit a long branch to serve as a trampoline point
     // for another branch. This will patched to the right
     // target when the target code is emitted
-    Label branch_label = literal->label();
+    Label branch_label = literal().label();
     address branch_instr_addr = addr_at(branch_label.position());
     Branch b(branch_instr_addr);
     int position = _code_offset;
@@ -462,22 +610,22 @@ void BinaryAssembler::write_branch_literals() {
       nop(); // IMPL_NOTE: this doesn't seem necessary
 
       // Indicate that we know this literal's position in the code
-      literal->set_bci(position);
+      literal().set_bci(position);
 
       // Update all places in the code that point to this literal.  
       // This would make the conditional branch target the trampoline
       // branch that we just emitted above. The trampoline branch would
       // then later resolve to the right target
-      Label label = literal->label();
+      Label label = literal().label();
       bind_to(label, position);
       GUARANTEE(b.target() == addr_at(position), "Branch optimization failed");
       
-      literal->set_label(label);
+      literal().set_label(label);
     }
   }
 
   // Indicate that there are no more not-yet-written literals
-  _first_unbound_branch_literal = literal;
+  _first_unbound_branch_literal = (OopDesc*)NULL;
   _unbound_branch_literal_count = 0;
 }
 
@@ -525,7 +673,7 @@ void BinaryAssembler::write_literal(LiteralPoolElement* literal) {
     emit_int(literal->literal_int());
   } else if (GenerateROMImage && literal->literal_int() != 0) {
     GUARANTEE(oop.equals(compiled_method()), "Special flag");
-    emit_relocation(Relocation::compiler_stub_type);
+    _relocation.emit(Relocation::compiler_stub_type, _code_offset);
     emit_raw(literal->literal_int());
   } else {
 #ifndef PRODUCT
@@ -538,8 +686,16 @@ void BinaryAssembler::write_literal(LiteralPoolElement* literal) {
        tty->cr();
     }
 #endif
-    GUARANTEE(literal->literal_int() == 0, "Can't yet handle oop + offset");
-    emit_oop( oop.obj() );
+    if (ObjectHeap::contains_moveable(oop.obj())) {
+      // GC needs to know about these
+      GUARANTEE(literal->literal_int() == 0, "Can't yet handle oop + offset");
+      _relocation.emit_oop(_code_offset);
+    } else { 
+#ifndef PRODUCT
+      // Let the disassembler know that this is an oop
+      _relocation.emit(Relocation::rom_oop_type, _code_offset);
+#endif
+    }
     emit_raw((int)literal->literal_int() + (int)oop.obj()); // inline oop in code
   }
 
@@ -563,7 +719,6 @@ BinaryAssembler::CodeInterleaver::CodeInterleaver(BinaryAssembler* assembler){
   GUARANTEE(assembler->_interleaver == NULL, "No interleaver active");
   _assembler = assembler;
   _saved_size = assembler->code_size();
-  _buffer = NULL;
   _current = _length = 0;
 }
 
@@ -579,9 +734,10 @@ void BinaryAssembler::CodeInterleaver::start_alternate(JVM_SINGLE_ARG_TRAPS) {
    
   _current = 0;
   _length = instructions;
-  _buffer = CompilerShortArray::allocate(instructions JVM_ZCHECK(_buffer));
+  _buffer = Universe::new_short_array(instructions JVM_CHECK);
 
-  jvm_memcpy(_buffer->base(), _assembler->addr_at(old_size), new_size - old_size);
+  jvm_memcpy(_buffer().base_address(), _assembler->addr_at(old_size), 
+                  new_size - old_size);
   _assembler->_code_offset = old_size; // Undo the code we've generated
   _assembler->_interleaver = this;
 }
@@ -591,7 +747,7 @@ bool BinaryAssembler::CodeInterleaver::emit() {
   // Emit one instruction
   _assembler->_interleaver = NULL; // prevent recursion from emit_raw above
   if (_current < _length) { 
-    _assembler->emit(_buffer->at(_current));
+    _assembler->emit(_buffer().short_at(_current));
     _assembler->_interleaver = this;
     _current++;
   } 
@@ -602,6 +758,62 @@ bool BinaryAssembler::CodeInterleaver::emit() {
   } 
   return false;
 }
+
+#ifndef PRODUCT
+void BinaryAssembler::comment(const char* fmt, ...) {
+  JVM_VSNPRINTF_TO_BUFFER(fmt, buffer, 1024);
+
+  if (PrintCompiledCodeAsYouGo) {
+    tty->print_cr(";; %s", buffer);
+  } else if (GenerateCompilerComments) {
+    _relocation.emit_comment(_code_offset, buffer);
+  }
+}
+
+// This method is called by MixedOop::iterate() after iterating the
+// header part of MixedOop
+void BinaryAssembler::LiteralPoolElement::iterate(OopVisitor* visitor) {
+  if (literal_oop() != NULL) {
+    NamedField id("oop", true);
+    visitor->do_oop(&id, literal_oop_offset(), true);
+  }
+  if (is_bound()) { 
+    NamedField id("bound bci", true);
+    visitor->do_int(&id, bci_offset(), true);
+  }
+  if (literal_oop() == NULL) { 
+    NamedField id("imm32", true);
+    visitor->do_int(&id, literal_int_offset(), true);
+  }
+  {
+    NamedField id("label", true);
+    visitor->do_int(&id, label_offset(), true);
+  }
+
+  // IMPL_NOTE: use OopPrinter API
+  Label lab = label();
+  lab.print_value_on(tty);
+}
+
+void BinaryAssembler::Label::print_value_on(Stream *s) {
+  BinaryAssembler *ba = Compiler::code_generator();
+  s->print("encoding = %d (0x%x)", _encoding, _encoding);
+  if (is_unused()) {
+    s->print_cr(" unused");
+  } else {
+    int pos = position();
+    if (is_linked()) {
+      s->print_cr(" linked, pos=%d, addr=0x%x",  pos, ba->addr_at(pos));
+    } else {
+      GUARANTEE(is_bound(), "sanity");
+      s->print_cr(" bound, pos=%d, addr=0x%x",  pos, ba->addr_at(pos));
+    }
+  }
+}
+void BinaryAssembler::Label::p() {
+  print_value_on(tty);
+}
+#endif // PRODUCT
 
 void BinaryAssembler::ldr(Register rd, Register rn, int offset, Condition cond)
 {
@@ -840,6 +1052,17 @@ void BinaryAssembler::oop_write_barrier(Register dst, Register tmp1, Register tm
 
   if (range_check) {
     bind(skip_oop_barrier);
+  }
+}
+
+void BinaryAssembler::ensure_compiled_method_space(int delta) {
+  delta += 256;
+  if (!has_room_for(delta)) {
+    delta = align_allocation_size(delta + (1024 - 256));
+    if (compiled_method()->expand_compiled_code_space(delta, 
+                                                      relocation_size())) {
+      _relocation.move(delta);
+    }
   }
 }
 

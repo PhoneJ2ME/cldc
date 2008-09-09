@@ -73,7 +73,7 @@ jint Synchronizer::hash_code(JavaOop* obj JVM_TRAPS) {
 
   if (obj->klass() == _interned_string_near_addr) {
     JavaOop::Raw new_obj = get_lock_object_ref(obj, Thread::current(), false
-                                               JVM_ZCHECK_0(new_obj));
+                                               JVM_ZCHECK(new_obj));
     GUARANTEE(!obj->is_null(), "lock object is null!");
     *obj = new_obj;
   }
@@ -228,7 +228,7 @@ void Synchronizer::signal_waiters(StackLock* stack_lock) {
     Scheduler::add_to_active(&first_waiter);
     JavaOop::Raw obj = first_waiter().wait_obj();
     first_waiter().wait_stack_lock()->lock(&first_waiter, &obj);
-    if (next_waiter.not_null()) {
+    if (!next_waiter.is_null()) {
       // If there are more waiters, transfer this information to
       // the new lock
       if (TraceThreadsExcessive) {
@@ -239,8 +239,6 @@ void Synchronizer::signal_waiters(StackLock* stack_lock) {
       first_waiter().wait_stack_lock()->set_waiters(&next_waiter);
     }
     first_waiter().clear_wait_stack_lock();
-    first_waiter().clear_next_waiting();
-    first_waiter().clear_wait_obj();
   }
 }
 

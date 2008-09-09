@@ -33,19 +33,37 @@
 
 extern "C" { extern address gp_base_label; }
 
-class BinaryAssembler: public BinaryAssemblerCommon {
- public:
-  void instruction_emitted( void ) const {
-    CodeInterleaver *cil = _interleaver;
-    if (cil != NULL) {
-      TTY_TRACE_CR(("emitting instr"));
-      cil->emit();
-    }
+class BinaryAssembler: public Macros {
+ private:
+  // helpers
+  jint offset_at(jint pos) const { 
+    return CompiledMethod::base_offset() + pos; 
   }
 
-  void emit_raw(const int   instr) { emit_code_int  ( instr ); }
-  void emit_raw(const short instr) { emit_code_short( instr ); }
+ public:
+  jint code_size() const            { return _code_offset; }
+  jint relocation_size() const      { return _relocation.size(); }
+  jint free_space() const {
+    return (_relocation.current_relocation_offset() + sizeof(jushort)) -
+           offset_at(code_size());
+  }
+  jint code_end_offset() const       { return offset_at(code_size()); }
 
+  // check if there's room for a few extra bytes in the compiled method
+  bool has_room_for(int bytes) { 
+    return free_space() >= bytes + /* slop */8;
+  }
+
+  void emit_raw(int instr);
+  void emit_raw(short instr);
+
+  void zero_literal_count() { 
+    _unbound_literal_count = 0;
+    _code_offset_to_force_literals = 0x7FFFFFFF; // never need to force
+    _code_offset_to_desperately_force_literals = 0x7FFFFFFF;
+  }
+
+ public:
   NOT_PRODUCT(virtual) void emit(short instr) {
     // emit instruction
 #ifndef PRODUCT      
@@ -127,7 +145,7 @@ protected:
     CodeInterleaver(BinaryAssembler* assembler);
     ~CodeInterleaver() {}
     void flush() {
-      if (_buffer ) {
+      if (_buffer.not_null()) {
         while (emit()) {;}
       }
       _assembler->_interleaver = NULL;
@@ -140,25 +158,218 @@ protected:
     }
 
   private:
-    CompilerShortArray* _buffer;
-    BinaryAssembler*    _assembler;
-    int                 _saved_size;
-    int                 _current;
-    int                 _length;
+    FastOopInStackObj __must_appear_before_fast_objects__;
+    TypeArray::Fast   _buffer;
+    BinaryAssembler*  _assembler;
+    int               _saved_size;
+    int               _current;
+    int               _length;
   };
 
   CodeInterleaver*    _interleaver;
 
- protected:
-  void initialize( OopDesc* compiled_method ) {
-    BinaryAssemblerCommon::initialize( compiled_method );
-    CodeInterleaver::initialize(this);
-  }      
  public:
+  // creation
+  BinaryAssembler(CompiledMethod* compiled_method) : 
+          _relocation(compiled_method) {
+    _relocation.set_assembler(this);
+    _compiled_method = compiled_method;
+    _code_offset     = 0;
+    zero_literal_count();
+   _unbound_branch_literal_count = 0;
+    CodeInterleaver::initialize(this);
+  }
+
+  // support for suspending compilation
+  BinaryAssembler(CompilerState* compiler_state, 
+                  CompiledMethod* compiled_method);
+  void save_state(CompilerState *compiler_state);
+
+  // accessors
+  CompiledMethod* compiled_method() { 
+      return _compiled_method; 
+  }
+  address addr_at(jint pos) const { 
+      return (address)(_compiled_method->field_base(offset_at(pos))); 
+  }
+
+  bool has_overflown_compiled_method() const {
+    // Using 8 instead of 0 as defensive programming
+    // The shrink operation at the end of compilation will regain the extra
+    // space.
+    // The extra space ensures that there is always a sentinel at the end of
+    // the relocation data and that there is always a null oop that the last
+    // relocation entry can address. 
+    return free_space() < 8; 
+  }
+
+  // If compiler_area is enabled, move the relocation data to higher
+  // address to make room for more compiled code.
+  void ensure_compiled_method_space(int delta = 0);
+
   // branch support
-  typedef BinaryLabel Label;
+
+  // Labels are used to refer to (abstract) machine code locations.
+  // They encode a location >= 0 and a state (free, bound, linked).
+  // If code-relative locations are used (e.g. offsets from the
+  // start of the code, Labels are relocation-transparent, i.e.,
+  // the code can be moved around even during code generation (GC).
+  class Label {
+   public:
+    int _encoding;
+   private:
+    void check(int position) { 
+      GUARANTEE(position >= 0, "illegal position"); 
+      (void)position;
+    }
+    friend class CodeGenerator;
+    friend class CompilationQueueElement;
+    friend class Compiler;
+    friend class Entry;
+    friend class BinaryAssembler;
+
+   public:
+    // manipulation
+    void unuse() { 
+      _encoding = 0; 
+    }
+    void link_to(int position) { 
+      check(position); 
+      _encoding = - position - 1; 
+    }
+    void bind_to(int position) { 
+      check(position); 
+      _encoding =   position + 1; }
+
+    // accessors
+    int  position () const { 
+      return abs(_encoding) - 1; 
+    } // -1 if free label
+    bool is_unused() const { return _encoding == 0; }
+    bool is_linked() const { return _encoding <  0; }
+    bool is_bound () const { return _encoding >  0; }
+
+    // creation/destruction
+    Label()                { unuse(); }
+    ~Label()               { /* do nothing for now */ }
+
+#ifndef PRODUCT
+    void print_value_on(Stream*);
+    void p();
+#endif
+  };
+
   class NearLabel : public Label {};
   
+public:
+  class LiteralPoolElementDesc: public MixedOopDesc {
+  public:
+    LiteralPoolElementDesc *_next;
+    OopDesc *_literal_oop;
+    jint     _bci;
+    jint     _label;
+    jint     _literal_int;
+
+    bool is_bound() const {
+      return _bci != 0x7fffffff;
+    }
+
+    bool matches(OopDesc* oop, int imm32) const {
+      return oop == _literal_oop && imm32 == _literal_int;
+    }
+  };
+
+  class LiteralPoolElement: public MixedOop {
+  public:
+    HANDLE_DEFINITION(LiteralPoolElement, MixedOop);
+
+    static size_t allocation_size() {
+      return align_allocation_size(sizeof(LiteralPoolElementDesc));
+    }
+    static size_t pointer_count() { return 2; }
+
+  public:
+    // To avoid endless lists of friends the static offset computation
+    // routines are all public.
+    static jint next_offset() {
+      return FIELD_OFFSET(LiteralPoolElementDesc, _next);
+    }
+    static jint literal_oop_offset() {
+      return FIELD_OFFSET(LiteralPoolElementDesc, _literal_oop);
+    }
+    static jint bci_offset() {
+      return FIELD_OFFSET(LiteralPoolElementDesc, _bci);
+    }
+    static jint label_offset() {
+      return FIELD_OFFSET(LiteralPoolElementDesc, _label);
+    }
+    static jint literal_int_offset() {
+      return FIELD_OFFSET(LiteralPoolElementDesc, _literal_int);
+    }
+
+  private:
+    enum { 
+      // BCI indicating this literal is still unbound.
+      not_yet_defined_bci = 0x7fffffff
+    };
+
+  public:
+    // Note that the bci() field is used as a convenience.  
+    // If the label is unbound, then bci() == 0x7fffffff
+    // If the label is bound, then bci()  is the same as the label's position.
+
+    int bci() const {
+      return int_field(bci_offset());
+    }
+    void set_bci(int i) {
+      int_field_put(bci_offset(), i);
+    }
+
+    int literal_int() const {
+      return int_field(literal_int_offset());
+    }
+    void set_literal_int(int i) {
+      int_field_put(literal_int_offset(), i);
+    }
+
+    Label label() const {
+      Label L; 
+      L._encoding = int_field(label_offset()); 
+      return L;
+    }
+
+    int label_pos() const {
+      return label().position();
+    }
+
+    void set_label(Label& value) {
+      int_field_put(label_offset(), value._encoding); 
+    }
+
+    ReturnOop next() const  {
+      return obj_field(next_offset());
+    }
+    void set_next(const Oop* oop) {
+      obj_field_put(next_offset(), oop);
+    }
+
+    ReturnOop literal_oop() const {
+      return obj_field(literal_oop_offset());
+    }
+    void set_literal_oop(const Oop *oop) {
+      obj_field_put(literal_oop_offset(), oop);
+    }
+    
+    bool is_bound() const {
+      return ((LiteralPoolElementDesc*)obj())->is_bound();
+    }
+
+  public:
+    static ReturnOop allocate(const Oop* oop, int imm32 JVM_TRAPS);
+    void iterate(OopVisitor* /*visitor*/) PRODUCT_RETURN;
+  };
+
+public:
   void branch_helper(Label& L, bool link, bool near, Condition cond);
   void branch_helper(CompilationQueueElement* cqe,
                      bool link, bool near, Condition cond);
@@ -199,7 +410,8 @@ protected:
       access_literal_pool(rd, lpe, cond, true);
   }
 
-  void ldr_literal(Register rd, OopDesc* obj, int offset, Condition cond = al);
+  void ldr_literal(Register rd, const Oop* oop, 
+                   int offset, Condition cond = al);
   void ldr_oop (Register r, const Oop* obj, Condition cond = al);
 
   // miscellaneous helpers
@@ -210,13 +422,19 @@ protected:
 #ifdef AZZERT
     breakpoint();
 #endif
-    emit_sentinel(); 
+    _relocation.emit_sentinel(); 
   }
 
+  void emit_osr_entry(jint bci) { 
+    _relocation.emit(Relocation::osr_stub_type, _code_offset, bci); 
+  }
   static int ic_check_code_size() { 
     // no inline caches for ARM (yet)
     return 0; 
   } 
+
+  // debugging
+  NOT_PRODUCT(virtual) void comment(const char* /*str*/, ...) PRODUCT_RETURN;
 
   void ldr_using_gp(Register reg, address target, Condition cond = al) {
     int offset = target - (address)&gp_base_label;
@@ -257,7 +475,7 @@ protected:
 
   GP_GLOBAL_SYMBOLS_DO(pointers_not_used, DEFINE_GP_FOR_BINARY)
 
-  LiteralPoolElement* find_literal(OopDesc* obj, int offset JVM_TRAPS);
+  ReturnOop find_literal(const Oop* oop, int offset JVM_TRAPS);
 
   void append_literal(LiteralPoolElement *literal);
   void append_branch_literal(int branch_pos JVM_TRAPS);
@@ -271,6 +489,18 @@ public:
   void write_value_literals();
   void write_branch_literals();  
 
+  // We should write out the literal pool at our first convenience
+  bool need_to_force_literals() { 
+    return _code_offset >= _code_offset_to_force_literals;
+  }
+
+  // We should write out the literal pool very very soon, even if it
+  // generates bad code
+  bool desperately_need_to_force_literals() { 
+     return _code_offset >= _code_offset_to_desperately_force_literals; 
+  }
+
+
   bool need_to_force_branch_literals() { 
     return desperately_need_to_force_branch_literals();
   }
@@ -281,12 +511,14 @@ public:
       return true;
     }
     
-    if (_first_unbound_branch_literal ) {
-      const int branch_pos = _first_unbound_branch_literal->label_position();
+    if (_first_unbound_branch_literal.not_null()) {
+      int branch_pos = _first_unbound_branch_literal().label_pos();
       return ((_code_offset - branch_pos) >= 200);
     }
     return false;
   }
+
+  int unbound_literal_count() { return _unbound_literal_count; }
 
 private:
   enum { maximum_unbound_literal_count = 10,
@@ -308,8 +540,26 @@ private:
     }
   }
 
-  friend class CodeInterleaver;
-  friend class Compiler;
+private:
+  FastOopInStackObj         __must_appear_before_fast_objects__;
+  CompiledMethod*           _compiled_method;
+  jint                      _code_offset;
+  RelocationWriter          _relocation;
+
+  LiteralPoolElement::Fast  _first_literal;
+  LiteralPoolElement::Fast  _first_unbound_literal;
+  LiteralPoolElement::Fast  _last_literal;
+  int                       _unbound_literal_count;
+  int                       _unbound_branch_literal_count;
+  int                       _code_offset_to_force_literals;
+                            // and to boldly split infinitives
+  int                       _code_offset_to_desperately_force_literals;
+  LiteralPoolElement::Fast  _first_unbound_branch_literal;
+  LiteralPoolElement::Fast  _last_unbound_branch_literal;
+
+friend class RelocationWriter;
+friend class CodeInterleaver;
+
 };
 
 #endif // ENABLE_THUMB_COMPILER && ENABLE_COMPILER

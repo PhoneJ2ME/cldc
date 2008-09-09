@@ -63,9 +63,6 @@ class Throw : public AllStatic {
   static void array_store_exception(ErrorMsgTag err JVM_TRAPS);
   static void null_pointer_exception(ErrorMsgTag err JVM_TRAPS);
   static void array_index_out_of_bounds_exception(ErrorMsgTag err JVM_TRAPS);
-#if ENABLE_JNI
-  static void string_index_out_of_bounds_exception(ErrorMsgTag err JVM_TRAPS);
-#endif
   static void illegal_access(FailureMode fail_mode JVM_TRAPS);
   static void illegal_monitor_state_exception(ErrorMsgTag err JVM_TRAPS);
   static void illegal_thread_state_exception(ErrorMsgTag err JVM_TRAPS);
@@ -91,4 +88,6 @@ class Throw : public AllStatic {
   }
 
   static void uncatchable(JVM_SINGLE_ARG_TRAPS);
+ private:
+  static Oop* _out_of_memory_error_instance;
 };

@@ -360,10 +360,7 @@ int JavaDebugger::get_object_id_by_ref(Oop *p) {
   ObjArray::Fast refnodes = Universe::objects_by_ref_map();
   index = object_hash_code(p);
   node = refnodes().obj_at(index);
-  {
-    TaskAllocationContext tmp(SYSTEM_TASK);
-    node = Universe::new_refnode(JVM_SINGLE_ARG_CHECK_0);
-  }
+  node = Universe::new_refnode(JVM_SINGLE_ARG_CHECK_0);
   int nextID = JavaDebugger::next_seq_num();
   node().set_seq_num(nextID);
   node().set_ref_obj(p);
@@ -549,7 +546,12 @@ void JavaDebugger::rehash() {
 }
 
 void JavaDebugger::process_suspend_policy(jbyte policy, Thread *thread,
-                                          int task_id, jboolean forceWait) {
+                                         jboolean forceWait)
+{
+  int task_id = -1;
+#if ENABLE_ISOLATES
+  task_id = thread->task_id();
+#endif
 
   switch(policy) {
   case JDWP_SuspendPolicy_NONE:
@@ -557,10 +559,6 @@ void JavaDebugger::process_suspend_policy(jbyte policy, Thread *thread,
     dispatch(0);
     break;
   case JDWP_SuspendPolicy_EVENT_THREAD:
-    GUARANTEE(thread != NULL, "Thread must be specified");
-#if ENABLE_ISOLATES
-    task_id = thread->task_id();
-#endif
     ThreadReferenceImpl::suspend_specific_thread(thread, task_id, true);
     dispatch(0);
     break;
@@ -717,14 +715,10 @@ JavaDebugger::vendor_hand_shake(PacketInputStream *in,
   versionString =  in->read_string();
   /*major=*/ in->read_byte();
   minor  =   in->read_byte();
-  {
-    Transport::Raw t = in->transport();
-    if (minor < KDP_REQUIRED_MINOR /* 4 */) {
-      close_java_debugger(&t);
-      tty->print_cr("VM requires newer Debug Agent; minor version >= 4");
-    } else {
-      t().set_connection_confirmed(1);
-    }
+  if (minor < KDP_REQUIRED_MINOR /* 4 */) {
+    Transport *t = in->transport();
+    close_java_debugger(t);
+    tty->print_cr("VM requires newer Debug Agent; minor version >= 4");
   }
   out->write_raw_string(kvmString);
   int base_mode = 0x7fff;
@@ -1013,10 +1007,8 @@ bool JavaDebugger::initialize_java_debugger(JVM_SINGLE_ARG_TRAPS) {
   if (!CURRENT_HAS_PENDING_EXCEPTION && _debugger_option_on) {
     // Determine which transport to use via command line args, for now
     // only socket
-    {
-      TaskAllocationContext tmp(SYSTEM_TASK);
-      t = Transport::new_transport("socket" JVM_CHECK_0);
-    }
+    t = Transport::allocate(JVM_SINGLE_ARG_CHECK_0);
+    t = Transport::new_transport("socket" JVM_CHECK_0);
     if (!t.is_null()) {
       t().set_task_id(-1);
 #if ENABLE_ISOLATES
@@ -1057,7 +1049,6 @@ bool JavaDebugger::initialize_java_debugger(JVM_SINGLE_ARG_TRAPS) {
       // Setup some free packet buffers
       plist = Universe::packet_buffer_list();
       if (plist.is_null()) {
-        TaskAllocationContext tmp(SYSTEM_TASK);
         UsingFastOops fastoops2;
 #if ENABLE_MEMORY_PROFILER
         *Universe::packet_buffer_list() =

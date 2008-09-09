@@ -31,7 +31,6 @@ public:
   address              _ops;
   int                  _task_id;
   int                  _flags;
-  int                  _connection_confirmed;
 #endif
 protected:
   static jint header_size() { return sizeof(TransportDesc); }

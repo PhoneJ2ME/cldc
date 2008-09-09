@@ -68,6 +68,7 @@ void BytecodeCompileClosure::initialize(Compiler* compiler, Method* method,
 #endif
   TypeArray::Raw exception_handlers = method->exception_table();
   _has_exception_handlers = (exception_handlers().length() != 0);
+  _has_overflown_output = (jubyte)false;
   _code_generator = Compiler::code_generator();
 }
 
@@ -76,10 +77,6 @@ void BytecodeCompileClosure::frame_push(Value &value) {
 }
 
 #define __ code_generator()->
-
-void BytecodeCompileClosure::osr_entry(JVM_SINGLE_ARG_TRAPS) {
-  __ osr_entry( JVM_SINGLE_ARG_NO_CHECK_AT_BOTTOM );
-}
 
 // Push operations.
 void BytecodeCompileClosure::push_int(jint value JVM_TRAPS) {
@@ -169,14 +166,13 @@ void BytecodeCompileClosure::store_local(BasicType kind, int index JVM_TRAPS) {
 void BytecodeCompileClosure::increment_local_int(int index, jint offset JVM_TRAPS)
 {
   COMPILER_PERFORMANCE_COUNTER_IN_BLOCK(increment_local_int);
-  const int real_index = Compiler::current_local_base() + index;
 
   Value index_value(T_INT);
-  frame()->value_at(index_value, real_index);
+  frame()->value_at(index_value, Compiler::current_local_base() + index);
 
   // Clear the local to avoid unnecessary spilling. This would not be
   // necessary if we had dead store elimination.
-  frame()->clear(real_index);
+  frame()->clear(index);
 
   // Give the addend the offset as immediate value, and add it to the local
   // with the given index.
@@ -185,7 +181,7 @@ void BytecodeCompileClosure::increment_local_int(int index, jint offset JVM_TRAP
 
   Value result(T_INT);
   __ int_binary(result, index_value, offset_value, bin_add JVM_CHECK);
-  frame()->value_at_put(real_index, result);
+  frame()->value_at_put(index, result);
 }
 
 // Array operations.
@@ -244,7 +240,7 @@ void BytecodeCompileClosure::store_array(BasicType kind JVM_TRAPS) {
     // Type check
     if (kind == T_OBJECT && !value.must_be_null()) {
       bool skip_type_check = false;
-#if ENABLE_COMPILER_TYPE_INFO
+#if ENABLE_COMPILER_TYPE_INFO      
       const jushort array_class_id = array.class_id();
       // If there is type info available for the array.
       if (array_class_id > 0) {
@@ -279,36 +275,6 @@ void BytecodeCompileClosure::store_array(BasicType kind JVM_TRAPS) {
   }
 }
 
-#if ENABLE_CONDITIONAL_BRANCH_OPTIMIZATIONS
-void BytecodeCompileClosure::branch_if_flags(JVM_SINGLE_ARG_TRAPS) {
-  const int bci = get_next_bci();
-  if( bci > 0 ) {
-    const Bytecodes::Code code = bytecode_at(bci);
-    const unsigned offset = unsigned(code) - Bytecodes::_ifeq;
-    if( offset <= unsigned(Bytecodes::_ifle - Bytecodes::_ifeq) ) {
-      const cond_op cond = cond_op(offset + BytecodeClosure::eq);
-      const int dest = branch_destination(bci);
-      set_bytecode(bci);
-      set_default_next_bytecode_index(bci);
-      Compiler::set_bci(bci); // Is it really necessary?
-
-      // Insert OSR entries for backward branches.
-      if( dest < bci || is_active_bci() ) {
-        osr_entry(JVM_SINGLE_ARG_CHECK);
-      }
-
-      // Pop argument
-      PoppedValue op1(T_INT);
-      Value op2(T_INT);
-      op2.set_int(0);
-
-      __ branch_if(cond, dest, op1, op2, true JVM_NO_CHECK_AT_BOTTOM);
-      set_jump_from_current_bci( dest );
-    }
-  }
-}
-#endif
-
 void BytecodeCompileClosure::binary(BasicType kind, binary_op op JVM_TRAPS) {
   COMPILER_PERFORMANCE_COUNTER_IN_BLOCK(binary);
 
@@ -338,18 +304,6 @@ void BytecodeCompileClosure::binary(BasicType kind, binary_op op JVM_TRAPS) {
 
   if (!CURRENT_HAS_PENDING_EXCEPTION) {
     frame_push(result);
-#if ENABLE_CONDITIONAL_BRANCH_OPTIMIZATIONS
-    #define DEF( name ) | (1 << bin_##name)
-    enum { ops = 0
-      DEF( add ) DEF( sub )
-      DEF( shl ) DEF( shr ) DEF( ushr )
-      DEF( and ) DEF( or  ) DEF( xor  )      
-    };
-    #undef DEF
-    if( kind == T_INT && !result.is_immediate() && ((ops >> op) & 1) ) {
-      branch_if_flags(JVM_SINGLE_ARG_NO_CHECK_AT_BOTTOM);
-    }
-#endif
   }
 }
 
@@ -382,11 +336,6 @@ void BytecodeCompileClosure::unary(BasicType kind, unary_op op JVM_TRAPS) {
 
   if (!CURRENT_HAS_PENDING_EXCEPTION) {
     frame_push(result);
-#if ENABLE_CONDITIONAL_BRANCH_OPTIMIZATIONS
-    if( kind == T_INT && !result.is_immediate() && op == una_neg ) {
-      branch_if_flags(JVM_SINGLE_ARG_NO_CHECK_AT_BOTTOM);
-    }
-#endif
   }
 }
 
@@ -402,15 +351,18 @@ void BytecodeCompileClosure::convert(BasicType from, BasicType to JVM_TRAPS) {
 
   // If this is an i2{bsc}, and the next instruction is
   // a {bsc}astore, we can treat the current instruction as an no-op
-  const Bytecodes::Code bc = current_bytecode();
+  Bytecodes::Code bc = method()->bytecode_at(bci());
   switch (bc) {
   case Bytecodes::_i2b:
   case Bytecodes::_i2s:
   case Bytecodes::_i2c:
     {
-      const int nextbci = get_next_bci();
-      if( nextbci > 0 ) {
-        const Bytecodes::Code nextbc = bytecode_at(nextbci);
+      int len = method()->code_size();
+      int nextbci = bci() + 1;
+      // Must check that nextbci is not a branch target.
+      if (nextbci < len && 
+          Compiler::current()->entry_count_for(nextbci) == 1) {
+        Bytecodes::Code nextbc = method()->bytecode_at(nextbci);
         if ((bc - nextbc) == (Bytecodes::_i2b - Bytecodes::_bastore)) {
           if (GenerateCompilerComments) {
             gen->comment("narrowing opcode is safely skipped");
@@ -424,7 +376,7 @@ void BytecodeCompileClosure::convert(BasicType from, BasicType to JVM_TRAPS) {
     break;
   }
 
-  switch( current_bytecode() ) {
+  switch (method()->bytecode_at(bci())) {
   case Bytecodes::_i2b:
     if (is_immediate) {
       result.set_int((jbyte)value.as_int());
@@ -581,25 +533,37 @@ void BytecodeCompileClosure::swap(JVM_SINGLE_ARG_TRAPS)    {
 void BytecodeCompileClosure::branch(int dest JVM_TRAPS) {
   COMPILER_PERFORMANCE_COUNTER_IN_BLOCK(branch);
   
+  const bool back_branch = dest < bci();
+
   // Insert OSR entries for backward branches.
-  if (dest < bci()) {
-    osr_entry(JVM_SINGLE_ARG_CHECK);
+  if (back_branch) {
+    __ osr_entry(JVM_SINGLE_ARG_CHECK);
   }
   __ branch(dest JVM_NO_CHECK_AT_BOTTOM);
-  set_jump_from_current_bci( dest );
+
+#if ENABLE_CODE_PATCHING
+  // set bci we jump from
+  if (back_branch) {
+    set_jump_from_bci(bci());
+  }
+#endif
 }
 
 void BytecodeCompileClosure::branch_if(cond_op cond, int dest JVM_TRAPS) {
   COMPILER_PERFORMANCE_COUNTER_IN_BLOCK(branch_if);
 
+  const bool back_branch = dest < bci();
   // Insert OSR entries for backward branches.
-  if (dest < bci() || is_active_bci()) {
-    osr_entry(JVM_SINGLE_ARG_CHECK);
+  if (back_branch || is_active_bci()) {
+    __ osr_entry(JVM_SINGLE_ARG_CHECK);
   }
-  BasicType kind( T_INT );
+  BasicType kind;
   switch (cond) {
-    case null: case nonnull :
+    case null: case nonnull : {
       kind = T_OBJECT; break;
+    default:
+      kind = T_INT;    break;
+    }
   }
 
   // Pop argument
@@ -608,18 +572,26 @@ void BytecodeCompileClosure::branch_if(cond_op cond, int dest JVM_TRAPS) {
   op2.set_int(0);
 
   __ branch_if(cond, dest, op1, op2 JVM_NO_CHECK_AT_BOTTOM);
-  set_jump_from_current_bci( dest );
+
+#if ENABLE_CODE_PATCHING
+  // set bci we jump from
+  if (back_branch) {
+    set_jump_from_bci(bci());
+  }
+#endif
 }
 
 void BytecodeCompileClosure::branch_if_icmp(cond_op cond, int dest JVM_TRAPS) {
   COMPILER_PERFORMANCE_COUNTER_IN_BLOCK(branch_if_icmp);
 
+  const bool back_branch = dest < bci();
   // Insert OSR entries for backward branches.
-  if (dest < bci() || is_active_bci()) {
+  if (back_branch || is_active_bci()) {
       
     //cse     
-    record_passable_statue_of_osr_entry(dest);      
-    osr_entry(JVM_SINGLE_ARG_CHECK);
+    record_passable_statue_of_osr_entry(dest);
+      
+    __ osr_entry(JVM_SINGLE_ARG_CHECK);
   }
 
   // Pop arguments
@@ -628,15 +600,22 @@ void BytecodeCompileClosure::branch_if_icmp(cond_op cond, int dest JVM_TRAPS) {
 
   // Branch
   __ branch_if(cond, dest, op1, op2 JVM_NO_CHECK_AT_BOTTOM);
-  set_jump_from_current_bci( dest );
+
+#if ENABLE_CODE_PATCHING
+  // set bci we jump from
+  if (back_branch) {
+    set_jump_from_bci(bci());
+  }
+#endif
 }
 
 void BytecodeCompileClosure::branch_if_acmp(cond_op cond, int dest JVM_TRAPS) {
   COMPILER_PERFORMANCE_COUNTER_IN_BLOCK(branch_if_acmp);
 
+  const bool back_branch = dest < bci();
   // Insert OSR entries for backward branches.
-  if (dest < bci() || is_active_bci()) {
-    osr_entry(JVM_SINGLE_ARG_CHECK);
+  if (back_branch || is_active_bci()) {
+    __ osr_entry(JVM_SINGLE_ARG_CHECK);
   }
 
   // Pop arguments
@@ -645,7 +624,13 @@ void BytecodeCompileClosure::branch_if_acmp(cond_op cond, int dest JVM_TRAPS) {
 
   // Branch
   __ branch_if(cond, dest, op1, op2 JVM_NO_CHECK_AT_BOTTOM);
-  set_jump_from_current_bci( dest );
+
+#if ENABLE_CODE_PATCHING
+  // set bci we jump from
+  if (back_branch) {
+    set_jump_from_bci(bci());
+  }
+#endif
 }
 
 void BytecodeCompileClosure::compare(BasicType kind, cond_op cond JVM_TRAPS) {
@@ -769,14 +754,20 @@ void BytecodeCompileClosure::instance_of(int index JVM_TRAPS) {
   //      ...
   //      ((aClass)anObject).aMethod();
   //      ...
-  const int nextbci = get_next_bci();
-  if( nextbci > 0 ) {
-    const Bytecodes::Code nextbc = bytecode_at(nextbci);
+  const int nextbci = bci() + Bytecodes::length_for(method(), bci());
+  const int len = method()->code_size();
+
+  if (nextbci < len && 
+      Compiler::current()->entry_count_for(nextbci) == 1 &&
+      next_bytecode_index() == nextbci) {
+    const Bytecodes::Code nextbc = method()->bytecode_at(nextbci);
     if (nextbc == Bytecodes::_ifeq) {
-      const int fallthrough_bci = next_bci(nextbci);
+      const int fallthrough_bci = 
+        nextbci + Bytecodes::length_for(method(), nextbci);
+
       Compiler::set_bci(nextbci);
       // Recursive invocation to find out if the compiler takes the branch
-      compile(JVM_SINGLE_ARG_CHECK);
+      this->compile(JVM_SINGLE_ARG_CHECK);
       if (next_bytecode_index() == fallthrough_bci) {
         frame()->set_value_class(object, &klass);
       }
@@ -806,21 +797,21 @@ void BytecodeCompileClosure::return_op(BasicType kind JVM_TRAPS) {
         frame()->push(temp);
       }
 
-      VirtualStackFrame* return_frame = compiler->parent_frame();
-      if( !return_frame ) {
+      VirtualStackFrame::Raw return_frame = compiler->parent_frame();
+      if (return_frame.is_null()) {
         frame()->conformance_entry(true);
         return_frame = frame()->clone(JVM_SINGLE_ARG_CHECK);
-        compiler->set_parent_frame( return_frame );
+        compiler->set_parent_frame(&return_frame);
       } else {
-        frame()->conform_to( return_frame );
+        frame()->conform_to(&return_frame);
       }
     }
 
     BinaryAssembler::Label return_label = compiler->inline_return_label();
-    if( compiler->compilation_queue() != NULL ) {
-      code_generator()->jmp( return_label );    
+    if (!compiler->compilation_queue()->is_null()) {
+      code_generator()->jmp(return_label);    
     } 
-    compiler->set_inline_return_label( return_label );
+    compiler->set_inline_return_label(return_label);
     return;    
   }
 #endif // ENABLE_INLINE
@@ -1130,7 +1121,7 @@ void BytecodeCompileClosure::get_static(int index JVM_TRAPS) {
 
   UsingFastOops fast_oops;
 
-  const Bytecodes::Code bc = current_bytecode();
+  Bytecodes::Code bc = method()->bytecode_at(bci());
   if (bc == Bytecodes::_getstatic) {
     // Always need to call ConstantPool::field_type_at(). See
     // src/tests/vm/share/handles/ConstantPool/field_type_at7 
@@ -1237,7 +1228,9 @@ void BytecodeCompileClosure::get_static(int index JVM_TRAPS) {
 void BytecodeCompileClosure::put_static(int index JVM_TRAPS) {
   COMPILER_PERFORMANCE_COUNTER_IN_BLOCK(put_static);
 
-  const Bytecodes::Code bc = current_bytecode();
+  UsingFastOops fast_oops;
+
+  Bytecodes::Code bc = method()->bytecode_at(bci());
   if (bc == Bytecodes::_putstatic) {
     // Always need to call ConstantPool::field_type_at().
     bool resolved = try_resolve_static_field(index, /*is_get=*/false
@@ -1259,7 +1252,6 @@ void BytecodeCompileClosure::put_static(int index JVM_TRAPS) {
     kind = T_INT;
   }
 
-  UsingFastOops fast_oops;
 #if ENABLE_ISOLATES
   // We never issue an uncommon trap here because class initialization
   // must always be tested because of code sharing across isolates.
@@ -1358,13 +1350,10 @@ void BytecodeCompileClosure::new_object(int index JVM_TRAPS) {
   if (GenerateROMImage) {
     // Retrieve the initialized class or generate an uncommon trap
     klass = get_klass_or_null(index, false JVM_CHECK);
-    if (klass.not_null()) {
-      InstanceClass holder = method()->holder();
-      if (klass.is_instance_class() && !holder.is_subclass_of(&klass)) {
-        InstanceClass ic = klass.obj();
-        if (!ic.is_initialized()) {
-          __ initialize_class(&ic JVM_CHECK);
-        }
+    if (klass.not_null() && klass.is_instance_class()) {
+      InstanceClass ic = klass.obj();
+      if (!ic.is_initialized()) {
+        __ initialize_class(&ic JVM_CHECK);
       }
     }
   } else
@@ -1463,8 +1452,7 @@ BytecodeCompileClosure::get_klass_from_id_and_initialize(int class_id
   GUARANTEE(GenerateROMImage, 
             "Should be called only for AOT compilation");
   JavaClass klass = Universe::class_from_id(class_id);
-  InstanceClass holder = method()->holder();
-  if (klass.is_instance_class() && !holder.is_subclass_of(&klass)) {
+  if (klass.is_instance_class()) {
     InstanceClass ic = klass.obj();
     if (!ic.is_initialized()) {
       __ initialize_class(&ic JVM_CHECK_(NULL));
@@ -1621,20 +1609,6 @@ void BytecodeCompileClosure::invoke_static(int index JVM_TRAPS) {
 void BytecodeCompileClosure::do_direct_invoke(Method * callee, 
                                               bool must_do_null_check
                                               JVM_TRAPS) {
-  const int size_of_parameters = callee->size_of_parameters();
-
-  if (!callee->is_static() && 
-      frame()->receiver_must_be_null(size_of_parameters)) {
-
-    throw_null_pointer_exception(JVM_SINGLE_ARG_NO_CHECK_AT_BOTTOM);
-    return;
-  }
-
-  if (must_do_null_check && 
-      frame()->receiver_must_be_nonnull(size_of_parameters)) {
-    must_do_null_check = false;
-  }
-
   if (callee->is_fast_get_accessor()) {
     if (TraceMethodInlining) {
       tty->print("Method ");
@@ -1648,11 +1622,14 @@ void BytecodeCompileClosure::do_direct_invoke(Method * callee,
 
     // Load field
     Value result(callee->fast_accessor_type());
-
-    __ load_from_object(result, receiver, callee->fast_accessor_offset(),
-                        must_do_null_check JVM_CHECK);
-    // Push result
-    frame_push(result);
+    if (receiver.must_be_null()) {
+      throw_null_pointer_exception(JVM_SINGLE_ARG_NO_CHECK_AT_BOTTOM);
+    } else {
+      __ load_from_object(result, receiver, callee->fast_accessor_offset(),
+                          /* null check */ true JVM_CHECK);
+      // Push result
+      frame_push(result);
+    }
     return;
   }
   
@@ -1661,7 +1638,7 @@ void BytecodeCompileClosure::do_direct_invoke(Method * callee,
   //so we must prohibit method inlining in case TraceBytecodesCompiler
   if (!TraceBytecodesCompiler) { 
     Method::Attributes method_attributes;
-    bool can_be_inline = !callee->is_impossible_to_compile() &&
+    bool can_be_inline = 
       callee->bytecode_inline_prepass(method_attributes JVM_CHECK); 
     if (can_be_inline) {
       UsingFastOops fast_oops;
@@ -1671,7 +1648,7 @@ void BytecodeCompileClosure::do_direct_invoke(Method * callee,
       InstanceClass::Fast caller_holder = method()->holder();
       InstanceClass::Fast callee_holder = callee->holder();
       int needed_virtual_frame_space = callee->max_execution_stack_count() 
-          - size_of_parameters;
+          - callee->size_of_parameters();
       // 3 more locations is allocated 
       // please refer to VirtualStackFrame::create(Method* method JVM_TRAPS)
       // 5 + max_execution_stack_count should be
@@ -1694,10 +1671,9 @@ void BytecodeCompileClosure::do_direct_invoke(Method * callee,
         }
           
         if (must_do_null_check) {
-          GUARANTEE(!frame()->receiver_must_be_nonnull(size_of_parameters),
-                    "Null check not needed");
           Value receiver(T_OBJECT);
-          frame()->receiver(receiver, size_of_parameters);
+          Assembler::Condition cond;
+          frame()->receiver(receiver, callee->size_of_parameters());
           // IMPL_NOTE: use maybe_null_check_1/2 on ARM
           code_generator()->maybe_null_check(receiver JVM_CHECK);
         } else {
@@ -1733,7 +1709,7 @@ void BytecodeCompileClosure::direct_invoke(int index, bool must_do_null_check
   InstanceClass::Fast holder = callee().holder();
 
   if (is_active_bci()) {
-    osr_entry(JVM_SINGLE_ARG_CHECK);
+    __ osr_entry(JVM_SINGLE_ARG_CHECK);
   }
 
 #if ENABLE_ISOLATES
@@ -1749,10 +1725,7 @@ void BytecodeCompileClosure::direct_invoke(int index, bool must_do_null_check
   if (!holder().is_initialized()) {
 #if USE_AOT_COMPILATION
     if (GenerateROMImage) {
-      InstanceClass caller_holder = method()->holder();
-      if (!caller_holder.is_subclass_of(&holder)) {
-        __ initialize_class(&holder JVM_CHECK);
-      }
+      __ initialize_class(&holder JVM_CHECK);
     } else
 #endif
     {
@@ -1886,7 +1859,7 @@ void BytecodeCompileClosure::invoke_interface(int index, int num_of_args
     BasicType result_type= cp()->tag_at(index).resolved_interface_method_type();
 
     if (is_active_bci()) {
-      osr_entry(JVM_SINGLE_ARG_CHECK);
+      __ osr_entry(JVM_SINGLE_ARG_CHECK);
     }
 
     // Call the method.
@@ -1906,7 +1879,7 @@ void BytecodeCompileClosure::fast_invoke_virtual(int index JVM_TRAPS) {
                                                           class_id);
 
   if (is_active_bci()) {
-    osr_entry(JVM_SINGLE_ARG_CHECK);
+    __ osr_entry(JVM_SINGLE_ARG_CHECK);
   }
 
   // Get the class from the constant pool.
@@ -1979,8 +1952,9 @@ void BytecodeCompileClosure::fast_invoke_virtual(int index JVM_TRAPS) {
 
 void BytecodeCompileClosure::fast_invoke_special(int index JVM_TRAPS) {
   COMPILER_PERFORMANCE_COUNTER_IN_BLOCK(fast_invoke_special);
+
   if (is_active_bci()) {
-    osr_entry(JVM_SINGLE_ARG_CHECK);
+    __ osr_entry(JVM_SINGLE_ARG_CHECK);
   }
 
   UsingFastOops fast_oops;
@@ -2045,12 +2019,14 @@ void BytecodeCompileClosure::invoke_virtual(int index JVM_TRAPS) {
 
 void BytecodeCompileClosure::fast_invoke_virtual_final(int index JVM_TRAPS) {
   COMPILER_PERFORMANCE_COUNTER_IN_BLOCK(fast_invoke_virtual_final);
+
   direct_invoke(index, true JVM_NO_CHECK_AT_BOTTOM);
 }
 
 void BytecodeCompileClosure::invoke_native(BasicType return_kind, 
                                            address entry JVM_TRAPS) {
   COMPILER_PERFORMANCE_COUNTER_IN_BLOCK(invoke_native);
+
   __ invoke_native(return_kind, entry JVM_NO_CHECK_AT_BOTTOM);
 }
 
@@ -2059,9 +2035,9 @@ jubyte BytecodeCompileClosure::get_invoker_tag(int index,
                                                JVM_TRAPS) {
   jubyte tag = cp()->tag_value_at(index);
 
-  if( ConstantTag::is_method(tag) ) {
-    const bool status = try_resolve_invoker(index, bytecode JVM_MUST_SUCCEED);
-    if( status || bytecode != Bytecodes::_invokestatic ) {
+  if (ConstantTag::is_method(tag)) {
+    bool status = try_resolve_invoker(index, bytecode JVM_MUST_SUCCEED);
+    if (status || bytecode != Bytecodes::_invokestatic) {
       tag = cp()->tag_value_at(index);
     }
   }
@@ -2156,29 +2132,28 @@ BytecodeCompileClosure::check_exception_handler_start(JVM_SINGLE_ARG_TRAPS) {
   TypeArray::Fast exception_table = method()->exception_table();
   GUARANTEE((exception_table().length() % 4) == 0, "Sanity check");
   for (int i = exception_table().length() - 4; i >= 0; i-=4) {
-    const int start_bci = exception_table().ushort_at(i);
-    if( bci() == start_bci &&
-            !Compiler::current()->exception_has_osr_entry(start_bci) ) {
+    int start_bci = exception_table().ushort_at(i);
+    if (bci() == start_bci &&
+            !Compiler::current()->exception_has_osr_entry(start_bci)) {
       Compiler::current()->set_exception_has_osr_entry(start_bci);
-      const int handler_bci = exception_table().ushort_at(i + 2);
+      UsingFastOops fast_oops_inside;
+      BinaryAssembler::Label unused;
+      int handler_bci = exception_table().ushort_at(i + 2);
+      VirtualStackFrame::Fast old_frame = frame();
+      VirtualStackFrame::Fast exception_frame = 
+        frame()->clone_for_exception(handler_bci JVM_CHECK);
+      Compiler::set_frame(exception_frame());
 
-      VirtualStackFrame* exception_frame = 
-        frame()->clone_for_exception(handler_bci JVM_ZCHECK(exception_frame));
-
-      VirtualStackFrame* old_frame = frame();
-      Compiler::set_frame( exception_frame );
       {
-        BinaryAssembler::Label unused;
-
         // Compiler at this location, and make it an OSR entry
-        CompilationContinuation* stub =
-          CompilationContinuation::insert( handler_bci, unused JVM_NO_CHECK );
-        if( stub ) {
-          stub->set_need_osr_entry();
-          stub->set_is_exception_handler();
+        CompilationContinuation::Raw stub =
+            CompilationContinuation::insert(handler_bci, unused JVM_NO_CHECK);
+        if (stub.not_null()) {
+          stub().set_need_osr_entry();
+          stub().set_is_exception_handler();
         }
       }
-      Compiler::set_frame( old_frame );
+      Compiler::set_frame(old_frame());
     }
   }
 }
@@ -2198,21 +2173,10 @@ void BytecodeCompileClosure::bytecode_epilog(JVM_SINGLE_ARG_TRAPS) {
 }
 
 void BytecodeCompileClosure::throw_null_pointer_exception(JVM_SINGLE_ARG_TRAPS) {
-#if ENABLE_INLINE
-  if (Compiler::is_inlining()) {
-    // Cannot handle abruptly terminated methods when inlining.
-    // Deferencing null is a rare case for real-world applications anyway,
-    // so we just abort current compilation discarding any generated code.
-    // The current method is marked as impossible to compile to prevent  
-    // inlining on the next compilation attempt for the caller
-    Compiler::abort_active_compilation(true JVM_THROW);
-  }
-#endif
-
-  NullCheckStub* error =
-    NullCheckStub::allocate_or_share(JVM_SINGLE_ARG_NO_CHECK);
-  if( error ) {
-    __ jmp( error );
+  NullCheckStub::Raw error = 
+      NullCheckStub::allocate_or_share(JVM_SINGLE_ARG_NO_CHECK);
+  if (error.not_null()) {
+    __ jmp(&error);
     terminate_compilation();
   }
 }
@@ -2253,47 +2217,43 @@ void BytecodeCompileClosure::init_static_array(JVM_SINGLE_ARG_TRAPS) {
 #endif //!ENABLE_CPU_VARIANT
 #undef __
 
-inline void
-BytecodeCompileClosure::set_default_next_bytecode_index(const jint bci) {
-  const Bytecodes::Code bc = bytecode_at(bci);
+void BytecodeCompileClosure::set_default_next_bytecode_index(Method* method,
+                                                             jint bci) {
+  Bytecodes::Code bc = method->bytecode_at(bci);
   if (Bytecodes::can_fall_through(bc)) {
-    set_next_bytecode_index( next_bci(bci) );
+    set_next_bytecode_index(bci + Bytecodes::length_for(method, bci));
   } else {
     terminate_compilation();
   }
 }
 
 bool BytecodeCompileClosure::compile(JVM_SINGLE_ARG_TRAPS) {
-  const int bci = Compiler::bci();
-  GUARANTEE( bci >= 0 && bci < method_size(),
+  GUARANTEE(Compiler::bci() >= 0 &&
+            Compiler::bci() < Compiler::current()->method()->code_size(),
             "Bytecode index must be within bounds");
-    code_generator()->ensure_compiled_method_space();
+  Method * const method = Compiler::current()->method();
+
+  code_generator()->ensure_compiled_method_space();
 
   // Set the next bytecode index to be the default one - this can be
   // overwritten during the compilation.
-  set_default_next_bytecode_index(bci);
+  set_default_next_bytecode_index(method, Compiler::bci());
 
-  const Bytecodes::Code code = bytecode_at(bci);
-  if( !code_eliminate_prologue(code) ) {
-    // Compile current bytecode
-    // Must use Compiler::bci() because bci could change
-    method()->iterate_bytecode(Compiler::bci(), this, code JVM_CHECK_(false));
-    code_eliminate_epilogue(code);
-
-    // Update current bytecode index
-    Compiler::set_bci(next_bytecode_index());
+  Bytecodes::Code code = method->bytecode_at(Compiler::bci());
+  bool can_be_eliminated = code_eliminate_prologue(code);
+  if (can_be_eliminated) {
+    return !is_compilation_done();
   }
+  // Compile the current bytecode.
+  method->iterate_bytecode(Compiler::bci(), this, code
+                                       JVM_CHECK_(false));
+
+  code_eliminate_epilogue(code);
+  // Update the current bytecode index.
+  Compiler::set_bci(next_bytecode_index());
 
   // Return whether or not the compilation should continue.
   return !is_compilation_done();
-}
-
-// If next bytecode can be read ahead, returns its index, otherwise -1
-int BytecodeCompileClosure::get_next_bci( void ) const {
-  const int nextbci = next_bci( bci() );
-  return nextbci < method_size() &&
-         Compiler::current()->entry_count_for(nextbci) == 1
-         ? nextbci : -1;
 }
 
 #if USE_DEBUG_PRINTING
@@ -2301,6 +2261,7 @@ void BytecodeCompileClosure::print_on(Stream *st) {
   st->print_cr("bci                    = %d", bci());
   st->print_cr("active_bci             = %d", _active_bci);
   st->print_cr("has_exception_handlers = %d", _has_exception_handlers);
+  st->print_cr("has_overflown_output   = %d", _has_overflown_output);
   st->print_cr("has_clinit             = %d", _has_clinit);
 }
 void BytecodeCompileClosure::p()  {
@@ -2321,6 +2282,8 @@ void BytecodeCompileClosure::record_passable_statue_of_osr_entry(int dest) {
 bool BytecodeCompileClosure::code_eliminate_prologue(Bytecodes::Code code) {
   // IMPL_NOTE: need to revisit for inlining
   if (!Compiler::is_inlining()) {
+    Method * method = Compiler::current()->method();
+
     jint bci_after_elimination = not_found;
     //can_decrease_stack mean the code will
     //consume the items of the operation stack
@@ -2331,13 +2294,13 @@ bool BytecodeCompileClosure::code_eliminate_prologue(Bytecodes::Code code) {
   
       GUARANTEE(bci_after_elimination != not_found, "cse match error")
       //next bci to be compiled, cse will skip some byte code here.
-      set_default_next_bytecode_index(bci_after_elimination);
+      set_default_next_bytecode_index(method, bci_after_elimination);
       Compiler::set_bci(next_bytecode_index());
       //skip the compilation of current bci
       return true;
     }
     
-    method()->wipe_out_dirty_recorded_snippet(Compiler::bci(), code);
+    method->wipe_out_dirty_recorded_snippet(Compiler::bci(), code);
   }
 
   //if we aborted in previous bci, we reset and start a new code snippet tracking.

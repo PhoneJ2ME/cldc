@@ -247,7 +247,9 @@ public:
 
  private:
   inline Actions merge_actions( const RawLocation* other ) const;
-  static inline CodeGenerator* code_generator( void );
+  static inline CodeGenerator* code_generator( void ) {
+    return jvm_fast_globals.compiler_code_generator;
+  }
 
   RawLocation *next_location(void) {
     return this + 1;
@@ -407,8 +409,11 @@ class Location: public StackObj {
 class VSFStream {
  public:
   VSFStream(VirtualStackFrame* vsf) :
-    _vsf(vsf), _index( 0 ),
-    _vsf_virtual_stack_pointer( vsf->virtual_stack_pointer() ) {}
+    _vsf(vsf->obj())
+  {
+    _index = 0;
+    _vsf_virtual_stack_pointer = vsf->virtual_stack_pointer();
+  }
 
   // Return current location index
   int index(void) const {
@@ -417,22 +422,22 @@ class VSFStream {
 
   // Have we reached the end of stream?
   bool eos(void) PRODUCT_CONST {
-    GUARANTEE(_vsf_virtual_stack_pointer == _vsf->virtual_stack_pointer(),
+    GUARANTEE(_vsf_virtual_stack_pointer == _vsf().virtual_stack_pointer(),
               "virtual_stack_pointer cannot change when VSFStream is in use");
     return index() > _vsf_virtual_stack_pointer;
   }
 
-  RawLocation* raw_location( void ) const {
-    return _vsf->raw_location_at(_index);
+  RawLocation *raw_location(void) {
+    return _vsf().raw_location_at(_index);
   }
 
   // The BasicType of the current index
-  BasicType type( void ) const {
+  BasicType type() {
    return raw_location()->type();
   }
 
   // Advance to next index
-  void next( void ) {
+  void next() {
     BasicType t = type();
     _index += (is_two_word(t)) ? 2 : 1;
   }
@@ -440,9 +445,10 @@ class VSFStream {
  private:
   // IMPL_NOTE: change the two ints to shorts for better performance on 16-bit
   // memory?
-  int                _index;
-  int                _vsf_virtual_stack_pointer;
-  VirtualStackFrame* _vsf;
+  int                     _index;
+  int                     _vsf_virtual_stack_pointer;
+  UsingFastOops           fast_oops;
+  VirtualStackFrame::Fast _vsf;
 };
 
 #endif // ENABLE_COMPILER

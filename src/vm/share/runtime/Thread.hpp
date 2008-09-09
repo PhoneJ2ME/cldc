@@ -143,14 +143,6 @@ class Thread: public Oop {
   static jint profiler_info_offset() {
     return FIELD_OFFSET(ThreadDesc, _profiler_info);
   }
-#if ENABLE_JNI
-  static jint jni_frame_offset() {
-    return FIELD_OFFSET(ThreadDesc, _jni_frame);
-  }
-  static jint local_references_offset() {
-    return FIELD_OFFSET(ThreadDesc, _local_references);
-  }
-#endif
 
   static const address lowest_stack_value;
 
@@ -350,7 +342,7 @@ class Thread: public Oop {
     obj_field_clear(global_next_offset());
   }
 
-  ReturnOop previous() const {
+  ReturnOop previous() {
     return obj_field(previous_offset());
   }
   void set_previous(Thread* value) {
@@ -360,7 +352,7 @@ class Thread: public Oop {
     obj_field_clear(previous_offset());
   }
 
-  ReturnOop next_waiting() const {
+  ReturnOop next_waiting() {
     return obj_field(next_waiting_offset());
   }
   void set_next_waiting(Thread* value) {
@@ -370,7 +362,7 @@ class Thread: public Oop {
     obj_field_clear(next_waiting_offset());
   }
 
-  ReturnOop wait_obj() const {
+  ReturnOop wait_obj() {
     return obj_field(wait_obj_offset());
   }
   void set_wait_obj(Oop* value) {
@@ -528,31 +520,6 @@ class Thread: public Oop {
   void set_profiler_info(OopDesc* value) {
     obj_field_put(profiler_info_offset(), value);
   }
-#endif
-
-#if ENABLE_JNI
-  ReturnOop jni_frame() const {
-    return obj_field(jni_frame_offset());
-  }
-
- protected:
-  void set_jni_frame(OopDesc* value) {
-    obj_field_put(jni_frame_offset(), value);
-  }
-
- public:
-  void push_jni_frame(JniFrame* frame);
-
-  ReturnOop pop_jni_frame();
-
-  ReturnOop local_references() const {
-    return obj_field(local_references_offset());
-  }
-
-  void set_local_references(OopDesc* value) {
-    obj_field_put(local_references_offset(), value);
-  }
-
 #endif
 
 #if ENABLE_CLDC_11

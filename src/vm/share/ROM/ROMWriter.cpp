@@ -209,13 +209,9 @@ void ROMWriter::start(JVM_SINGLE_ARG_TRAPS) {
   _gc_stackmap_size = Universe::gc_block_stackmap()->length();
 }
 
-void ROMWriter::record_class_loading_failure(Symbol *class_name,
-                                             Symbol *exception_class_name
-                                             JVM_TRAPS) {
-  ROMVector * const bad_classes = _singleton->names_of_bad_classes_vector();
-
-  bad_classes->add_element(class_name JVM_CHECK);
-  bad_classes->add_element(exception_class_name JVM_NO_CHECK_AT_BOTTOM);
+void ROMWriter::record_name_of_bad_class(Symbol *class_name JVM_TRAPS) {
+  _singleton->names_of_bad_classes_vector()->add_element(class_name 
+                                                      JVM_NO_CHECK_AT_BOTTOM);
 }
 
 // IMPL_NOTE: why do we use int array? byte array is good enough.
@@ -240,7 +236,8 @@ void ROMWriter::fixup_image(JVM_SINGLE_ARG_TRAPS) {
   // The mirror_list should not have any entries pointing to the
   // task_class_init_marker. We null out any of these entries.
   // They will get re-created correctly when the image is loaded
-  ObjArray::Raw list = Universe::mirror_list();
+  UsingFastOops fast_oops;
+  ObjArray::Fast list = Universe::mirror_list();
   for (i = 0; i < list().length(); i++) {
     TaskMirror::Raw tm = list().obj_at(i);
     GUARANTEE(!tm.is_null(), "null taskmirror in mirror list");
@@ -779,12 +776,13 @@ void ROMWriter::rehash_info_table() {
   if (info_table()->is_null()) {
     return;
   }
+  UsingFastOops fast_oops;
 
-  Oop::Raw o;
-  ROMizerHashEntry::Raw p; 
-  ROMizerHashEntry::Raw prev; 
-  ROMizerHashEntry::Raw curr; 
-  ROMizerHashEntry::Raw next;   
+  Oop::Fast o;
+  ROMizerHashEntry::Fast p; 
+  ROMizerHashEntry::Fast prev; 
+  ROMizerHashEntry::Fast curr; 
+  ROMizerHashEntry::Fast next;   
 
   int new_index, in_chain; 
 
@@ -2234,20 +2232,12 @@ void BlockTypeFinder::find_array_type(Oop *owner, Oop *object JVM_TRAPS) {
   }
 
 #if USE_BINARY_IMAGE_GENERATOR && (!defined(PRODUCT) || USE_LARGE_OBJECT_AREA)
-  // We skip no headers in Monet-debug mode, 
-  // so that we can do run-time type checking (based on object->_obj->_klass) without
+  // We don't skip any headers in Monet-debug modes, so that we can
+  // do run-time type checking (based on object->_obj->_klass) without
   // (a) having multiple passes in TEXT and (b) using a text_klass table
   // for each loaded binary image.
   my_skip_words = 0;
 #endif
-
-#if ENABLE_ROM_JAVA_DEBUGGER
-  // We skip no headers when debugging romized classes.
-  if (MakeROMDebuggable) {
-    my_skip_words = 0;
-  }
-#endif
-
 #if ENABLE_PREINITED_TASK_MIRRORS && USE_SOURCE_IMAGE_GENERATOR && ENABLE_ISOLATES         
   if (owner != NULL) { 
     ROMWriter::BlockType owner_type = writer()->block_type_of(owner JVM_CHECK); 

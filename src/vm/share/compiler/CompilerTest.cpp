@@ -267,7 +267,7 @@ ReturnOop CompilerTest::sort_methods(InstanceClass *klass JVM_TRAPS) {
   UsingFastOops fast_oops;
   ObjArray::Fast orig_methods = klass->methods();
   len = orig_methods().length();
-  ObjArray::Raw sorted_methods = Universe::new_obj_array(len JVM_CHECK_0);
+  ObjArray::Fast sorted_methods = Universe::new_obj_array(len JVM_CHECK_0);
 
   for (i=0; i<len; i++) {
     Method::Raw m = orig_methods().obj_at(i);
@@ -393,14 +393,13 @@ void CompilerTest::test_compile(Method *method JVM_TRAPS) {
 #ifndef PRODUCT
       method->print_name_on(tty);
 #else
-      {
-        InstanceClass::Raw ic = method->holder();
-        Symbol::Raw class_name = ic().name();
-        class_name().print_symbol_on(tty, true);
-        tty->print(".");
-        Symbol::Raw name = method->name();
-        name().print_symbol_on(tty);
-      }
+      UsingFastOops fast_oops;
+      InstanceClass::Fast ic = method->holder();
+      Symbol::Fast class_name = ic().name();
+      class_name().print_symbol_on(tty, true);
+      tty->print(".");
+      Symbol::Fast name = method->name();
+      name().print_symbol_on(tty);
 #endif
       tty->cr();
 
@@ -457,7 +456,6 @@ void CompilerTest::print_summary() {
   template(VSF_MERGE_SUITE)                                 
 
 void CompilerTest::run_test_cases() {
-#if ENABLE_VSF_MERGE_TEST
   const JvmPathChar * const config_file_name = 
     Arguments::compiler_test_config_file();
   if (config_file_name == NULL) {
@@ -538,7 +536,6 @@ void CompilerTest::run_test_cases() {
   }
 
   OsFile_close(config_file);
-#endif
 }
 
 int CompilerTest::read_line(OsFile_Handle file, char buffer[], size_t length) {

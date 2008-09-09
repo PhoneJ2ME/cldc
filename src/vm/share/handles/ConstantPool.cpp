@@ -58,7 +58,7 @@ ReturnOop ConstantPool::checked_symbol_at(int index JVM_TRAPS) {
 }
 
 jint ConstantPool::name_and_type_at(int index JVM_TRAPS) const {
-  int offset = offset_from_checked_index(index JVM_ZCHECK_0(offset));
+  int offset = offset_from_checked_index(index JVM_ZCHECK(offset));
   cp_check_0(ConstantTag::is_name_and_type(tag_value_at(index)));
   int result = int_field(offset);
   GUARANTEE(result != 0, "sanity for JVM_ZCHECK");
@@ -66,13 +66,13 @@ jint ConstantPool::name_and_type_at(int index JVM_TRAPS) const {
 }
 
 ReturnOop ConstantPool::unresolved_klass_at(int index JVM_TRAPS) const {
-  int offset = offset_from_checked_index(index JVM_ZCHECK_0(offset));
+  int offset = offset_from_checked_index(index JVM_ZCHECK(offset));
   cp_check_0(ConstantTag::is_unresolved_klass(tag_value_at(index)));
   return obj_field(offset);
 }
 
 ReturnOop ConstantPool::resolved_klass_at(int index JVM_TRAPS) const {
-  int offset = offset_from_checked_index(index JVM_ZCHECK_0(offset));
+  int offset = offset_from_checked_index(index JVM_ZCHECK(offset));
   cp_check_0(ConstantTag::is_resolved_klass(tag_value_at(index)));
   return Universe::class_from_id(int_field(offset));
 }
@@ -204,7 +204,7 @@ ReturnOop ConstantPool::resolve_type_symbol_at_offset(int offset JVM_TRAPS) {
 // A class name may be either a plain Symbol e.g., "java/lang/String"
 // or a TypeSymbol, e.g., "[[Ljava/lang/String;"
 ReturnOop ConstantPool::checked_class_name_at(int index JVM_TRAPS) {
-  int offset = offset_from_checked_index(index JVM_ZCHECK_0(offset));
+  int offset = offset_from_checked_index(index JVM_ZCHECK(offset));
   cp_check_0(ConstantTag::is_symbol(tag_value_at(index)));
   Oop::Raw result(obj_field(offset));
   if (result().is_symbol()) {
@@ -294,7 +294,7 @@ ReturnOop ConstantPool::name_of_klass_at(int index JVM_TRAPS) {
 }
 
 ReturnOop ConstantPool::klass_ref_at(int index JVM_TRAPS) {
-  jint class_index = klass_ref_index_at(index JVM_ZCHECK_0(class_index));
+  jint class_index = klass_ref_index_at(index JVM_ZCHECK(class_index));
   return klass_at(class_index JVM_NO_CHECK_AT_BOTTOM);
 }
 
@@ -466,17 +466,6 @@ ConstantPool::resolve_invoke_special_at(InstanceClass *sender_class,
                                  &method_name, &method_signature);
       Throw::no_such_method_error(JVM_SINGLE_ARG_THROW_0);
     }
-  } else { //see CR6539744
-    if (sender_class->is_super() && !sender_class->equals(static_receiver_class)) {
-      if (sender_class->is_subclass_of(&static_receiver_class)) {
-        InstanceClass::Raw super_class = sender_class->super();
-        m = super_class().lookup_method(&method_name, &method_signature);
-        if (m.is_null()) {
-          Throw::no_such_method_error(JVM_SINGLE_ARG_THROW_0);
-        }
-        static_receiver_class = m().holder();        
-      }      
-    }
   }
 
   return resolve_method_ref(index, &static_receiver_class, &m 
@@ -499,13 +488,13 @@ ConstantPool::resolve_invoke_static_at(InstanceClass *sender_class,
     method = lookup_method_at(sender_class, index, &method_name,
                               &method_signature, &receiver_class 
                               JVM_OZCHECK(method));
+    if (!method().is_static()) {
+      Throw::incompatible_class_change_error(method_changed JVM_THROW_0);
+    }
     resolved_static_method_at_put(index, &method);
   }
 
-  if (!method().is_static()) {
-    Throw::incompatible_class_change_error(method_changed JVM_THROW_0);
-  }
-
+  GUARANTEE(method().is_static(), "sanity");
   receiver_class = method().holder();
 
   if (!sender_class->is_preloaded() && receiver_class().is_hidden()) {
@@ -658,34 +647,29 @@ void ConstantPool::resolve_invoke_interface_at(InstanceClass *sender_class,
     }
     
     if( implementing_class_id >= 0) { //single implementing class
-      InstanceClass::Raw implement_cls = 
-        Universe::class_from_id(implementing_class_id);        
-      Method::Raw implementing_method = 
-        implement_cls().lookup_method(&method_name, &method_signature);  
-
-      // Note: the method can be omitted in the class that is declared to 
-      // implement this interface (tested by TCK)
-      if (implementing_method.not_null() && 
-          implementing_method().is_public() && 
-          !implementing_method().is_static()) {
-        resolved_static_method_at_put(index, &implementing_method);
-        return;
+      InstanceClass::Raw implement_cls = Universe::class_from_id(implementing_class_id);        
+      Method::Raw implementing_method = implement_cls().lookup_method(&method_name, 
+                                                   &method_signature);  
+      if (implementing_method.is_null()) {
+        SHOULD_NOT_REACH_HERE();//implementing class MUST have such method
+      } else {
+        if (implementing_method().is_public() && !implementing_method().is_static()) {
+          resolved_static_method_at_put(index, &implementing_method);
+          return;
+        }
       }
     } else if (direct_implementing_class_id >= 0) { //single direct implementing class
-      InstanceClass::Raw implement_cls = 
-        Universe::class_from_id(direct_implementing_class_id);        
-      Method::Raw implementing_method = 
-        implement_cls().lookup_method(&method_name, &method_signature);
-
-      // Note: the method can be omitted in the class that is declared to 
-      // implement this interface (tested by TCK)
-      if (implementing_method.not_null() &&
-          implementing_method().is_public() && 
-          !implementing_method().is_static()) {
-        resolve_method_ref(index, &implement_cls, 
-                           &implementing_method JVM_CHECK);
-        return;
-      }
+        InstanceClass::Raw implement_cls = Universe::class_from_id(direct_implementing_class_id);        
+        Method::Raw implementing_method = implement_cls().lookup_method(&method_name, 
+                                                   &method_signature);
+        if (implementing_method.is_null()) {
+          SHOULD_NOT_REACH_HERE();//implementing class MUST have such method
+        } else {
+          if (implementing_method().is_public() && !implementing_method().is_static()) {
+            resolve_method_ref(index, &implement_cls, &implementing_method JVM_CHECK);
+            return;
+          }
+        }
     }
 #endif  
     BasicType return_type = method_signature().return_type();
@@ -695,7 +679,7 @@ void ConstantPool::resolve_invoke_interface_at(InstanceClass *sender_class,
 }
 
 int ConstantPool::klass_ref_index_at(int index JVM_TRAPS) {
-  int offset = offset_from_checked_index(index JVM_ZCHECK_0(offset));
+  int offset = offset_from_checked_index(index JVM_ZCHECK(offset));
   jint ref_index = int_field(offset);
   jint class_index = extract_low_jushort_from_jint(ref_index);
   cp_check_0(check_klass_at(class_index));
@@ -704,7 +688,7 @@ int ConstantPool::klass_ref_index_at(int index JVM_TRAPS) {
 }
 
 int ConstantPool::name_ref_index_at(int index JVM_TRAPS) {
-  jint ref_index = name_and_type_at(index JVM_ZCHECK_0(ref_index));
+  jint ref_index = name_and_type_at(index JVM_ZCHECK(ref_index));
   jint name_index = extract_low_jushort_from_jint(ref_index);
   cp_check_0(is_within_bounds(name_index) &&
              ConstantTag::is_utf8(tag_value_at(name_index)));
@@ -713,7 +697,7 @@ int ConstantPool::name_ref_index_at(int index JVM_TRAPS) {
 }
 
 int ConstantPool::signature_ref_index_at(int index JVM_TRAPS)  {
-  jint ref_index = name_and_type_at(index JVM_ZCHECK_0(ref_index));
+  jint ref_index = name_and_type_at(index JVM_ZCHECK(ref_index));
   jint signature_index = extract_high_jushort_from_jint(ref_index);
   cp_check_0(is_within_bounds(signature_index) &&
              ConstantTag::is_utf8(tag_value_at(signature_index)));
@@ -1236,7 +1220,9 @@ void ConstantPool::check_quickened_field_access(int index,
       // optimization for this class. This allows to detect this failure at
       // run-time.
       if (GenerateROMImage) {
-        klass().set_is_non_optimizable();
+        AccessFlags access_flags = klass().access_flags();
+        access_flags.set_is_non_optimizable();
+        klass().set_access_flags(access_flags);
       }
     }
 
@@ -1249,7 +1235,9 @@ void ConstantPool::check_quickened_field_access(int index,
     // optimization for this class. This allows to detect this failure at
     // run-time.
     if (GenerateROMImage) {
-      klass().set_is_non_optimizable();
+      AccessFlags access_flags = klass().access_flags();
+      access_flags.set_is_non_optimizable();
+      klass().set_access_flags(access_flags);
     }
 
     Throw::illegal_access(ErrorOnFailure JVM_THROW);

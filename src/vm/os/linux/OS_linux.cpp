@@ -51,7 +51,10 @@
 #endif
 
 // several meta defines
-#define NEED_CLOCK_TICKS USE_HIGH_RESOLUTION_TIMER
+#if (ENABLE_PERFORMANCE_COUNTERS || ENABLE_PROFILER || ENABLE_WTK_PROFILER \
+     || ENABLE_TTY_TRACE)
+#define NEED_CLOCK_TICKS 1
+#endif
 
 
 #if defined(__i386) || defined(ARM_EXECUTABLE)
@@ -366,7 +369,7 @@ static void handle_other_signals(int sig) {
   // restored.
   DebugHandleMarker::restore();
 
-  const char *name;
+  char *name;
 
   switch (sig) {
   case SIGHUP:
@@ -417,13 +420,13 @@ static void print_siginfo(siginfo_t *si) {
   case SIGSEGV:
     name = "SIGSEGV";
     break;
-  default:                      // cannot happen
+  default:			// cannot happen
     name = "-unknown-";
     break;
   }
   jvm_fprintf(stderr,
-              "Fatal signal %s: errno=%d; code=%d; addr=%p\n",
-              name, si->si_errno, si->si_code, si->si_addr);
+	      "Fatal signal %s: errno=%d; code=%d; addr=%p\n",
+	      name, si->si_errno, si->si_code, si->si_addr);
 }
 
 static void print_ucontext(void* context) {
@@ -431,17 +434,17 @@ static void print_ucontext(void* context) {
   ucontext_t* uc = (ucontext_t*) context;
   jvm_fprintf(stderr, "UContext dump follows:\n");
   jvm_fprintf(stderr, "uc_flags=%x; ss_sp=%p; ss_size=%d, ss_flags=%x\n",
-              (unsigned int) uc->uc_flags,
-              uc->uc_stack.ss_sp, uc->uc_stack.ss_size, uc->uc_stack.ss_flags);
+	      (unsigned int) uc->uc_flags,
+	      uc->uc_stack.ss_sp, uc->uc_stack.ss_size, uc->uc_stack.ss_flags);
 
   mcontext_t *mc = &uc->uc_mcontext;
   int cnt = 4;
 
-#define PRINT_REG(r) do {                                               \
-      jvm_fprintf(stderr, "%7.7s=%08x%s", #r, mc->__gregs[_REG_##r],    \
-                  --cnt ? "    " : "\n");                               \
-      if (cnt == 0)                                                     \
-        cnt = 4;                                                        \
+#define PRINT_REG(r) do {						\
+      jvm_fprintf(stderr, "%7.7s=%08x%s", #r, mc->__gregs[_REG_##r],	\
+		  --cnt ? "    " : "\n");				\
+      if (cnt == 0)							\
+	cnt = 4;							\
   } while (0);
 
 #if defined(__arm__)
@@ -640,8 +643,8 @@ static void handle_segv_siginfo_npe(int sig, siginfo_t* info, void* ucpPtr) {
 
 #ifndef PRODUCT
   if (VerboseNullPointExceptionThrowing) {
-    TTY_TRACE(("Verbose exception information begin:\n"));      
-    TTY_TRACE(("Heap Status:"));        
+    TTY_TRACE(("Verbose exception information begin:\n"));	
+    TTY_TRACE(("Heap Status:"));	
     TTY_TRACE(("[0x%08x,",heap_low));
     TTY_TRACE(("0x%08x]\n",heap_high));
   }
@@ -651,7 +654,7 @@ static void handle_segv_siginfo_npe(int sig, siginfo_t* info, void* ucpPtr) {
     TTY_TRACE(("Memory access error\nPlease report the bug\n"));
   }
   
-  CompiledMethodDesc *cmd = ObjectHeap::method_contains_instruction_of((void *)pc);
+  CompiledMethodDesc *cmd = ObjectHeap::method_contain_instruction_of((void *)pc);
   
   if( cmd == NULL){
     TTY_TRACE(("Memory access error\nPlease report the bug\n"));
@@ -685,7 +688,7 @@ static void handle_segv_siginfo_npe(int sig, siginfo_t* info, void* ucpPtr) {
     if (stream.is_npe_item()) {
 #ifndef  PRODUCT
       if (VerboseNullPointExceptionThrowing) {
-        TTY_TRACE(("  fail at [%d] should jump to", stream.current(1)));                
+        TTY_TRACE(("  fail at [%d] should jump to", stream.current(1)));	  	
         TTY_TRACE(("[%d]\n", stream.code_offset()));
 
       }
@@ -714,7 +717,7 @@ static void handle_segv_siginfo_npe(int sig, siginfo_t* info, void* ucpPtr) {
     if (stream.is_pre_load_item()) {
 #ifndef  PRODUCT
       if (VerboseNullPointExceptionThrowing) {
-        TTY_TRACE((" if  failed at [%d] should jump to", stream.current(1)));           
+        TTY_TRACE((" if  failed at [%d] should jump to", stream.current(1)));	  	
         TTY_TRACE(("[%d]\t", stream.code_offset()));
       }
 #endif
@@ -743,8 +746,8 @@ static void handle_segv_siginfo_npe(int sig, siginfo_t* info, void* ucpPtr) {
     }
 #endif
   if(VerboseNullPointExceptionThrowing){
-    TTY_TRACE(("Verbose exception information end\n")); 
-  }     
+    TTY_TRACE(("Verbose exception information end\n"));	
+  }	
     return;
   }
 
@@ -752,14 +755,14 @@ static void handle_segv_siginfo_npe(int sig, siginfo_t* info, void* ucpPtr) {
   if (!is_npe) {
     if (default_array_check_stub != not_found ) {
       default_array_check_stub = (int)default_array_check_stub + code_begin;
-      ucp->uc_mcontext.arm_pc = (unsigned long) default_array_check_stub ;      
+      ucp->uc_mcontext.arm_pc = (unsigned long) default_array_check_stub ;	
       return ;
     } else {
       ucp->uc_mcontext.arm_pc = 
         (unsigned long)gp_compiler_throw_ArrayIndexOutOfBoundsException_ptr; 
       ucp->uc_mcontext.arm_r0 = raw_method(). max_locals();
-      if(VerboseNullPointExceptionThrowing){      
-        TTY_TRACE(("Verbose exception information end\n"));               
+      if(VerboseNullPointExceptionThrowing){	  
+        TTY_TRACE(("Verbose exception information end\n"));		  
       }
       return ;
     }
@@ -775,7 +778,7 @@ static void handle_segv_siginfo_npe(int sig, siginfo_t* info, void* ucpPtr) {
     }
 #endif
     if(VerboseNullPointExceptionThrowing){
-      TTY_TRACE(("Verbose exception information end\n"));       
+      TTY_TRACE(("Verbose exception information end\n"));	
     }
     return;
   }
@@ -788,7 +791,7 @@ static void handle_segv_siginfo_npe(int sig, siginfo_t* info, void* ucpPtr) {
   }
   
   if(VerboseNullPointExceptionThrowing){
-    TTY_TRACE(("Verbose exception information end\n")); 
+    TTY_TRACE(("Verbose exception information end\n"));	
   }
   return;
 
@@ -844,7 +847,7 @@ static inline jlong get_clock_ticks(void)
   asm volatile(
                "rdtsc \n\t"
                : "=a" (low_time),
-                 "=d" (high_time));
+	         "=d" (high_time));
   return (jlong)((unsigned long long)high_time << 32) | (low_time);
 }
 
@@ -914,7 +917,7 @@ static void ignoreit() {}
 
 extern "C" void jvm_set_vfp_fast_mode();
 void Os::initialize() {
-#if USE_ARM_VFP_RUN_FAST_MODE
+#if ENABLE_ARM_VFP && !CROSS_GENERATOR
   if (RunFastMode) {
     // Linux by default does not use RunFast mode. This option makes
     // it easy to test the VM's compatibility with RunFast mode.

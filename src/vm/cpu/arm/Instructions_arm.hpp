@@ -53,7 +53,7 @@ class Instruction: public StackObj {
 class MemAccess: public Instruction {
  public:
   MemAccess(address addr) : Instruction(addr) {
-    GUARANTEE(CodeGenerator::current()->has_overflown_compiled_method()
+    GUARANTEE(Compiler::current()->code_generator()->has_overflown_compiled_method()
               || (encoding() & 0x0e000000) == 0x04000000, "must be load/store")
   }
 
@@ -109,7 +109,8 @@ class VFPMemAccess: public Instruction {
 class Branch: public Instruction {
  public:
   Branch(address addr) : Instruction(addr) {
-    GUARANTEE( kind() == 5, "must be branch instruction");
+    GUARANTEE(Compiler::current()->code_generator()->has_overflown_compiled_method()
+              || kind() == 5, "must be branch instruction");
   }
 
   int imm24() const {

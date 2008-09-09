@@ -948,7 +948,7 @@ void SourceMacros::interpreter_call_native(const Register native,
   comment("Save bytecode pointer");
   movl(Address(ebp, Constant(JavaFrame::bcp_store_offset())), esi);
 
-  if (TraceNativeCalls) {
+  if (GenerateDebugAssembly) {
     trace_native_call(native);
   }
 

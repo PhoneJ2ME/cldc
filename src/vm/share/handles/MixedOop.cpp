@@ -75,15 +75,16 @@ void MixedOop::iterate(OopVisitor* visitor) {
   case MixedOopDesc::Type_Thread:
     ((Thread*)this)->iterate(visitor);
     break;
-#if 0 && ENABLE_COMPILER 
+#if ENABLE_COMPILER 
   case MixedOopDesc::Type_CompilationQueueElement:
     ((CompilationQueueElement*)this)->iterate(visitor);
     break;    
-#if 0 && USE_COMPILER_LITERALS_MAP
+#if USE_COMPILER_LITERALS_MAP && ENABLE_THUMB_COMPILER
+  // IMPL_NOTE: support SH and ARM compiler as well.
   case MixedOopDesc::Type_LiteralPoolElement:
-    ((LiteralPoolElement*)this)->iterate(visitor);
+    ((BinaryAssembler::LiteralPoolElement*)this)->iterate(visitor);
     break;
-#endif  // USE_COMPILER_LITERALS_MAP
+#endif  // USE_COMPILER_LITERALS_MAP && ENABLE_THUMB_COMPILER
 #endif  // ENABLE_COMPILER
   // IMPL_NOTE: fill in the other cases!
   }

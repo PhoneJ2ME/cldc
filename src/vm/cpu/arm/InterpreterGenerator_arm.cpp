@@ -298,7 +298,7 @@ bind(mirror_loaded);
   ldr(tos_val, imm_index(tmp1, JavaClass::java_mirror_offset()),   ne);
 #endif
 
-  comment("object to lock is in %s", register_name(tos_val));
+  comment("object to lock is in %s", reg_name(tos_val));
   call_from_interpreter("shared_lock_synchronized_method");
   restore_interpreter_state();
   b(synchronization_done);
@@ -591,7 +591,7 @@ InterpreterGenerator::generate_quick_native_method_entry(BasicType return_type)
   set_jvm_in_quick_native_method(tmp1);
 
 #if ENABLE_TTY_TRACE
-  if (TraceNativeCalls) {
+  if (GenerateDebugAssembly) {
     Label skip;
 
     comment("Trace native calls");

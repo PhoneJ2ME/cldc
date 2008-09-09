@@ -26,7 +26,7 @@
 
 //   Contains definitions used by the Verifier classes.
 
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
+#ifndef PRODUCT
 #define VFY_ERROR(code)   VerifierFrame::verifier_error(code JVM_THROW)
 #define VFY_ERROR_0(code) VerifierFrame::verifier_error(code JVM_THROW_0)
 #else

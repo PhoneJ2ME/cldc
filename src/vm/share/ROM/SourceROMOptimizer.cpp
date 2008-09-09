@@ -101,9 +101,6 @@ public:
   }
 
   virtual void handle_matching_method(Method *m JVM_TRAPS) {
-    if (m->is_quick_native()) {
-      return;
-    }
     if (!m->is_native()) {
       return;
     }
@@ -166,7 +163,6 @@ void ROMOptimizer::read_config_file(JVM_SINGLE_ARG_TRAPS) {
   ROMVector disable_compilation_log;
   ROMVector quick_natives_log;
   ROMVector precompile_log;
-  ROMVector jni_natives_log;
   ROMVector kvm_natives_log;
   ROMVector kvm_native_methods_vector;
 
@@ -175,7 +171,6 @@ void ROMOptimizer::read_config_file(JVM_SINGLE_ARG_TRAPS) {
   quick_natives_log.initialize(JVM_SINGLE_ARG_CHECK);
   precompile_log.initialize(JVM_SINGLE_ARG_CHECK);
   kvm_natives_log.initialize(JVM_SINGLE_ARG_CHECK);
-  jni_natives_log.initialize(JVM_SINGLE_ARG_CHECK);
 #endif
 
 #if ENABLE_KVM_COMPAT
@@ -184,9 +179,6 @@ void ROMOptimizer::read_config_file(JVM_SINGLE_ARG_TRAPS) {
 
   _disable_compilation_log   = &disable_compilation_log;
   _quick_natives_log         = &quick_natives_log;
-
-  _jni_natives_log           = &jni_natives_log;
-
   _kvm_natives_log           = &kvm_natives_log;
   _kvm_native_methods_vector = &kvm_native_methods_vector;
 
@@ -203,10 +195,7 @@ void ROMOptimizer::read_config_file(JVM_SINGLE_ARG_TRAPS) {
   write_disable_compilation_log();
   write_quick_natives_log();
   write_kvm_natives_log();
-  write_jni_natives_log();
 #endif
-
-  update_jni_natives_table(JVM_SINGLE_ARG_CHECK);
 
 #if ENABLE_KVM_COMPAT
   update_kvm_natives_table(JVM_SINGLE_ARG_CHECK);
@@ -470,9 +459,6 @@ void ROMOptimizer::process_config_line(char * s JVM_TRAPS) {
 #if USE_AOT_COMPILATION
       enable_precompile(value JVM_CHECK);
 #endif
-    }
-    else if (jvm_strcmp(name, "JniNative") == 0) {
-      enable_jni_natives(value JVM_CHECK);
     }
 
     else {
@@ -1025,64 +1011,21 @@ void ROMOptimizer::write_kvm_natives_log() {
 #endif
 }
 
-ReturnOop ROMOptimizer::build_method_table(const ROMVector * methods
-                                           JVM_TRAPS) {
-  int size = methods->size();
-  ObjArray::Raw table = Universe::new_obj_array(size * 3 JVM_CHECK_(0));
+void ROMOptimizer::update_kvm_natives_table(JVM_SINGLE_ARG_TRAPS) {
+  int size = _kvm_natives_log->size();
+  *kvm_native_methods_table() = Universe::new_obj_array(size * 3 JVM_CHECK);
 
   for (int i=0; i<size; i++) {
-    Method::Raw method = methods->element_at(i);
+    Method::Raw method = _kvm_natives_log->element_at(i);
     InstanceClass::Raw klass = method().holder();
     Symbol::Raw class_name = klass().name();
     Symbol::Raw method_name = method().name();
     Symbol::Raw method_sig = method().signature();
 
-    table().obj_at_put(i * 3 + 0, &class_name);
-    table().obj_at_put(i * 3 + 1, &method_name);
-    table().obj_at_put(i * 3 + 2, &method_sig);
+    kvm_native_methods_table()->obj_at_put(i * 3 + 0, &class_name);
+    kvm_native_methods_table()->obj_at_put(i * 3 + 1, &method_name);
+    kvm_native_methods_table()->obj_at_put(i * 3 + 2, &method_sig);
   }
-
-  return table;
-}
-
-class JniNativesMatcher : public JavaClassPatternMatcher {
-  ROMVector *_log_vector;
-public:
-  JniNativesMatcher(ROMVector *log_vector) {
-    _log_vector = log_vector;
-  }
-
-  virtual void handle_matching_method(Method *m JVM_TRAPS) {
-    if (!m->is_native()) {
-      return;
-    }
-
-    _log_vector->add_element(m JVM_NO_CHECK_AT_BOTTOM);
-  }
-};
-
-
-void ROMOptimizer::enable_jni_natives(char * pattern JVM_TRAPS) {
-  JniNativesMatcher matcher(_jni_natives_log);
-  matcher.run(pattern JVM_CHECK);
-}
-
-void ROMOptimizer::write_jni_natives_log() {
-#if USE_ROM_LOGGING
-  int size = _jni_natives_log->size();
-  _jni_natives_log->sort();
-
-  _log_stream->cr();
-  _log_stream->print_cr("[Jni native methods (%d)]", size);
-  _log_stream->cr();
-
-  for (int i=0; i<size; i++) {
-    Method::Raw method = _jni_natives_log->element_at(i);
-    _log_stream->print("jni native: ");
-    method().print_name_on(_log_stream);
-    _log_stream->cr();
-  }
-#endif
 }
 
 // In MIDP there are a large number of non-public static final int fields.

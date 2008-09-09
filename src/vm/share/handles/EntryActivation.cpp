@@ -29,7 +29,7 @@
 
 HANDLE_CHECK(EntryActivation, is_entry_activation())
 
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
+#ifndef PRODUCT
 
 void EntryActivation::print_value_on(Stream* st) {
 #if USE_DEBUG_PRINTING
@@ -52,7 +52,7 @@ void EntryActivation::iterate(OopVisitor* visitor) {
     NamedField id("next", true);
     visitor->do_oop(&id, next_offset(), true);
   }
-#if USE_REFLECTION || ENABLE_JAVA_DEBUGGER || ENABLE_JNI
+#if ENABLE_REFLECTION
   { 
     NamedField id("return_point", true);
     id.set_hex_output(true);
@@ -130,7 +130,7 @@ void EntryActivation::iterate_oopmaps(oopmaps_doer do_map, void* param) {
   OOPMAP_ENTRY_4(do_map, param, T_INT,    length);
   OOPMAP_ENTRY_4(do_map, param, T_OBJECT, method);
   OOPMAP_ENTRY_4(do_map, param, T_OBJECT, next);
-#if USE_REFLECTION || ENABLE_JAVA_DEBUGGER || ENABLE_JNI
+#if ENABLE_REFLECTION
   OOPMAP_ENTRY_4(do_map, param, T_INT,    return_point);
 #endif
 #endif

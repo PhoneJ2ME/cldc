@@ -1,4 +1,6 @@
 /*
+ *   
+ *
  * Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
@@ -26,29 +28,6 @@
 #include "incls/_BinaryAssembler_i386.cpp.incl"
 
 #if ENABLE_COMPILER
-
-inline FPURegisterMap& BinaryAssembler::fpu_register_map( void ) {
-  return Compiler::frame()->fpu_register_map();
-}
-
-inline jint BinaryAssembler::long_at(const int position) const {
-  return BinaryAssemblerCommon::int_at(position);
-}
-inline void BinaryAssembler::word_at_put(const int position,
-                                         const jshort value) const {
-  BinaryAssemblerCommon::short_at_put(position, value);
-}
-inline void BinaryAssembler::long_at_put(const int position,
-                                         const jint value) const {
-  BinaryAssemblerCommon::int_at_put(position, value);
-}
-
-bool BinaryAssembler::is_signed_byte(const int data) {
-  return -0x80 <= data && data < 0x80;
-}
-bool BinaryAssembler::is_unsigned_byte(const int data) {
-  return 0 <= data && data <= 0xff;
-}
 
 class DisassemblerInfo {
 private:
@@ -89,6 +68,24 @@ DisassemblerInfo::~DisassemblerInfo() {
 DisassemblerInfo* DisassemblerInfo::_current = NULL;
 #endif
 
+BinaryAssembler::BinaryAssembler(CompilerState* compiler_state, 
+                                 CompiledMethod* compiled_method) 
+  : _relocation(compiler_state, compiled_method)
+{
+  _compiled_method = compiled_method;
+  _code_offset     = compiler_state->code_size();
+  _relocation.set_assembler(this);
+}
+
+void BinaryAssembler::save_state(CompilerState *compiler_state) {
+  compiler_state->set_code_size(_code_offset);
+  _relocation.save_state(compiler_state);
+}
+
+void BinaryAssembler::signal_output_overflow() {
+  Compiler::current()->closure()->signal_output_overflow();
+}
+
 void BinaryAssembler::generic_binary_1(Register dst, Register src,
                                        generic_binary_op_1 op) { 
   emit_arith(0x03 + op * 8, 0xC0, dst, src);
@@ -122,7 +119,15 @@ void BinaryAssembler::movl(Register dst, const Oop* oop) {
   DisassemblerInfo print_me(this);
   emit_byte(0xB8 | dst);
   // write relocation information for the oop
-  emit_oop( oop->obj() );
+  if (ObjectHeap::contains_moveable(oop->obj())) {
+    // Do need to emit relocation info for ROM objects
+    _relocation.emit_oop(_code_offset);
+  } else { 
+#ifndef PRODUCT
+    // Let the disassembler know that this is an oop
+    _relocation.emit(Relocation::rom_oop_type, _code_offset);
+#endif
+  }
   emit_long((int) oop->obj());
 }
 
@@ -143,7 +148,15 @@ void BinaryAssembler::movl(const Address& dst, const Oop* oop) {
   DisassemblerInfo print_me(this);
   emit_byte(0xC7);
   emit_operand(eax, dst);
-  emit_oop(oop->obj());
+  if (ObjectHeap::contains_moveable(oop->obj())) {
+    // Do need to emit relocation info for ROM objects
+    _relocation.emit_oop(_code_offset);
+  } else { 
+#ifndef PRODUCT
+    // Let the disassembler know that this is an oop
+    _relocation.emit(Relocation::rom_oop_type, _code_offset);
+#endif
+  }
   emit_long((int) oop->obj());
 }
 
@@ -534,7 +547,15 @@ void BinaryAssembler::pushl(int imm32) {
 void BinaryAssembler::pushl(Oop* oop) {
   DisassemblerInfo print_me(this);
   emit_byte(0x68);
-  emit_oop(oop->obj());
+  if (ObjectHeap::contains_moveable(oop->obj())) {
+    // Do need to emit relocation info for ROM objects
+    _relocation.emit_oop(_code_offset);
+  } else { 
+#ifndef PRODUCT
+    // Let the disassembler know that this is an oop
+    _relocation.emit(Relocation::rom_oop_type, _code_offset);
+#endif
+  }
   emit_long((int) oop->obj());  
 }
 
@@ -788,219 +809,257 @@ void BinaryAssembler::call_jmp(address entry, int opcode) {
   emit_byte(opcode);
   int offs = (int) entry - 
           (_code_offset + sizeof(int) + (int) compiled_method()->entry());
-  emit_relocation(Relocation::compiler_stub_type);
+  _relocation.emit(Relocation::compiler_stub_type, _code_offset);
   emit_long(offs);
 }
 
 // Floating-point operations.
 void BinaryAssembler::fld(Register dst, Register src) {
+  UsingFastOops FastOops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map();
-  if( fpu_map.is_on_stack(dst) ) {
+  FPURegisterMap::Fast fpu_map = 
+      Compiler::current()->frame()->fpu_register_map();
+  if (fpu_map().is_on_stack(dst)) {
     fpop(dst);
   }
 
-  emit_farith(0xD9, 0xC0, fpu_map.index_for(src));
-  fpu_map.push(dst);
+  emit_farith(0xD9, 0xC0, fpu_map().index_for(src));
+  fpu_map().push(dst);
 }
 
 void BinaryAssembler::fstp(Register dst, Register src) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map();
-  GUARANTEE(fpu_map.is_top_of_stack(src), 
+  FPURegisterMap::Fast fpu_map = 
+      Compiler::current()->frame()->fpu_register_map();
+  GUARANTEE(fpu_map().is_top_of_stack(src), 
             "Source register must be on top of FPU stack");
-  GUARANTEE(!fpu_map.is_top_of_stack(dst), 
+  GUARANTEE(!fpu_map().is_top_of_stack(dst), 
             "Destination register must not be on top of FPU stack");
-  emit_farith(0xDD, 0xD8, fpu_map.index_for(src));
-  fpu_map.pop(src);
+  emit_farith(0xDD, 0xD8, fpu_map().index_for(src));
+  fpu_map().pop(src);
 }
 
 void BinaryAssembler::fld1(Register dst) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  if( fpu_map.is_on_stack(dst) ) {
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  if (fpu_map().is_on_stack(dst)) {
     fpop(dst);
   }
 
   emit_byte(0xD9);
   emit_byte(0xE8);
-  fpu_map.push(dst);
+  fpu_map().push(dst);
 }
 
 void BinaryAssembler::fldz(Register dst) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  if( fpu_map.is_on_stack(dst)) {
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  if (fpu_map().is_on_stack(dst)) {
     fpop(dst);
   }
 
   emit_byte(0xD9);
   emit_byte(0xEE);
-  fpu_map.push(dst);
+  fpu_map().push(dst);
 }
 
 void BinaryAssembler::fld_s(Register dst, const Address& adr) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  if( fpu_map.is_on_stack(dst) ) {
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  if (fpu_map().is_on_stack(dst)) {
     fpop(dst);
   }
 
   emit_byte(0xD9);
   emit_operand(eax, adr);
-  fpu_map.push(dst);
+  fpu_map().push(dst);
 }
 
 void BinaryAssembler::fld_d(Register dst, const Address& adr) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  if( fpu_map.is_on_stack(dst) ) {
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  if (fpu_map().is_on_stack(dst)) {
     fpop(dst);
   }
 
   emit_byte(0xDD);
   emit_operand(eax, adr);
-  fpu_map.push(dst);
+  fpu_map().push(dst);
 }
 
 void BinaryAssembler::fstp_s(const Address& adr, Register src) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  GUARANTEE( fpu_map.is_top_of_stack(src),
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  GUARANTEE(fpu_map().is_top_of_stack(src),
             "Source register must be on top of FPU stack");
   emit_byte(0xD9);
   emit_operand(ebx, adr);
-  fpu_map.pop(src);
+  fpu_map().pop(src);
 }
 
 void BinaryAssembler::fstp_d(const Address& adr, Register src) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  GUARANTEE(fpu_map.is_top_of_stack(src), 
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  GUARANTEE(fpu_map().is_top_of_stack(src), 
             "Source register must be on top of FPU stack");
   emit_byte(0xDD);
   emit_operand(ebx, adr);
-  fpu_map.pop(src);
+  fpu_map().pop(src);
 }
 
 void BinaryAssembler::fild_s(Register dst, const Address& adr) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  if( fpu_map.is_on_stack(dst) ) {
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  if (fpu_map().is_on_stack(dst)) {
     fpop(dst);
   }
 
   emit_byte(0xDB);
   emit_operand(eax, adr);
-  fpu_map.push(dst);
+  fpu_map().push(dst);
 }
 
 void BinaryAssembler::fild_d(Register dst, const Address& adr) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  if( fpu_map.is_on_stack(dst) ) {
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  if (fpu_map().is_on_stack(dst)) {
     fpop(dst);
   }
 
   emit_byte(0xDF);
   emit_operand(ebp, adr);
-  fpu_map.push(dst);
+  fpu_map().push(dst);
 }
 
 void BinaryAssembler::fistp_s(const Address& adr, Register src) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  GUARANTEE( fpu_map.is_top_of_stack(src), 
-             "Source register must be on top of FPU stack");
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  GUARANTEE(fpu_map().is_top_of_stack(src), 
+            "Source register must be on top of FPU stack");
   emit_byte(0xDB);
   emit_operand(ebx, adr);
-  fpu_map.pop(src);
+  fpu_map().pop(src);
 }
 
 void BinaryAssembler::fistp_d(const Address& adr, Register src) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  GUARANTEE( fpu_map.is_top_of_stack( src ), 
-             "Source register must be on top of FPU stack");
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  GUARANTEE(fpu_map().is_top_of_stack(src), 
+            "Source register must be on top of FPU stack");
   emit_byte(0xDF);
   emit_operand(edi, adr);
-  fpu_map.pop(src);
+  fpu_map().pop(src);
 }
 
 void BinaryAssembler::faddp(Register dst, Register src) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this); 
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  GUARANTEE( fpu_map.is_top_of_stack(src), 
-             "Source register must be on top of FPU stack");
-  GUARANTEE(!fpu_map.is_top_of_stack(dst), 
-             "Destination register must not be on top of FPU stack");
-  emit_farith(0xDE, 0xC0, fpu_map.index_for(dst));
-  fpu_map.pop(src);
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  GUARANTEE(fpu_map().is_top_of_stack(src), 
+            "Source register must be on top of FPU stack");
+  GUARANTEE(!fpu_map().is_top_of_stack(dst), 
+            "Destination register must not be on top of FPU stack");
+  emit_farith(0xDE, 0xC0, fpu_map().index_for(dst));
+  fpu_map().pop(src);
 }
 
 void BinaryAssembler::fsubp(Register dst, Register src) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  GUARANTEE( fpu_map.is_top_of_stack(src), 
-             "Source register must be on top of FPU stack");
-  GUARANTEE(!fpu_map.is_top_of_stack(dst),
-             "Destination register must not be on top of FPU stack");
-  emit_farith(0xDE, 0xE8, fpu_map.index_for(dst));
-  fpu_map.pop(src);
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  GUARANTEE(fpu_map().is_top_of_stack(src), 
+            "Source register must be on top of FPU stack");
+  GUARANTEE(!fpu_map().is_top_of_stack(dst),
+            "Destination register must not be on top of FPU stack");
+  emit_farith(0xDE, 0xE8, fpu_map().index_for(dst));
+  fpu_map().pop(src);
 }
 
 void BinaryAssembler::fsubrp(Register dst, Register src) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  GUARANTEE( fpu_map.is_top_of_stack(src), 
-             "Source register must be on top of FPU stack");
-  GUARANTEE( !fpu_map.is_top_of_stack(dst),
-             "Destination register must not be on top of FPU stack");
-  emit_farith(0xDE, 0xE0, fpu_map.index_for(dst));
-  fpu_map.pop(src);
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  GUARANTEE(fpu_map().is_top_of_stack(src), 
+            "Source register must be on top of FPU stack");
+  GUARANTEE(!fpu_map().is_top_of_stack(dst),
+            "Destination register must not be on top of FPU stack");
+  emit_farith(0xDE, 0xE0, fpu_map().index_for(dst));
+  fpu_map().pop(src);
 }
 
 void BinaryAssembler::fmulp(Register dst, Register src) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  GUARANTEE( fpu_map.is_top_of_stack(src), 
-             "Source register must be on top of FPU stack");
-  GUARANTEE( !fpu_map.is_top_of_stack(dst),
-             "Destination register must not be on top of FPU stack");
-  emit_farith(0xDE, 0xC8, fpu_map.index_for(dst));
-  fpu_map.pop(src);
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  GUARANTEE(fpu_map().is_top_of_stack(src), 
+            "Source register must be on top of FPU stack");
+  GUARANTEE(!fpu_map().is_top_of_stack(dst),
+            "Destination register must not be on top of FPU stack");
+  emit_farith(0xDE, 0xC8, fpu_map().index_for(dst));
+  fpu_map().pop(src);
 }
 
 void BinaryAssembler::fdivp(Register dst, Register src) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  GUARANTEE( fpu_map.is_top_of_stack(src), 
-             "Source register must be on top of FPU stack" );
-  GUARANTEE( !fpu_map.is_top_of_stack(dst),
-             "Destination register must not be on top of FPU stack");
-  emit_farith(0xDE, 0xF8, fpu_map.index_for(dst));
-  fpu_map.pop(src);
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  GUARANTEE(fpu_map().is_top_of_stack(src), 
+            "Source register must be on top of FPU stack");
+  GUARANTEE(!fpu_map().is_top_of_stack(dst),
+            "Destination register must not be on top of FPU stack");
+  emit_farith(0xDE, 0xF8, fpu_map().index_for(dst));
+  fpu_map().pop(src);
 }
 
 void BinaryAssembler::fdivrp(Register dst, Register src) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  GUARANTEE( fpu_map.is_top_of_stack(src), 
-             "Source register must be on top of FPU stack" );
-  GUARANTEE(!fpu_map.is_top_of_stack(dst),
-             "Destination register must not be on top of FPU stack");
-  emit_farith( 0xDE, 0xF0, fpu_map.index_for(dst) );
-  fpu_map.pop(src);
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  GUARANTEE(fpu_map().is_top_of_stack(src), 
+            "Source register must be on top of FPU stack");
+  GUARANTEE(!fpu_map().is_top_of_stack(dst),
+            "Destination register must not be on top of FPU stack");
+  emit_farith(0xDE, 0xF0, fpu_map().index_for(dst));
+  fpu_map().pop(src);
 }
 
 void BinaryAssembler::fremp(Register src, Register dst) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  bool must_save_eax = Compiler::frame()->is_mapping_something(eax);
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  bool must_save_eax = Compiler::current()->frame()->is_mapping_something(eax);
 
-  GUARANTEE(fpu_map.is_top_of_stack(src),
+  GUARANTEE(fpu_map().is_top_of_stack(src),
             "Destination register must be on top of FPU stack");
-  GUARANTEE(fpu_map.index_for(dst) == 1, 
+  GUARANTEE(fpu_map().index_for(dst) == 1, 
   "Source register must be directly below top of FPU stack");
 
   if (must_save_eax) pushl(eax);
@@ -1022,58 +1081,70 @@ void BinaryAssembler::fprem() {
 }
 
 void BinaryAssembler::fchs(Register dst) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  const FPURegisterMap& fpu_map = fpu_register_map(); 
-  GUARANTEE( fpu_map.is_top_of_stack(dst),
-             "Destination register must be on top of FPU stack");
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  GUARANTEE(fpu_map().is_top_of_stack(dst),
+            "Destination register must be on top of FPU stack");
   emit_byte(0xD9);
   emit_byte(0xE0);
 }
 
 void BinaryAssembler::fabs(Register dst) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  const FPURegisterMap& fpu_map = fpu_register_map(); 
-  GUARANTEE( fpu_map.is_top_of_stack(dst),
-             "Destination register must be on top of FPU stack");
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  GUARANTEE(fpu_map().is_top_of_stack(dst),
+            "Destination register must be on top of FPU stack");
   emit_byte(0xD9);
   emit_byte(0xE1);
 }
 
 void BinaryAssembler::fxch(Register dst) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  GUARANTEE(!fpu_map.is_top_of_stack(dst),
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  GUARANTEE(!fpu_map().is_top_of_stack(dst),
             "Destination register must not be on top of FPU stack");
-  emit_farith(0xD9, 0xC8, fpu_map.swap_with_top(dst));
+  emit_farith(0xD9, 0xC8, fpu_map().swap_with_top(dst));
 }
 
 void BinaryAssembler::fpop(Register dst) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  if( !fpu_map.is_top_of_stack(dst) ) {
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  if (!fpu_map().is_top_of_stack(dst)) {
     fxch(dst);
   }
   ffree(dst);
   emit_byte(0xD9); // fincstp
   emit_byte(0xF7);
-  fpu_map.pop(dst);
+  fpu_map().pop(dst);
 }
 
 void BinaryAssembler::ffree(Register dst) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  const FPURegisterMap& fpu_map = fpu_register_map(); 
-  emit_farith( 0xDD, 0xC0, fpu_map.index_for(dst) );
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  emit_farith(0xDD, 0xC0, fpu_map().index_for(dst));
 }
 
 void BinaryAssembler::fucomip(Register dst, Register src) {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
-  FPURegisterMap& fpu_map = fpu_register_map(); 
-  GUARANTEE( fpu_map.is_top_of_stack(src), 
-             "Source register must be on top of FPU stack");
-  GUARANTEE( !fpu_map.is_top_of_stack(dst),
-             "Destination register must not be on top of FPU stack");
-  emit_farith( 0xDF, 0xE8, fpu_map.index_for( dst ) );
-  fpu_map.pop(src);
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
+  GUARANTEE(fpu_map().is_top_of_stack(src), 
+            "Source register must be on top of FPU stack");
+  GUARANTEE(!fpu_map().is_top_of_stack(dst),
+            "Destination register must not be on top of FPU stack");
+  emit_farith(0xDF, 0xE8, fpu_map().index_for(dst));
+  fpu_map().pop(src);
 }
 
 void BinaryAssembler::fwait() {
@@ -1083,11 +1154,14 @@ void BinaryAssembler::fwait() {
 }
 
 void BinaryAssembler::finit() {
+  UsingFastOops fast_oops;
   DisassemblerInfo print_me(this);
+  FPURegisterMap::Fast fpu_map =
+      Compiler::current()->frame()->fpu_register_map(); 
   emit_byte(0x9B); // fwait
   emit_byte(0xDB); // finit
   emit_byte(0xE3);
-  fpu_register_map().reset();
+  fpu_map().reset();
 }
 
 void BinaryAssembler::fstsw_ax() {
@@ -1385,9 +1459,34 @@ void BinaryAssembler::emit_data(int data, Relocation::Kind reloc) {
   // We should add support for relocation here.
   if (reloc != Relocation::no_relocation) {
     // Emit relocation information
-    emit_relocation(reloc);
+    _relocation.emit(reloc, _code_offset);
   }
   emit_long(data);
 }
+
+void BinaryAssembler::ensure_compiled_method_space(int delta) {
+  delta += 256;
+  if (!has_room_for(delta)) {
+    delta = align_allocation_size(delta + (1024 - 256));
+    if (compiled_method()->expand_compiled_code_space(delta, 
+                                                      relocation_size())) {
+      _relocation.move(delta);
+    }
+  }
+}
+
+#ifndef PRODUCT
+
+void BinaryAssembler::comment(char* fmt, ...) {
+  JVM_VSNPRINTF_TO_BUFFER(fmt, buffer, 1024);
+
+  if (PrintCompiledCodeAsYouGo) {
+    tty->print_cr(";; %s", buffer);
+  } else if (GenerateCompilerComments) {
+    _relocation.emit_comment(_code_offset, buffer);
+  }
+}
+
+#endif
 
 #endif

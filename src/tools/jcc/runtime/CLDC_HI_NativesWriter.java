@@ -101,10 +101,6 @@ public class CLDC_HI_NativesWriter
         {MATH,   "sqrt",       "(D)D",  "native_math_sqrt_entry"},
         {MATH,   "ceil",       "(D)D",  "native_math_ceil_entry"},
         {MATH,   "floor",      "(D)D",  "native_math_floor_entry"},
-        {MATH,   "asin",       "(D)D",  "native_math_asin_entry"},
-        {MATH,   "acos",       "(D)D",  "native_math_acos_entry"},
-        {MATH,   "atan",       "(D)D",  "native_math_atan_entry"},
-        {MATH,   "atan2",      "(DD)D", "native_math_atan2_entry"},
         {JVM, "unchecked_byte_arraycopy", null,  
                                "native_jvm_unchecked_byte_arraycopy_entry"},
         {JVM, "unchecked_char_arraycopy", null,  
@@ -501,8 +497,7 @@ public class CLDC_HI_NativesWriter
         out.println(" */");
         out.println();
         out.println("#include \"jvmconfig.h\"");
-        out.println("#if !defined(ROMIZING) || !defined(PRODUCT) || \\");
-        out.println("    ENABLE_TTY_TRACE");
+        out.println("#if !defined(ROMIZING) || !defined(PRODUCT)");
         out.println("#include \"NativesTable.hpp\"");
 	out.println("#include \"kni.h\"");	
     out.println();

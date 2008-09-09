@@ -76,28 +76,28 @@ enum {
     Imm,
     Port,
     PortV,
-    DSHIFT,                     // for double shift that has an 8-bit immediate
+    DSHIFT,			// for double shift that has an 8-bit immediate
     Discard,
     OVERRIDE,
     GO_ON,
-    IMUL,                       // for 186 iimul instr` 
-    MvI,                        // for 186 logicals
-    ENTER,                      // for 186 enter instr 
-    RMw,                        
-    Imm8,                       // for push immediate byte
-    Float1,                     // for 287 instructions
-    Float2,                     // for 287 instructions
-    DM,                         // 16-bit data
-    AM,                         // 16-bit addr
-    MIb,                        // for 386 logicals
-    PREFIX,                     // an instruction prefix like REP, LOCK
-    INT3,                       // The int 3 instruction
-    DSHIFTcl,                   // for double shift that implicitly uses %cl
-    CWD,                        // cwd and variants
+    IMUL,			// for 186 iimul instr` 
+    MvI,			// for 186 logicals
+    ENTER,			// for 186 enter instr 
+    RMw,			
+    Imm8,			// for push immediate byte
+    Float1,			// for 287 instructions
+    Float2,			// for 287 instructions
+    DM,				// 16-bit data
+    AM,				// 16-bit addr
+    MIb,			// for 386 logicals
+    PREFIX,			// an instruction prefix like REP, LOCK
+    INT3,			// The int 3 instruction
+    DSHIFTcl,			// for double shift that implicitly uses %cl
+    CWD,			// cwd and variants
     CBW,                        // cbw, etc
-    RET,                        // single immediate 16-bit operand
-    MOVZ,                       // for movs and movz, etc
-    XADDB,                      // for xaddb
+    RET,			// single immediate 16-bit operand
+    MOVZ,			// for movs and movz, etc
+    XADDB,			// for xaddb
 };
 
 
@@ -118,14 +118,14 @@ private:
     OPLEN = 256                 // maximum length of a single operand
   };
   enum { 
-    X86_EAX = 0,
-    X86_ECX=  1,
-    X86_EDX=  2,
-    X86_EBX=  3,
-    X86_ESP=  4,
-    X86_EBP=  5,
-    X86_ESI=  6,
-    X86_EDI=  7
+    EAX = 0,
+    ECX=  1,
+    EDX=  2,
+    EBX=  3,
+    ESP=  4,
+    EBP=  5,
+    ESI=  6,
+    EDI=  7
   };
   enum {
     UNKNOWN,
@@ -152,28 +152,28 @@ private:
     Imm,
     Port,
     PortV,
-    DSHIFT,                     // for double shift that has an 8-bit immediate
+    DSHIFT,			// for double shift that has an 8-bit immediate
     Discard,
     OVERRIDE,
     GO_ON,
-    IMUL,                       // for 186 iimul instr` 
-    MvI,                        // for 186 logicals
-    ENTER,                      // for 186 enter instr 
-    RMw,                        
-    Imm8,                       // for push immediate byte
-    Float1,                     // for 287 instructions
-    Float2,                     // for 287 instructions
-    DM,                         // 16-bit data
-    AM,                         // 16-bit addr
-    MIb,                        // for 386 logicals
-    PREFIX,                     // an instruction prefix like REP, LOCK
-    INT3,                       // The int 3 instruction
-    DSHIFTcl,                   // for double shift that implicitly uses %cl
-    CWD,                        // cwd and variants
+    IMUL,			// for 186 iimul instr` 
+    MvI,			// for 186 logicals
+    ENTER,			// for 186 enter instr 
+    RMw,			
+    Imm8,			// for push immediate byte
+    Float1,			// for 287 instructions
+    Float2,			// for 287 instructions
+    DM,				// 16-bit data
+    AM,				// 16-bit addr
+    MIb,			// for 386 logicals
+    PREFIX,			// an instruction prefix like REP, LOCK
+    INT3,			// The int 3 instruction
+    DSHIFTcl,			// for double shift that implicitly uses %cl
+    CWD,			// cwd and variants
     CBW,                        // cbw, etc
-    RET,                        // single immediate 16-bit operand
-    MOVZ,                       // for movs and movz, etc
-    XADDB,                      // for xaddb
+    RET,			// single immediate 16-bit operand
+    MOVZ,			// for movs and movz, etc
+    XADDB,			// for xaddb
   };
 
   char  operand[3][OPLEN];      // to store operands as they appear
@@ -552,7 +552,7 @@ x86_disassembler::disassemble()
     // xchg instructions
     reg = REGNO(opcode2);
     reg_name = (data16 ? REG16 : REG32)[reg][LONGOPERAND];
-    const char *eax_name = (data16 ? REG16 : REG32)[X86_EAX][LONGOPERAND];
+    const char *eax_name = (data16 ? REG16 : REG32)[EAX][LONGOPERAND];
     sprintf(_result, "%s%s, %s", _result, reg_name, eax_name);
     return;
   }
@@ -794,7 +794,7 @@ x86_disassembler::get_operand(unsigned mode, unsigned r_m, int wbit, int opindex
   check_override(opindex);
 
   // check for the presence of the s-i-b byte 
-  if (r_m == X86_ESP && mode != REG_ONLY && !addr16) {
+  if (r_m == ESP && mode != REG_ONLY && !addr16) {
     s_i_b = true;
     get_modrm_byte(ss, index, base);
   } else {
@@ -802,7 +802,7 @@ x86_disassembler::get_operand(unsigned mode, unsigned r_m, int wbit, int opindex
   }
   dispsize = (addr16 ? dispsize16 : dispsize32) [r_m][mode];
   
-  if (s_i_b && mode == 0 && base == X86_EBP) {
+  if (s_i_b && mode == 0 && base == EBP) {
     dispsize = 4;
   }
 
@@ -827,7 +827,7 @@ x86_disassembler::get_operand(unsigned mode, unsigned r_m, int wbit, int opindex
       resultreg = (data16 ? REG16 : REG32) [r_m][wbit];
     } else { /* Modes 00, 01, or 10 */
       resultreg = (addr16 ? regname16 :regname32) [mode][r_m];
-      if (r_m == X86_EBP && mode == 0) { /* displacement only */
+      if (r_m == EBP && mode == 0) { /* displacement only */
         format = "%s";
       } else {
         // Modes 00, 01, or 10, not displacement only, and no s-i-b

@@ -562,37 +562,7 @@ enum {
     DOUBLE_PUSH(jvm_fplib_floor(x));
     ADVANCE_FOR_RETURN();
   }
-
-#if ENABLE_CLDC_111 || ENABLE_EXTENDED_API
-
-  void native_math_asin_entry() {
-    jdouble x = DOUBLE_POP();
-    DOUBLE_PUSH(jvm_fplib_asin(x));
-    ADVANCE_FOR_RETURN();
-  }
-
-  void native_math_acos_entry() {
-    jdouble x = DOUBLE_POP();
-    DOUBLE_PUSH(jvm_fplib_acos(x));
-    ADVANCE_FOR_RETURN();
-  }
-
-  void native_math_atan_entry() {
-    jdouble x = DOUBLE_POP();
-    DOUBLE_PUSH(jvm_fplib_atan(x));
-    ADVANCE_FOR_RETURN();
-  }
-
-  void native_math_atan2_entry() {
-    jdouble y = DOUBLE_POP();
-    jdouble x = DOUBLE_POP();
-    DOUBLE_PUSH(jvm_fplib_atan2(x, y));
-    ADVANCE_FOR_RETURN();
-  }
-
-#endif // ENABLE_CLDC_111
-
-#endif // ENABLE_FLOAT
+#endif
 
   void native_string_indexof_entry() {
     // we have no generic implementation, so do it here
@@ -4623,7 +4593,7 @@ extern "C" {
 }
 #endif
 
-#if USE_REFLECTION || ENABLE_JAVA_DEBUGGER
+#if ENABLE_REFLECTION || ENABLE_JAVA_DEBUGGER
   void entry_return_void()   {}
   void entry_return_word()   {}
   void entry_return_long()   {}
@@ -4633,23 +4603,6 @@ extern "C" {
 #endif
 #if  ENABLE_JAVA_DEBUGGER
   void shared_call_vm_oop_return() {}
-#endif
-
-#if ENABLE_JNI
-void    invoke_entry_void()   {}
-jint    invoke_entry_word()   { return 0; }
-jlong   invoke_entry_long()   { return 0; }
-jfloat  invoke_entry_float()  { return 0; }
-jdouble invoke_entry_double() { return 0; }
-void    invoke_entry_return_point() {}
-
-void invoke_entry_void_return()   {}
-void invoke_entry_word_return()   {}
-void invoke_entry_long_return()   {}
-void invoke_entry_float_return()  {}
-void invoke_entry_double_return() {}
-
-void default_return_point() {}
 #endif
 
 extern "C" {

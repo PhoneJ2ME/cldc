@@ -3,22 +3,22 @@
  * Portions Copyright  2000-2007 Sun Microsystems, Inc. All Rights
  * Reserved.  Use is subject to license terms.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
- *
+ * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
  * 2 only, as published by the Free Software Foundation.
- *
+ * 
  * This program is distributed in the hope that it will be useful, but
  * WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
  * General Public License version 2 for more details (a copy is
  * included at /legal/license.txt).
- *
+ * 
  * You should have received a copy of the GNU General Public License
  * version 2 along with this work; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA
- *
+ * 
  * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
  * Clara, CA 95054 or visit www.sun.com if you need additional
  * information or have any questions.
@@ -255,9 +255,6 @@ private:
   develop(bool, ShareExceptionStubs, true,                                  \
           "Share exception thrower stubs for compiled methods.")            \
                                                                             \
-  develop(bool, InlineIfExceptions, true,                                   \
-          "Inline methods that can throw exceptions.")                      \
-                                                                            \
   develop(bool, ResolveConstantPoolInCompiler, true,                        \
           "Try to resolve constant pool entries inside the compiler "       \
           "if possible")                                                    \
@@ -397,7 +394,7 @@ private:
 #endif
 
 
-#if ENABLE_WTK_PROFILER
+#if ENABLE_WTK_PROFILER                     
 #define WTK_PROFILER_RUNTIME_FLAGS(develop, product)                        \
   product(bool, UseExactProfiler, false,                                    \
          "Use exact profiler")                                   \
@@ -408,9 +405,9 @@ private:
 #define WTK_PROFILER_RUNTIME_FLAGS(develop, product)
 #endif
 
-// If enable ENABLE_JVMPI_PROFILE, support +UseJvmpiProfiler parameter
+// If enable ENABLE_JVMPI_PROFILE, support +UseJvmpiProfiler parameter 
 // to enable the JVMPI events sending.
-#if ENABLE_JVMPI_PROFILE
+#if ENABLE_JVMPI_PROFILE 
 #define JVMPI_PROFILE_RUNTIME_FLAGS(develop, product)                       \
   product(bool, UseJvmpiProfiler, false,                                    \
          "Support JVMPI profile")
@@ -437,21 +434,6 @@ private:
 #define PROFILER_RUNTIME_FLAGS(develop, product)                            \
   develop(bool, UseProfiler, false,                                         \
           "Use execution time profiler")
-#endif
-
-#ifndef USE_EVENT_LOGGER
-#error USE_EVENT_LOGGER must be defined
-#endif
-
-#if USE_EVENT_LOGGER
-#define EVENT_LOGGER_RUNTIME_FLAGS(develop, product)\
-  product(bool, UseEventLogger, false,                                     \
-          "Enable EventLogger, and print event log at VM exit")            \
-  product(bool, LogEventsToFile, false,                                    \
-          "If true, write the event log into event.log. Otherwise dump to "\
-          "tty")
-#else
-#define EVENT_LOGGER_RUNTIME_FLAGS(develop, product)
 #endif
 
 /*
@@ -505,6 +487,12 @@ private:
           "Print performance counters related to romization")              \
   op(bool, PrintThreadPerformanceCounters, false,                          \
           "Print performance counters related to threads and events")      \
+  op(int, UseEventLogger, 0,                                               \
+          "Enable EventLogger, and print event log at VM exit. 0 for no "  \
+          "logging, 1 for critical events and 2 for all events")           \
+  op(bool, LogEventsToFile, false,                                         \
+          "If true, write the event log into event.log. Otherwise dump to "\
+          "tty")                                                           \
   op(bool, RetryCompilation, true,                                         \
           "Retry compilation if CompiledCodeFactor is too small")          \
   op(bool, TestCompiler, false,                                            \
@@ -558,7 +546,7 @@ private:
        op(bool, TraceMethodInlining, false,                                 \
           "Trace method inlining (only for ENABLE_INLINE)")                 \
                                                                             \
-       op(bool, TraceNativeCalls, false,                                    \
+  develop(bool, TraceNativeCalls, false,                                    \
           "Trace native method calls")                                      \
                                                                             \
        op(bool, TraceCompiledMethodCache, false,                            \
@@ -665,8 +653,8 @@ private:
        op(bool, VerboseNullPointExceptionThrowing,  false,                                   \
           "Print verbose null point exception information")                                      \
        op(bool, VerboseByteCodeEliminate,  false,                                   \
-          "Print byte code eliminate information ")
-
+          "Print byte code eliminate information ")   
+          
 
 /*
  * The "optional()" flags would be "product()" in product builds w/o Monet
@@ -899,7 +887,7 @@ private:
                                                                             \
   develop(bool, OptimizeCompiledCodeVerboseInternal, false,                 \
           "Print out instructions changed by the code optimizer")
-
+        
 
 #else
 #define CODE_OPTIMIZER_RUNTIME_FLAGS(develop, product)                      \
@@ -947,20 +935,10 @@ private:
 #define CPU_VARIANT_RUNTIME_FLAGS(develop, product)
 #endif
 
-#if USE_ARM_VFP_RUN_FAST_MODE
-#define VFP_RUNTIME_FLAGS(develop, product)                              \
-  product(bool, RunFastMode, false,                                      \
-          "Configure the ARM VFP coprocessor to run in RunFast mode "    \
-          "and execute extra instructions to ensure TCK compilance")
-#else
-#define VFP_RUNTIME_FLAGS(develop, product)
-#endif
-
 #define RUNTIME_FLAGS(develop, product, always)            \
       GENERIC_RUNTIME_FLAGS(develop, product)              \
       USE_ROM_RUNTIME_FLAGS(develop, product, always)      \
       PROFILER_RUNTIME_FLAGS(develop, product)             \
-      EVENT_LOGGER_RUNTIME_FLAGS(develop, product)         \
       ROM_GENERATOR_FLAGS(develop, product)                \
       PERFORMANCE_COUNTERS_RUNTIME_FLAGS(develop, product) \
       PLATFORM_RUNTIME_FLAGS(develop, product)             \
@@ -972,7 +950,6 @@ private:
       JVMPI_PROFILE_RUNTIME_FLAGS(develop, product)        \
       JVMPI_PROFILE_VERIFY_RUNTIME_FLAGS(develop, product) \
       CPU_VARIANT_RUNTIME_FLAGS(develop, product)          \
-      VFP_RUNTIME_FLAGS(develop, product)                  \
       TTY_TRACE_RUNTIME_FLAGS(always, develop, product)
 
 /*

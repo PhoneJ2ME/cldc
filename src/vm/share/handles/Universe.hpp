@@ -68,8 +68,8 @@ class Universe: public AllStatic {
   // ^CompiledMethod
   static ReturnOop new_compiled_method(int code_size JVM_TRAPS);
 #endif
-  static ReturnOop new_method(const int code_length,
-                              const AccessFlags access_flags JVM_TRAPS);
+  static ReturnOop new_method(int code_length, AccessFlags &access_flags
+                              JVM_TRAPS);
   static ReturnOop new_constant_pool(int length JVM_TRAPS);
   static ReturnOop new_instance(InstanceClass* klass JVM_TRAPS);
   static ReturnOop new_instance_class(int vtable_size,
@@ -117,6 +117,10 @@ class Universe: public AllStatic {
   }
   static ReturnOop new_mixed_oop(int type, size_t size, int pointer_count
                                  JVM_TRAPS);
+#if ENABLE_COMPILER
+  static ReturnOop new_mixed_oop_in_compiler_area(int type, size_t size, 
+                                                  int pointer_count JVM_TRAPS);
+#endif
   static ReturnOop new_execution_stack(jint length JVM_TRAPS);
 
   // Support for stackmaps
@@ -136,10 +140,8 @@ class Universe: public AllStatic {
   static void setup_isolate_list(JVM_SINGLE_ARG_TRAPS);
   static ReturnOop setup_mirror_list(int i JVM_TRAPS);
   static ReturnOop new_task(int id JVM_TRAPS);
-  static ReturnOop new_task_mirror( const jint statics_size, 
-                                    const jint vtable_length JVM_TRAPS) {
-    return allocate_task_mirror(statics_size, vtable_length JVM_NO_CHECK);
-  }
+  static ReturnOop new_task_mirror(jint statics_size, 
+                                   jint vtable_length JVM_TRAPS);
   static ReturnOop task_from_id(int task_id);
 
   static inline void set_task_list(ObjArray *tl);
@@ -151,13 +153,7 @@ private:
   static inline ReturnOop new_task_list(JVM_SINGLE_ARG_TRAPS);
 public:
 #endif //ENABLE_ISOLATES
-
-  static void set_current_task(const int task_id) {
-#if !ENABLE_ISOLATES
-    GUARANTEE( task_id == 1, "Unexpected task_id" );
-#endif
-    TaskContext::set_current_task(task_id);
-  }
+  static void set_current_task(int task_id);
 
 #if ENABLE_DYNAMIC_NATIVE_METHODS
   static int dynamic_lib_count;
@@ -222,6 +218,12 @@ private:
                                   JVM_TRAPS);
   static ReturnOop allocate_array(FarClass* klass, int length, int scale
                                   JVM_TRAPS);
+#if ENABLE_COMPILER
+  static ReturnOop allocate_array_in_compiler_area(FarClass* klass, 
+                                                   int length, int scale
+                                                   JVM_TRAPS);
+#endif
+
   // These are temporarily made public. Used by Method.cpp.
   static ReturnOop allocate_obj_near(FarClass* klass JVM_TRAPS);
 
@@ -408,6 +410,7 @@ private:
   template(empty_short_array,                    TypeArray)           \
   template(out_of_memory_error_instance,         Oop)                 \
   template(gc_dummies,                           ObjArray)            \
+  template(global_refs_array,                    RefArray)            \
   template(throw_null_pointer_exception_method,  Method)              \
   template(throw_array_index_exception_method,   Method)              \
   template(quick_native_throw_method,            Method)              \
@@ -489,7 +492,7 @@ private:
 #define UNIVERSE_DEBUGGER_HANDLES_DO(template)
 #endif
 
-#if USE_REFLECTION
+#if ENABLE_REFLECTION
 #define UNIVERSE_REFLECTION_HANDLES_DO(template)                      \
   /* Order does matter. See get_primitive_type_class() */             \
   template(boolean_class,                        InstanceClass)       \
@@ -527,16 +530,9 @@ private:
   template(boundary_list,                        Oop)                 \
   template(task_list,                            TaskList)
 
-#define UNIVERSE_GLOBAL_REF_HANDLES_DO(template)
-
 #else
 #define UNIVERSE_ISOLATES_HANDLES_DO(template)
 #define UNIVERSE_ISOLATES_HANDLES_SKIP_DO(template)
-
-#define UNIVERSE_GLOBAL_REF_HANDLES_DO(template)         \
-  template(strong_references,             ObjArray)      \
-  template(weak_references,               WeakRefArray)
-
 #endif
 
 #define UNIVERSE_HANDLES_DO(template)          \
@@ -546,7 +542,6 @@ private:
    UNIVERSE_GENERIC_HANDLES_DO(template)       \
    ROM_DUPLICATE_CLASS_HANDLES_DO(template)    \
    UNIVERSE_ISOLATES_HANDLES_SKIP_DO(template) \
-   UNIVERSE_GLOBAL_REF_HANDLES_DO(template)    \
    UNIVERSE_GENERIC_HANDLES_SKIP_DO(template)
 
 #define UNIVERSE_HANDLES_DECLARE(name, type) \
@@ -723,6 +718,23 @@ private:
   }
 #endif
 
+#if ENABLE_COMPILER
+  static ReturnOop new_byte_array_in_compiler_area(int length JVM_TRAPS) {
+    return allocate_array_in_compiler_area(
+                          (FarClass *)((void*)byte_array_class()),
+                          length, sizeof(jbyte) JVM_NO_CHECK_AT_BOTTOM);
+  }
+  static ReturnOop new_int_array_in_compiler_area(int length JVM_TRAPS) {
+    return allocate_array_in_compiler_area(
+                          (FarClass *)((void*)int_array_class()),
+                          length, sizeof(jint) JVM_NO_CHECK_AT_BOTTOM);
+  }
+  static ReturnOop new_obj_array_in_compiler_area(int length JVM_TRAPS) {
+    return allocate_array_in_compiler_area(
+                          (FarClass*)((void*)object_array_class()),
+                          length, sizeof(OopDesc*) JVM_NO_CHECK_AT_BOTTOM);
+  }
+#endif
 #if ENABLE_ISOLATES
   // IMPL_NOTE: maybe create a special iterator for the functions below?
   static ReturnOop copy_strings_to_byte_arrays(OopDesc* string_array JVM_TRAPS);

@@ -134,6 +134,7 @@ CallInfo.hpp                     Top.hpp
 CallInfo.cpp                     TypeArray.hpp
 CallInfo.cpp                     CallInfo.hpp
 CallInfo.cpp                     OopDesc.inline.hpp
+CallInfo.cpp                     CodeGenerator.hpp
 CallInfo.cpp                     Compiler.hpp
 
 
@@ -478,7 +479,6 @@ WTKProfiler.cpp                  MixedOop.hpp
 WTKProfiler.cpp                  MixedOopDesc.hpp
 WTKProfiler.cpp                  Universe.hpp
 WTKProfiler.cpp                  StackUtils.hpp
-WTKProfiler.cpp                  jvmspi.h
 
 #if ENABLE_XSCALE_WMMX_INSTRUCTIONS
 Disassembler_wmmx.cpp            Disassembler_<carch>.hpp
@@ -494,7 +494,7 @@ Disassembler_<iarch>.cpp         Disassembler_<iarch>.hpp
 Disassembler_<carch>.hpp         Assembler_<carch>.hpp
 Disassembler_<carch>.hpp         Stream.hpp
 Disassembler_<carch>.hpp         Oop.hpp
-Disassembler_<carch>.cpp         Instructions_<carch>.hpp
+Disassembler_<carch>.cpp         Disassembler_<carch>.hpp
 Disassembler_<carch>.cpp         BinaryAssembler_<carch>.hpp
 
 #if ENABLE_INTERPRETER_GENERATOR
@@ -589,6 +589,9 @@ Generator.cpp                    GPTableGenerator_<iarch>.hpp
 Generator.hpp                    Stream.hpp
 Generator.hpp                    Globals.hpp
 Generator.cpp                    Generator.hpp
+Generator.cpp                    VirtualStackFrame.hpp
+Generator.cpp                    Entry.hpp
+Generator.cpp                    CompilationQueue.hpp
 Generator.cpp                    ArrayClass.hpp
 Generator.cpp                    EntryActivation.hpp
 Generator.cpp                    CompiledMethod.hpp
@@ -644,11 +647,9 @@ BytecodeClosure.cpp              Symbol.hpp
 BytecodeClosure.cpp              Thread.hpp
 BytecodeClosure.cpp              ObjectHeap_<iarch>.hpp
 
-CallInfo.hpp                     Relocation.hpp
-CallInfo.cpp                     CallInfo.hpp
-
-
 CompiledMethod.cpp               OopVisitor.hpp
+CompiledMethod.cpp               CompiledMethod.hpp
+CompiledMethod.cpp               Relocation.hpp
 CompiledMethod.cpp               Method.hpp
 CompiledMethod.cpp               OS.hpp
 CompiledMethod.cpp               OopDesc.inline.hpp
@@ -657,6 +658,9 @@ CompiledMethod.cpp               ObjectHeap_<iarch>.hpp
 CompiledMethod.cpp               BinaryAssembler_<carch>.hpp
 
 CompiledMethod_<carch>.cpp       OsMisc.hpp
+CompiledMethod_<carch>.cpp       Disassembler_<carch>.hpp
+CompiledMethod_<carch>.cpp       CompiledMethod.hpp
+CompiledMethod_<carch>.cpp       Relocation.hpp
 CompiledMethod_<carch>.cpp       Near.hpp
 CompiledMethod_<carch>.cpp       BinaryAssembler_<carch>.hpp
 #if ENABLE_CODE_PATCHING
@@ -674,19 +678,22 @@ CodeOptimizer_<carch>.cpp        Thread.hpp
 CodeOptimizer_<carch>.cpp        Compiler.hpp
 
 Addressing.hpp                   BinaryAssembler_<carch>.hpp
-Addressing.hpp                   Value.hpp
 Addressing.hpp                   Method.hpp
+Addressing.hpp                   VirtualStackFrame.hpp
 Addressing.cpp                   Compiler.hpp
 Addressing.cpp                   Addressing.hpp
 
 Addressing_<carch>.hpp           Addressing.hpp
 Addressing_<carch>.cpp           Compiler.hpp
+Addressing_<carch>.cpp           Addressing.hpp
 Addressing_<carch>.cpp           ObjectHeap_<iarch>.hpp
 
 CodeGenerator.hpp                Addressing_<carch>.hpp
 CodeGenerator.hpp                Value.hpp
 CodeGenerator.hpp                BinaryAssembler_<carch>.hpp
+CodeGenerator.hpp                VirtualStackFrame.hpp
 CodeGenerator.hpp                BytecodeClosure.hpp
+CodeGenerator.hpp                CompiledMethodDesc.hpp
 CodeGenerator.cpp                Compiler.hpp
 CodeGenerator.cpp                Throw.hpp
 CodeGenerator.cpp                JVM.hpp
@@ -698,10 +705,12 @@ CodeGenerator_<carch>.cpp        Frame.hpp
 CodeGenerator_<carch>.cpp        Symbols.hpp
 CodeGenerator_<carch>.cpp        Signature.hpp
 CodeGenerator_<carch>.cpp        Instructions_<carch>.hpp
+CodeGenerator_<carch>.cpp        FPURegisterMap_<carch>.hpp
 CodeGenerator_<carch>.cpp        Location.hpp
 CodeGenerator_<carch>.cpp        ObjectHeap_<iarch>.hpp
 CodeGenerator_<carch>.cpp        TypeArrayClass.hpp
 CodeGenerator_<carch>.cpp        ConstantPool.hpp
+CodeGenerator_<carch>.cpp        ObjArrayClass.hpp
 CodeGenerator_<carch>.cpp        Synchronizer.hpp
 CodeGenerator_<carch>.cpp        FloatNatives.hpp
 #if ENABLE_JAVA_DEBUGGER
@@ -727,31 +736,40 @@ BytecodePrintClosure.cpp         StackmapList.hpp
 BytecodePrintClosure.cpp         StackmapGenerator.hpp
 
 RegisterAllocator.hpp            Assembler_<carch>.hpp
-RegisterAllocator.hpp            Disassembler_<carch>.hpp
 RegisterAllocator.cpp            RegisterAllocator.hpp
 RegisterAllocator.cpp            Compiler.hpp
+RegisterAllocator.cpp            VirtualStackFrame.hpp
 RegisterAllocator_<carch>.cpp    RegisterAllocator.hpp
 RegisterAllocator_<carch>.cpp    Compiler.hpp
 
 FPURegisterMap_<carch>.hpp       Assembler_<carch>.hpp
-FPURegisterMap_<carch>.cpp       Compiler.hpp
+FPURegisterMap_<carch>.hpp       TypeArray.hpp
+FPURegisterMap_<carch>.cpp       FPURegisterMap_<carch>.hpp
 FPURegisterMap_<carch>.cpp       RegisterAllocator.hpp
+FPURegisterMap_<carch>.cpp       Compiler.hpp
+FPURegisterMap_<carch>.cpp       CodeGenerator.hpp
 
-VirtualStackFrame.hpp            CodeGenerator.hpp
-VirtualStackFrame.hpp            FPURegisterMap_<carch>.hpp
+VirtualStackFrameDesc.hpp        MixedOopDesc.hpp
+
+VirtualStackFrame.hpp            MixedOop.hpp
+VirtualStackFrame.hpp            VirtualStackFrameDesc.hpp
 VirtualStackFrame.hpp            Method.hpp
 VirtualStackFrame.hpp            Value.hpp
+VirtualStackFrame.cpp            VirtualStackFrame.hpp
 VirtualStackFrame.cpp            Location.hpp
 VirtualStackFrame.cpp            Signature.hpp
 VirtualStackFrame.cpp            Symbols.hpp
 VirtualStackFrame.cpp            ObjectHeap_<iarch>.hpp
 VirtualStackFrame.cpp            SystemDictionary.hpp
+//VirtualStackFrame.cpp            SourceAssembler_<carch>.hpp
 VirtualStackFrame.cpp            Compiler.hpp
+VirtualStackFrame.cpp            FPURegisterMap_<carch>.hpp
 VirtualStackFrame.cpp            InstanceClass.hpp
 VirtualStackFrame.cpp            StackmapGenerator.hpp
 VirtualStackFrame.cpp            VSFMergeTest.hpp
 VirtualStackFrame.cpp            StackUtils.hpp
 
+VSFMergeTest.hpp                 VirtualStackFrame.hpp
 VSFMergeTest.hpp                 CodeGenerator.hpp
 VSFMergeTest.hpp                 Location.hpp
 VSFMergeTest.cpp                 Arguments.hpp
@@ -760,6 +778,11 @@ VSFMergeTest.cpp                 CompilerTest.hpp
 VSFMergeTest.cpp                 Location.hpp
 VSFMergeTest.cpp                 VSFMergeTest.hpp
 
+VirtualStackFrame_<carch>.cpp    VirtualStackFrame.hpp
+VirtualStackFrame_<carch>.cpp    FPURegisterMap_<carch>.hpp
+VirtualStackFrame_<carch>.cpp    VirtualStackFrame.hpp
+VirtualStackFrame_<carch>.cpp    BinaryAssembler_<carch>.hpp
+VirtualStackFrame_<carch>.cpp    CodeGenerator.hpp
 VirtualStackFrame_<carch>.cpp    Location.hpp
 VirtualStackFrame_<carch>.cpp    Compiler.hpp
 
@@ -767,12 +790,13 @@ Location.hpp                     VirtualStackFrame.hpp
 Location.hpp                     Value.hpp
 Location.hpp                     TypeArray.hpp
 Location.cpp                     Location.hpp
+Location.cpp                     CodeGenerator.hpp
 Location.cpp                     Compiler.hpp
 
 Value.hpp                        GlobalDefinitions.hpp
-Value.hpp                        InstanceClass.hpp
-Value.hpp                        ObjArrayClass.hpp
 Value.hpp                        RegisterAllocator.hpp
+Value.hpp                        ObjArrayClass.hpp
+Value.cpp                        InstanceClass.hpp
 Value.cpp                        Value.hpp
 Value.cpp                        Compiler.hpp
 Value.cpp                        Field.hpp
@@ -780,11 +804,16 @@ Value.cpp                        InstanceClass.hpp
 
 Relocation.hpp                   CompiledMethod.hpp
 Relocation.cpp                   Relocation.hpp
-Relocation.cpp                   CallInfo.hpp
+Relocation.cpp                   BinaryAssembler_<carch>.hpp
+Relocation.cpp                   Compiler.hpp
+Relocation.cpp                   Location.hpp
 
 Compiler.hpp                     CompilationQueue.hpp
 Compiler.hpp                     Method.hpp
+Compiler.hpp                     VirtualStackFrame.hpp
 Compiler.hpp                     CodeGenerator.hpp
+Compiler.hpp                     CompilationQueue.hpp
+Compiler.hpp                     BytecodeCompileClosure.hpp
 Compiler.hpp                     Entry.hpp
 Compiler.hpp                     MixedOop.hpp
 Compiler.hpp                     CodeOptimizer_<carch>.hpp
@@ -817,25 +846,40 @@ CompilerTest.cpp                 Arguments.hpp
 CompilerTest.cpp                 VSFMergeTest.hpp
 CompilerTest.cpp                 FilePath.hpp
 
-CompilerObject.hpp               ObjectHeap.hpp
-CompilerObject.cpp               CompilerObject.hpp
+CompilationQueueElementDesc.hpp  MixedOopDesc.hpp
 
+CompilationQueue.hpp             CompilationQueueElementDesc.hpp
 CompilationQueue.hpp             VirtualStackFrame.hpp
 CompilationQueue.hpp             BinaryAssembler_<carch>.hpp
 CompilationQueue.hpp             BytecodeCompileClosure.hpp
+CompilationQueue.cpp             CompilationQueue.hpp
+CompilationQueue.cpp             Universe.hpp
 CompilationQueue.cpp             SystemDictionary.hpp
 CompilationQueue.cpp             Compiler.hpp
 CompilationQueue.cpp             InstanceClass.hpp
 CompilationQueue.cpp             Symbols.hpp
 CompilationQueue.cpp             VMEvent.hpp
+CompilationQueue_<carch>.cpp     CompilationQueue.hpp
 CompilationQueue_<carch>.cpp     Universe.hpp
 CompilationQueue_<carch>.cpp     SystemDictionary.hpp
+CompilationQueue_<carch>.cpp     CodeGenerator.hpp
 CompilationQueue_<carch>.cpp     BytecodeCompileClosure.hpp
 CompilationQueue_<carch>.cpp     Compiler.hpp
+CompilationQueue_<carch>.cpp     Entry.hpp
 CompilationQueue_<carch>.cpp     Location.hpp
 CompilationQueue_<carch>.cpp     Synchronizer.hpp
 
+EntryDesc.hpp                    MixedOopDesc.hpp
+
+Entry.hpp                        MixedOop.hpp
+Entry.hpp                        EntryDesc.hpp
 Entry.hpp                        VirtualStackFrame.hpp
+
+Entry.hpp                        BinaryAssembler_<carch>.hpp
+Entry.cpp                        Entry.hpp
+Entry.cpp                        Universe.hpp
+Entry.cpp                        SystemDictionary.hpp
+Entry.cpp                        InstanceClass.hpp
 
 BytecodeCompileClosure.hpp       BytecodeClosure.hpp
 BytecodeCompileClosure.hpp       CodeGenerator.hpp
@@ -843,6 +887,7 @@ BytecodeCompileClosure.cpp       BytecodeCompileClosure.hpp
 BytecodeCompileClosure.cpp       Method.hpp
 BytecodeCompileClosure.cpp       Frame.hpp
 BytecodeCompileClosure.cpp       Compiler.hpp
+BytecodeCompileClosure.cpp       FPURegisterMap_<carch>.hpp
 BytecodeCompileClosure.cpp       JavaClassObj.hpp
 BytecodeCompileClosure.cpp       ConstantPool.hpp
 BytecodeCompileClosure.cpp       Signature.hpp
@@ -854,8 +899,12 @@ CompiledMethodDesc.hpp           jvmpi.h
 #endif
 CompiledMethodDesc.hpp           MethodDesc.hpp
 CompiledMethodDesc.hpp           RemoteTracer.hpp
+CompiledMethodDesc.cpp           CompiledMethodDesc.hpp
+CompiledMethodDesc.cpp           Relocation.hpp
 CompiledMethodDesc.cpp           BinaryAssembler_<carch>.hpp
 
+CompiledMethodDesc_<carch>.cpp   CompiledMethodDesc.hpp
+CompiledMethodDesc_<carch>.cpp   Relocation.hpp
 CompiledMethodDesc_<carch>.cpp   BinaryAssembler_<carch>.hpp
 CompiledMethodDesc_<carch>.cpp   Instructions_<carch>.hpp
 CompiledMethodDesc_<carch>.cpp   ObjectHeap_<iarch>.hpp
@@ -938,7 +987,10 @@ Buffer.cpp                       Throw.hpp
 
 Frame_<iarch>.hpp                Top.hpp
 
+Frame.hpp                        CallInfo.hpp
+Frame.hpp                        CompiledMethodDesc.hpp
 Frame.hpp                        Frame_<iarch>.hpp
+Frame.hpp                        Assembler_<carch>.hpp
 Frame.hpp                        BinaryAssembler_<carch>.hpp
 Frame.hpp                        Thread.hpp
 Frame.hpp                        Synchronizer.hpp
@@ -1099,6 +1151,7 @@ LargeObject.cpp                  ExecutionStackDesc.hpp
 LargeObject.cpp                  Frame.hpp
 LargeObject.cpp                  JavaClassDesc.hpp
 LargeObject.cpp                  LargeObject.hpp
+LargeObject.cpp                  RefArray.hpp
 LargeObject.cpp                  Scheduler.hpp
 LargeObject.cpp                  OopDesc.inline.hpp
 #if ENABLE_MONET
@@ -1128,6 +1181,7 @@ ObjectHeap.cpp                   Scheduler.hpp
 ObjectHeap.cpp                   Synchronizer.hpp
 ObjectHeap.cpp                   Profiler.hpp
 ObjectHeap.cpp                   Relocation.hpp
+ObjectHeap.cpp                   RefArray.hpp
 ObjectHeap.cpp                   JVM.hpp
 ObjectHeap.cpp                   RemoteTracer.hpp
 ObjectHeap.cpp                   OsMisc.hpp
@@ -1140,7 +1194,6 @@ ObjectHeap.cpp                   CompiledMethodDesc.hpp
 ObjectHeap.cpp                   EventLogger.hpp
 ObjectHeap.cpp                   JarFileParser.hpp
 ObjectHeap.cpp                   Task.hpp
-ObjectHeap.cpp                   JniFrame.hpp
 
 ConstantTag.hpp                  ArrayDesc.hpp
 ConstantTag.hpp                  GlobalDefinitions.hpp
@@ -1181,39 +1234,38 @@ FieldType.cpp                    ObjArrayClass.hpp
 FieldType.cpp                    ObjectHeap_<iarch>.hpp
 
 // Assembler
-AssemblerCommon.hpp              CompilerObject.hpp
 
 #if ENABLE_INTERPRETER_GENERATOR
 #ifeq iarch arm
-Assembler_armthumb.hpp           AssemblerCommon.hpp
+Assembler_armthumb.hpp           GlobalDefinitions.hpp
 Assembler_<iarch>.hpp            Assembler_armthumb.hpp
 #endif
 #ifeq iarch thumb2
-Assembler_armthumb.hpp           AssemblerCommon.hpp
+Assembler_armthumb.hpp           GlobalDefinitions.hpp
 Assembler_<iarch>.hpp            Assembler_armthumb.hpp
 #endif
 Assembler_<iarch>.hpp            Allocation.hpp
 Assembler_<iarch>.hpp            Bytecodes.hpp
 Assembler_<iarch>.hpp            Globals.hpp
-Assembler_<iarch>.hpp            AssemblerCommon.hpp
 Assembler_<iarch>.cpp            Assembler_<iarch>.hpp
 #endif
 
 #ifeq carch arm
-Assembler_armthumb.hpp           AssemblerCommon.hpp
+Assembler_armthumb.hpp           GlobalDefinitions.hpp
 Assembler_<carch>.hpp            Assembler_armthumb.hpp
 #endif
 #ifeq carch thumb
-Assembler_armthumb.hpp           AssemblerCommon.hpp
+Assembler_armthumb.hpp           GlobalDefinitions.hpp
 Assembler_<carch>.hpp            Assembler_armthumb.hpp
 #endif
 #ifeq carch thumb2
-Assembler_armthumb.hpp           AssemblerCommon.hpp
+Assembler_armthumb.hpp           GlobalDefinitions.hpp
 Assembler_<carch>.hpp            Assembler_armthumb.hpp
 #endif
 Assembler_<carch>.hpp            Allocation.hpp
 Assembler_<carch>.hpp            Bytecodes.hpp
 Assembler_<carch>.hpp            Globals.hpp
+Assembler_<carch>.cpp            Assembler_<carch>.hpp
 Assembler_<carch>.cpp            BinaryAssembler_<carch>.hpp
 Assembler_<carch>.cpp            RegisterAllocator.hpp
 
@@ -1233,59 +1285,27 @@ SourceAssembler_<iarch>.cpp      ObjectHeap_<iarch>.hpp
 SourceAssembler_<iarch>.cpp      GPTableGenerator_<iarch>.hpp
 #endif
 
-Assembler_<carch>.hpp            AssemblerCommon.hpp
-BinaryAssemblerCommon.hpp        Assembler_<carch>.hpp
-BinaryAssemblerCommon.hpp        CompiledMethod.hpp
-BinaryAssemblerCommon.hpp        LiteralPoolElement.hpp
-BinaryAssemblerCommon.hpp        ObjectHeap.hpp
-BinaryAssemblerCommon.hpp        Relocation.hpp
-BinaryAssemblerCommon.cpp        BinaryAssemblerCommon.hpp
-BinaryAssemblerCommon.cpp        Location.hpp
-
-BinaryAssembler_<carch>.hpp      BinaryAssemblerCommon.hpp
+BinaryAssembler_<carch>.hpp      MixedOop.hpp
+BinaryAssembler_<carch>.hpp      Assembler_<carch>.hpp
+BinaryAssembler_<carch>.hpp      CompiledMethod.hpp
+BinaryAssembler_<carch>.hpp      Relocation.hpp
 BinaryAssembler_<carch>.hpp      CallInfo.hpp
 BinaryAssembler_<carch>.hpp      ObjectHeap_<iarch>.hpp
+BinaryAssembler_<carch>.hpp      ObjArray.hpp
+BinaryAssembler_<carch>.hpp      TypeArray.hpp
 BinaryAssembler_<carch>.hpp      Disassembler_<carch>.hpp
+BinaryAssembler_<carch>.cpp      Universe.hpp
+BinaryAssembler_<carch>.cpp      BinaryAssembler_<carch>.hpp
 BinaryAssembler_<carch>.cpp      Thread.hpp
 BinaryAssembler_<carch>.cpp      Instructions_<carch>.hpp
+BinaryAssembler_<carch>.cpp      FPURegisterMap_<carch>.hpp
 BinaryAssembler_<carch>.cpp      Compiler.hpp
 
 Instructions_<carch>.hpp         Allocation.hpp
-Instructions_<carch>.hpp         CodeGenerator.hpp
+Instructions_<carch>.hpp         Compiler.hpp
 Instructions_<carch>.cpp         Instructions_<carch>.hpp
 
-BinaryLabel.cpp                  Compiler.hpp
-
-LiteralPoolElement.hpp           CompilerObject.hpp
-LiteralPoolElement.hpp           BinaryLabel.hpp
-LiteralPoolElement.cpp           Compiler.hpp
-
 // Natives
-jni.cpp                          jni.h
-jni.cpp                          EntryActivation.hpp
-jni.cpp                          FieldType.hpp
-jni.cpp                          JniImpl.hpp
-jni.cpp                          JniFrame.hpp
-jni.cpp                          JavaClassObj.hpp
-jni.cpp                          Method.hpp
-jni.cpp                          ObjArrayClass.hpp
-jni.cpp                          ObjectHeap.hpp
-jni.cpp                          Oop.hpp
-jni.cpp                          Signature.hpp
-jni.cpp                          Throw.hpp
-jni.cpp                          Throwable.hpp
-jni.cpp                          TypeArrayClass.hpp
-jni.cpp                          TypeSymbol.hpp
-jni.cpp                          sni.h
-jni.cpp                          Universe.hpp
-JniImpl.hpp                      GlobalDefinitions.hpp
-
-JniFrame.hpp                     JniFrameDesc.hpp
-JniFrame.hpp                     MixedOop.hpp
-JniFrame.hpp                     Universe.hpp
-
-JniFrameDesc.hpp                 MixedOopDesc.hpp
-
 BuildFlags.hpp                   BuildFlags_<os_family>.hpp
 kni_md.h                         BuildFlags.hpp
 kni.h                            kni_md.h
@@ -1293,7 +1313,6 @@ kni.h                            kni_md.h
 KniImpl.hpp                      kni.h
 KniImpl.hpp                      Top.hpp
 KniImpl.hpp                      JavaClassObj.hpp
-KniImpl.hpp                      JniImpl.hpp
 
 kni.cpp                          KniImpl.hpp
 kni.cpp                          JavaClassObj.hpp
@@ -1325,7 +1344,6 @@ Natives.hpp                      InstanceClass.hpp
 Natives.hpp                      NativesTable.hpp
 Natives.hpp                      Frame.hpp
 Natives.cpp                      ROMWriter.hpp
-Natives.cpp                      FloatNatives.hpp
 Natives.cpp                      Stream.hpp
 Natives.cpp                      Natives.hpp
 Natives.cpp                      SystemDictionary.hpp
@@ -1364,7 +1382,7 @@ Natives.cpp                      Task.hpp
 Natives.cpp                      JavaDebugger.hpp
 Natives.cpp                      ObjectReferenceImpl.hpp
 #endif
-#if ENABLE_EXTENDED_API
+#if ENABLE_REFLECTION
 Natives.cpp                      ParsedTypeSymbol.hpp
 #endif
 Natives.cpp                      SegmentedSourceROMWriter.hpp
@@ -1392,10 +1410,10 @@ Task.hpp                         MixedOop.hpp
 Task.hpp                         Universe.hpp
 Task.hpp                         OopCons.hpp
 Task.cpp                         Task.hpp
-Task.cpp                         BoundaryDesc.hpp
 Task.cpp                         ObjArrayDesc.hpp
 Task.cpp                         MethodTrap.hpp
 Task.cpp                         Verifier.hpp
+Task.cpp                         RefArray.hpp
 Task.cpp                         StringTable.hpp
 Task.cpp                         SymbolTable.hpp
 Task.cpp                         Synchronizer.hpp
@@ -1415,6 +1433,7 @@ TaskContext.cpp                  Universe.hpp
 #if ENABLE_ISOLATES
 TaskContext.cpp                  StringTable.hpp
 TaskContext.cpp                  SymbolTable.hpp
+TaskContext.cpp                  RefArray.hpp
 
 IsolateNatives.hpp               kni.h
 IsolateNatives.hpp               Allocation.hpp
@@ -1727,7 +1746,6 @@ Thread.cpp                       VMEvent.hpp
 Thread.cpp                       JavaDebugger.hpp
 Thread.cpp                       Compiler.hpp
 Thread.cpp                       WTKProfiler.hpp
-Thread.cpp                       JniFrame.hpp
 
 Debug.hpp                        GlobalDefinitions.hpp
 Debug.cpp                        Debug.hpp
@@ -1736,6 +1754,7 @@ Debug.cpp                        Frame.hpp
 Debug.cpp                        Compiler.hpp
 Debug.cpp                        RegisterAllocator.hpp
 Debug.cpp                        JVM.hpp
+Debug.cpp                        FPURegisterMap_<carch>.hpp
 Debug.cpp                        Scheduler.hpp
 Debug.cpp                        ROM.hpp
 Debug.cpp                        Universe.hpp
@@ -1748,6 +1767,7 @@ Debug.cpp                        Signature.hpp
 
 Debug_<carch>.cpp                Debug.hpp
 Debug_<carch>.cpp                Compiler.hpp
+Debug_<carch>.cpp                FPURegisterMap_<carch>.hpp
 Debug_<carch>.cpp                ObjectHeap_<iarch>.hpp
 
 Globals.cpp                      Top.hpp
@@ -1793,7 +1813,6 @@ ClassFileParser.cpp              OsMisc.hpp
 ClassFileParser.cpp              OopDesc.inline.hpp
 ClassFileParser.cpp              Compiler.hpp
 ClassFileParser.hpp              LineVarTable.hpp
-ClassFileParser.hpp              EventLogger.hpp
 #if ENABLE_ISOLATES
 ClassFileParser.cpp              TaskMirror.hpp
 #endif
@@ -1890,6 +1909,12 @@ ObjArrayClass.cpp                TypeSymbol.hpp
 ObjArrayClass.cpp                Throw.hpp
 ObjArrayClass.cpp                Symbols.hpp
 
+RefArray.hpp                     Array.hpp
+RefArray.hpp                     Universe.hpp
+RefArray.cpp                     ObjectHeap_<iarch>.hpp
+RefArray.cpp                     RefArray.hpp
+RefArray.cpp                     Task.hpp
+
 Oop.hpp                          OopDesc.hpp
 Oop.hpp                          FarClassDesc.hpp
 Oop.cpp                          Oop.hpp
@@ -1917,6 +1942,7 @@ Oop.cpp                          StackmapList.hpp
 Oop.cpp                          Thread.hpp
 Oop.cpp                          Entry.hpp
 Oop.cpp                          CompilationQueue.hpp
+Oop.cpp                          VirtualStackFrame.hpp
 Oop.cpp                          MixedOop.hpp
 Oop.cpp                          Task.hpp
 #if ENABLE_ISOLATES
@@ -2084,7 +2110,6 @@ SymbolTable.cpp                  Task.hpp
 Method.hpp                       Oop.hpp
 Method.hpp                       OopCons.hpp
 Method.hpp                       ObjectHeap_<iarch>.hpp
-Method.hpp                       CompilerObject.hpp
 Method.hpp                       Universe.hpp
 Method.hpp                       ConstantPool.hpp
 Method.cpp                       BytecodeClosure.hpp
@@ -2170,13 +2195,15 @@ JavaNear.cpp                     TypeArray.hpp
 JavaNear.cpp                     JavaClass.hpp
 
 Universe.hpp                     BufferedFile.hpp
+Universe.hpp                     CompilationQueueElementDesc.hpp
+Universe.hpp                     EntryDesc.hpp
 Universe.hpp                     MixedOopDesc.hpp
 Universe.hpp                     ObjArray.hpp
 Universe.hpp                     Oop.hpp
 Universe.hpp                     OopDesc.hpp
 Universe.hpp                     Thread.hpp
+Universe.hpp                     VirtualStackFrameDesc.hpp
 Universe.hpp                     TaskContext.hpp
-Universe.hpp                     WeakRefArray.hpp
 Universe.cpp                     Bytecodes.hpp
 Universe.cpp                     BytecodeClosure.hpp
 Universe.cpp                     CharacterStream.hpp
@@ -2198,7 +2225,6 @@ Universe.cpp                     JavaNear.hpp
 Universe.cpp                     JavaVTable.hpp
 Universe.cpp                     JVM.hpp
 Universe.cpp                     MixedOop.hpp
-Universe.cpp                     Natives.hpp
 Universe.cpp                     Near.hpp
 Universe.cpp                     NearClass.hpp
 Universe.cpp                     ObjArrayClass.hpp
@@ -2208,6 +2234,7 @@ Universe.cpp                     OopDesc.inline.hpp
 Universe.cpp                     OopVisitor.hpp
 Universe.cpp                     OS.hpp
 Universe.cpp                     OsFile_<os_family>.hpp
+Universe.cpp                     RefArray.hpp
 Universe.cpp                     RemoteTracer.hpp
 Universe.cpp                     ROMWriter.hpp
 Universe.cpp                     Scheduler.hpp
@@ -2691,6 +2718,9 @@ OopDesc.inline.hpp               ObjNearDesc.hpp
 OopDesc.inline.hpp               TypeArrayClass.hpp
 OopDesc.inline.hpp               StackmapListDesc.hpp
 OopDesc.inline.hpp               ThreadDesc.hpp
+OopDesc.inline.hpp               EntryDesc.hpp
+OopDesc.inline.hpp               VirtualStackFrameDesc.hpp
+OopDesc.inline.hpp               CompilationQueueElementDesc.hpp
 OopDesc.inline.hpp               MixedOopDesc.hpp
 OopDesc.inline.hpp               VMEventDesc.hpp
 OopDesc.inline.hpp               VMEventModifierDesc.hpp
@@ -2821,7 +2851,6 @@ sni.cpp                          TypeArrayClass.hpp
 sni.cpp                          JavaClass.hpp
 sni.cpp                          JavaClassObj.hpp
 sni.cpp                          InstanceClass.hpp
-sni.cpp                          JniImpl.hpp
 #if ENABLE_ISOLATES
 sni.cpp                          Task.hpp
 #endif
@@ -2835,7 +2864,6 @@ ConstantPoolRewriter.hpp        OopDesc.inline.hpp
 ConstantPoolRewriter.hpp        Top.hpp
 ConstantPoolRewriter.hpp        ConstantPool.hpp
 ConstantPoolRewriter.hpp        Bytecodes.hpp
-ConstantPoolRewriter.hpp        Method.hpp
 ConstantPoolRewriter.hpp        BytecodeOptimizer.hpp
 ConstantPoolRewriter.cpp        OopVisitor.hpp
 ConstantPoolRewriter.cpp        ConstantPoolRewriter.hpp
@@ -2845,6 +2873,7 @@ ConstantPoolRewriter.cpp        TypeArrayClass.hpp
 ConstantPoolRewriter.cpp        TypeArray.hpp
 ConstantPoolRewriter.cpp        ObjArray.hpp
 ConstantPoolRewriter.cpp        String.hpp
+ConstantPoolRewriter.cpp        Method.hpp
 ConstantPoolRewriter.cpp        Symbols.hpp
 ConstantPoolRewriter.cpp        SymbolTable.hpp
 ConstantPoolRewriter.cpp        ROMOptimizer.hpp
@@ -2877,14 +2906,6 @@ JFP_lib_floor.cpp               FloatNatives.hpp
 
 JFP_lib_copysign.cpp            FloatNatives.hpp
 
-JFP_lib_asin.cpp                FloatNatives.hpp
-
-JFP_lib_acos.cpp                FloatNatives.hpp
-
-JFP_lib_atan.cpp                FloatNatives.hpp
-
-JFP_lib_atan2.cpp               FloatNatives.hpp
-
 IEEE754_fmod.cpp                FloatNatives.hpp
 
 IEEE754_rem_pio2.cpp            FloatNatives.hpp
@@ -2915,8 +2936,10 @@ ROMInliner.cpp                  ObjectHeap_<iarch>.hpp
 
 
 HotRoutines.incl.hpp            Top.hpp
+HotRoutines.incl.hpp            VirtualStackFrame.hpp
 HotRoutines.incl.hpp            Location.hpp
 HotRoutines.incl.hpp            Compiler.hpp
+HotRoutines.incl.hpp            CodeGenerator.hpp
 HotRoutines.incl.hpp            OopDesc.inline.hpp
 HotRoutines.incl.hpp            Inflate.hpp
 HotRoutines.incl.hpp            ConstantPool.hpp
@@ -2969,6 +2992,7 @@ MixedOop.hpp                    Oop.hpp
 MixedOop.hpp                    MixedOopDesc.hpp
 MixedOop.cpp                    MixedOop.hpp
 MixedOop.cpp                    Universe.hpp
+MixedOop.cpp                    CompilationQueue.hpp
 MixedOop.cpp                    OopVisitor.hpp
 MixedOop.cpp                    Thread.hpp
 MixedOop.cpp                    BinaryAssembler_<carch>.hpp
@@ -3036,7 +3060,7 @@ MethodTrap.cpp                  SymbolTable.hpp
 MethodTrap.cpp                  jvmspi.h
 MethodTrap.cpp                  kni.h
 
-#if ENABLE_EXTENDED_API
+#if ENABLE_REFLECTION
 ReflectionNatives.cpp           GlobalDefinitions.hpp
 ReflectionNatives.cpp           FieldEnumerator.hpp
 ReflectionNatives.cpp           MethodEnumerator.hpp
@@ -3183,9 +3207,3 @@ StackUtils.hpp                  Allocation.hpp
 
 OopCons.hpp                     ObjArray.hpp
 OopCons.hpp                     Universe.hpp
-
-
-WeakRefArray.hpp                Array.hpp
-WeakRefArray.cpp                ObjectHeap.hpp
-WeakRefArray.cpp                Universe.hpp
-WeakRefArray.cpp                WeakRefArray.hpp

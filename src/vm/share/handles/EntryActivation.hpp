@@ -45,7 +45,7 @@ class EntryActivation: public Oop {
   static int next_offset() {
     return FIELD_OFFSET(EntryActivationDesc, _next);
   }
-#if USE_REFLECTION || ENABLE_JAVA_DEBUGGER || ENABLE_JNI
+#if ENABLE_REFLECTION || ENABLE_JAVA_DEBUGGER
   static int return_point_offset() {
     return FIELD_OFFSET(EntryActivationDesc, _return_point);
   }
@@ -177,9 +177,9 @@ class EntryActivation: public Oop {
     }
   }
 
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
-  void print_value_on(Stream* s);
-  void print_list_on(Stream* s, int indent, int index);
+#ifndef PRODUCT
+  void print_value_on(Stream* s) PRODUCT_RETURN;
+  void print_list_on(Stream* s, int indent, int index) PRODUCT_RETURN;
   void iterate(OopVisitor* visitor);
   static void iterate_oopmaps(oopmaps_doer do_map, void* param);
 #endif

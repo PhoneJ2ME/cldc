@@ -52,7 +52,7 @@ class ClassFileParser: public StackObj {
     _head              = this;
   }
 
-  ~ClassFileParser( void ) {
+  ~ClassFileParser() {
     // Pop this from the static class file parser list
     _head = _previous;
   }
@@ -61,32 +61,19 @@ class ClassFileParser: public StackObj {
   // is not hooked up to the system dictionary or any other
   // structures, so a .class file can be loaded several times if
   // desired. The system dictionary hookup is done by ClassLoader.
-  ReturnOop parse_class(ClassParserState *state JVM_TRAPS) {
-    EventLogger::start( EventLogger::LOAD_CLASS );
+  bool parse_class_0(ClassParserState *state JVM_TRAPS);
+  ReturnOop parse_class(ClassParserState *state JVM_TRAPS);
 #if ENABLE_MONET
-    const int class_id = Universe::number_of_java_classes();
+  ReturnOop parse_class_internal(ClassParserState *state JVM_TRAPS);
+#else
+#define parse_class_internal parse_class
 #endif
-    OopDesc* klass = parse_class_internal(state JVM_NO_CHECK);
-#if ENABLE_MONET
-    // If converting, remove this class from the class_list if there was
-    // an exception.  Otherwise when we iterate through the list of
-    // system classes we will get a NULL InstanceClass
-    if (CURRENT_HAS_PENDING_EXCEPTION) {
-      if (GenerateROMImage && Universe::number_of_java_classes() == class_id + 1){
-        Universe::unregister_last_java_class();
-      }
-    }
-#endif
-    EventLogger::end( EventLogger::LOAD_CLASS );
-    return klass;
-  }
-
   static bool is_package_restricted(Symbol *class_name);
   // Needed for lazy error throwing
   static ReturnOop new_lazy_error_method(Method* method,
                                          address native_function JVM_TRAPS);
-  static void gc_prologue( void );
-  static void gc_epilogue( void );
+  static void gc_prologue();
+  static void gc_epilogue();
  private:
   TypeArray*       _buffer;
   jubyte*          _bufptr;
@@ -143,9 +130,6 @@ class ClassFileParser: public StackObj {
                                             const AccessFlags method_access_flags,
                                             const AccessFlags class_access_flags);
 
-  static inline bool is_circular(InstanceClass* this_class);
-  static inline void check_local_interfaces(InstanceClass* this_class JVM_TRAPS);
-
   // Constant pool parsing
   bool is_valid_utf8_in_buffer(jint utf8_length);
   void parse_constant_pool_utf8_entry(ConstantPool* cp, int index JVM_TRAPS);
@@ -169,12 +153,9 @@ class ClassFileParser: public StackObj {
 
   // Interface parsing
   ReturnOop parse_interface_indices(ClassParserState *stack,
-                                    ConstantPool* cp, bool& resolved JVM_TRAPS);
+                                    ConstantPool* cp, bool *resolved JVM_TRAPS);
   ReturnOop parse_interfaces(ConstantPool* cp, TypeArray* interface_indices
                              JVM_TRAPS);
-  static int count_interfaces(OopDesc* local_interface_indices, OopDesc* bitmap);
-  static int found_all_interfaces(OopDesc* local_interface_indices, OopDesc* all_interface_indices, 
-                                  int already_in_table, OopDesc* bitmap);
 
   // Field parsing
   void parse_field_attributes(ConstantPool* cp, 
@@ -186,9 +167,9 @@ class ClassFileParser: public StackObj {
 
   // Method parsing
   ReturnOop parse_method(ClassParserState *state, ConstantPool* cp, 
-                         const AccessFlags class_access_flags JVM_TRAPS);
+                         AccessFlags& class_access_flags JVM_TRAPS);
   ReturnOop parse_methods(ClassParserState *state, ConstantPool* cp, 
-                          const AccessFlags class_access_flags, 
+                          AccessFlags& class_access_flags, 
                           bool& has_native_methods JVM_TRAPS);
 
   ReturnOop parse_exception_table(int code_length, ConstantPool* cp JVM_TRAPS);
@@ -212,17 +193,6 @@ class ClassFileParser: public StackObj {
     c->set_is_synthetic();
   }
   
-  ReturnOop parse_class_internal(ClassParserState *state JVM_TRAPS);
-  bool parse_class_0(ClassParserState *state JVM_TRAPS);
-
-  static void clone_invoke_special_virtual_conflicts(InstanceClass* this_klass,
-    ConstantPool* old_cp, ConstantPool* new_cp,
-    TypeArray* relocation_map, int delta);  
-  static void fill_in_invoke_indexes(InstanceClass* this_class,
-    TypeArray* invoke_sp_ids, TypeArray* invoke_vi_ids);
-  static void resolve_invoke_special_virtual_conflicts(InstanceClass* this_class
-    JVM_TRAPS);
-
   // Field and oopmap offset computation
   void update_fields(ConstantPool* cp, TypeArray* fields, bool is_static,
                      int next_offset, int prev_oop_offset, TypeArray* map,

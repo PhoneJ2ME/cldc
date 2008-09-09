@@ -57,10 +57,22 @@ bool      ObjectHeap::_is_finalizing;
 
 #if ENABLE_COMPILER
 OopDesc** ObjectHeap::_saved_compiler_area_top;
+
+OopDesc* (*ObjectHeap::code_allocator) (size_t size JVM_TRAPS)
+  = &ObjectHeap::allocate;
+OopDesc* (*ObjectHeap::temp_allocator) (size_t size JVM_TRAPS)
+  = &ObjectHeap::allocate;
 #endif
 
 #if ENABLE_INTERNAL_CODE_OPTIMIZER
 OopDesc** ObjectHeap::_saved_compiler_area_top_quick;
+void ObjectHeap::save_compiler_area_top_fast() {
+  _saved_compiler_area_top_quick = _compiler_area_top;
+}
+
+void ObjectHeap::update_compiler_area_top_fast() {
+  _compiler_area_top = _saved_compiler_area_top_quick;
+}
 #endif 
 
 #define CACHE_QUICK_VAR(v) _quick_vars.v = _ ## v
@@ -269,7 +281,24 @@ void ObjectHeap::accumulate_current_task_memory_usage( void ) {
 OopDesc** ObjectHeap::current_task_allocation_end ( void ) {
   GUARANTEE( _inline_allocation_top == _task_allocation_start,
     "no allocations should happen here" );
-  int available = available_for_current_task();
+  int available = free_memory() - int(_reserved_memory_deficit);
+  if( available < 0 ) {
+    available = 0;
+  }
+  const TaskMemoryInfo& task_info = get_task_info( _current_task_id );
+  const int estimate = task_info.estimate;
+  {
+    const int unused = task_info.reserve - estimate;
+    if( unused > 0 ) {
+      available += unused;
+    }
+  }
+  {
+    const int unused = task_info.limit - estimate;
+    if( unused < available ) {
+      available = unused;
+    }
+  }
   available = align_size_down( available, BytesPerWord );
 
   OopDesc** allocation_end =
@@ -282,6 +311,31 @@ OopDesc** ObjectHeap::current_task_allocation_end ( void ) {
   }
   GUARANTEE(allocation_end <= _compiler_area_start, "overlap");
   return allocation_end;
+}
+
+int ObjectHeap::available_for_current_task() {
+  OopDesc** const allocation_end = disable_allocation_trap();
+  accumulate_current_task_memory_usage();
+
+  int available = free_memory() - (int)_reserved_memory_deficit;
+  const TaskMemoryInfo& task_info = get_task_info(_current_task_id);
+  const int estimate = task_info.estimate;
+  {
+    const int unused = task_info.reserve - estimate;
+    if (unused > 0) {
+      available += unused;
+    }
+  }
+  {
+    const int unused = task_info.limit - estimate;
+    if (unused < available) {
+      available = unused;
+    }
+  }
+
+  enable_allocation_trap(allocation_end);
+  GUARANTEE(available >= 0, "sanity");
+  return available;
 }
 
 int ObjectHeap::on_task_switch ( const int task_id ) {
@@ -691,9 +745,9 @@ void LiveRange::set_next_live(OopDesc** p) {
 void LiveRange::set_next_dead(OopDesc** p) {
   size_t first_word = (size_t) *_position;
   if (first_word == 0x1) {
-    _position[0] = (OopDesc*) ((size_t) p | 0x1);
+    *_position = (OopDesc*) ((size_t) p | 0x1);
   } else {
-    _position[1] = (OopDesc*) p;
+    *(_position+1) = (OopDesc*) p;
   }
 }
 
@@ -722,359 +776,47 @@ void ObjectHeap::nuke_raw_handles() {
 }
 #endif
 
-inline void ObjectHeap::weak_refs_do(void do_oop(OopDesc**)) {
+inline void ObjectHeap::global_refs_do(void do_oop(OopDesc**), const int mask) {
 #if ENABLE_ISOLATES
   ForTask( task ) {
     Task::Raw t = Task::get_task(task);
-    if (t.not_null()) {
-      WeakRefArray::Raw refs = t().weak_references();
-      if (refs.not_null()) {
-        refs().oops_do(do_oop);
-      }
+    if( t.not_null() ) {
+      RefArray::Raw refs = t().global_references();
+      refs().oops_do( do_oop, mask );
     }
   }
 #else
-  {
-    WeakRefArray::Raw refs = Universe::weak_references()->obj();
-    if (refs.not_null()) {
-      refs().oops_do(do_oop);
-    }
-  }
+  RefArray::current()->oops_do( do_oop, mask );
 #endif
-}
-
-inline int 
-ObjectHeap::make_reference(unsigned type, unsigned owner, unsigned index) {
-  (void)owner;
-  return ((index << RefIndexOffset) | 
-#if ENABLE_ISOLATES
-          (owner << RefOwnerOffset) |
-#endif
-          type);
-}
-
-inline unsigned 
-ObjectHeap::get_reference_type(const int ref_index) {
-  return ref_index & RefTypeMask;
-}
-
-inline unsigned 
-ObjectHeap::get_reference_index(const int ref_index) {
-  return ref_index >> RefIndexOffset;
-}
-
-inline ReturnOop 
-ObjectHeap::get_reference_array(const int ref_index) {
-  GUARANTEE(is_encoded_reference(ref_index), "Must be encoded ref");
-  const unsigned type = get_reference_type(ref_index);
-  const unsigned owner = get_reference_owner(ref_index);
-
-  return get_reference_array(type, owner);
-}
-
-inline bool 
-ObjectHeap::is_encoded_reference(const int ref_index) {
-  return (ref_index & EncodedRefFlag) == EncodedRefFlag;
-}
-
-inline bool 
-ObjectHeap::is_local_reference(const int ref_index) {
-  return get_reference_type(ref_index) == LocalRefType;
-}
-
-inline bool 
-ObjectHeap::is_strong_reference(const int ref_index) {
-  return get_reference_type(ref_index) == StrongGlobalRefType;
-}
-
-inline bool 
-ObjectHeap::is_weak_reference(const int ref_index) {
-  return get_reference_type(ref_index) == WeakGlobalRefType;
-}
-
-inline bool 
-ObjectHeap::is_global_reference(const int ref_index) {
-  return is_strong_reference(ref_index) || is_weak_reference(ref_index);
-}
-
-inline unsigned 
-ObjectHeap::get_reference_owner(const int ref_index) {
-#if ENABLE_ISOLATES
-
-#if ENABLE_JNI
-  if (is_local_reference(ref_index)) {
-    return 0;
-  }
-#else
-  GUARANTEE(is_global_reference(ref_index), 
-            "Local references are not supported");
-#endif
-
-  return (ref_index & RefOwnerMask) >> RefOwnerOffset;
-#else
-  return 0;
-#endif
-}
-
-inline ReturnOop 
-ObjectHeap::get_reference_array(unsigned type, unsigned owner) {
-#if ENABLE_JNI
-  if (type == LocalRefType) {
-    Thread::Raw thread = Thread::current();
-    return thread().local_references();
-  } else 
-#endif
-  {
-    GUARANTEE(type == StrongGlobalRefType || type == WeakGlobalRefType, 
-              "Invalid ref type");
-#if ENABLE_ISOLATES
-    GUARANTEE(0 < owner && owner < MAX_TASKS, "Invalid owner");
-    Task::Raw task = Task::get_task( owner );
-    GUARANTEE( task.not_null(), "Wrong task" );
-    return (type == WeakGlobalRefType) ? 
-      task().weak_references() : task().strong_references();
-#else
-    (void)owner;
-    return (type == WeakGlobalRefType) ? 
-      Universe::weak_references()->obj() : 
-      Universe::strong_references()->obj();
-#endif
-  }
-}
-
-inline void 
-ObjectHeap::set_reference_array(unsigned type, unsigned owner, Array* array) {
-#if ENABLE_JNI
-  if (type == LocalRefType) {
-    Thread::Raw thread = Thread::current();
-    thread().set_local_references(array->obj());
-  } else 
-#endif
-  {
-    GUARANTEE(type == StrongGlobalRefType || type == WeakGlobalRefType, 
-              "Invalid ref type");
-#if ENABLE_ISOLATES
-    GUARANTEE(0 < owner && owner < MAX_TASKS, "Invalid owner");
-    Task::Raw task = Task::get_task( owner );
-    GUARANTEE( task.not_null(), "Wrong task" );
-    if (type == WeakGlobalRefType) {
-      task().set_weak_references(array->obj()); 
-    } else {
-      task().set_strong_references(array->obj());
-    }
-#else
-    (void)owner;
-    if (type == WeakGlobalRefType) {
-      *Universe::weak_references() = array->obj(); 
-    } else {
-      *Universe::strong_references() = array->obj();
-    }
-#endif
-  }
-}
-
-inline OopDesc** ObjectHeap::decode_reference(const int ref_index) {
-  GUARANTEE(ref_index != 0, "Must not be NULL");
-
-  if (!is_encoded_reference(ref_index)) {
-    return (OopDesc**)ref_index;
-  }
-
-  Array::Raw array = get_reference_array(ref_index);
-
-  const unsigned index = get_reference_index(ref_index);
-
-  const int offset = array().base_offset() + index * sizeof(jobject);
-  return array.obj()->obj_field_addr(offset);
-}
-
-#if ENABLE_JNI
-int ObjectHeap::register_local_reference(Oop* referent) {
-  Thread::Raw thread = Thread::current();
-  ObjArray::Raw locals = thread().local_references();
-  JniFrame::Raw frame = thread().jni_frame();
-
-  GUARANTEE(frame.not_null(), "Must have a JNI frame");
-  GUARANTEE(locals.not_null(), "Must have local refs allocated");
-
-  const int local_ref_index = frame().local_ref_index();
-
-  GUARANTEE(local_ref_index < locals().length(), 
-            "Insufficient local capacity");
-
-  locals().obj_at_put(local_ref_index, referent);
-
-  frame().set_local_ref_index(local_ref_index + 1);
-
-  return make_reference(LocalRefType, 0, local_ref_index);
-}
-
-void ObjectHeap::unregister_local_reference(const int ref_index) {
-  GUARANTEE(is_local_reference(ref_index), "Must be a local reference");
-
-  const int index = get_reference_index(ref_index);
-  
-  Thread::Raw thread = Thread::current();
-  ObjArray::Raw locals = thread().local_references();
-
-  GUARANTEE(locals.not_null(), "Must have local refs allocated");
-
-  if (0 <= index && index < locals().length()) {
-    locals().obj_at_clear(index);
-    JniFrame::Raw frame = thread().jni_frame();
-    GUARANTEE(frame.not_null(), "Must have a JNI frame");
-    GUARANTEE(index < frame().local_ref_index(), 
-              "Invalid local reference index");
-    if (index == frame().local_ref_index() - 1) {
-      frame().set_local_ref_index(index);
-    }
-  }
-}
-#endif
-
-int ObjectHeap::register_strong_reference(Oop* referent JVM_TRAPS) {
-  const unsigned owner = TaskContext::current_task_id();
-
-  UsingFastOops fast_oops;
-  ObjArray::Fast array = get_reference_array(StrongGlobalRefType, owner);
-
-  if (array.is_null()) {
-    array = Universe::new_obj_array(16 JVM_NO_CHECK);
-    if (array.is_null()) {
-      Thread::clear_current_pending_exception();
-      return 0;
-    }
-  }
-
-  int index = 0;
-
-  if (referent->not_null()) {
-    const int length = array().length();
-
-    for (index = 1; index < length; index++) {
-      if (array().obj_at(index) == NULL) {
-        break;
-      }
-    }
-
-    if (index >= length) {
-      ObjArray::Raw new_array = 
-        Universe::new_obj_array(length * 2 JVM_NO_CHECK);
-      if (new_array.is_null()) {
-        Thread::clear_current_pending_exception();
-        return 0;
-      }
-      ObjArray::array_copy(&array, 0, &new_array, 0, length JVM_MUST_SUCCEED);
-      array = new_array;
-    }
-
-    array().obj_at_put(index, referent);
-  }
-
-  set_reference_array(StrongGlobalRefType, owner, &array);
-
-  return make_reference(StrongGlobalRefType, owner, index);
-}
-
-int ObjectHeap::register_weak_reference(Oop* referent JVM_TRAPS) {
-  const unsigned owner = TaskContext::current_task_id();
-
-  UsingFastOops fast_oops;
-  WeakRefArray::Fast array = get_reference_array(WeakGlobalRefType, owner);
-
-  if (array.is_null()) {
-    array = WeakRefArray::create(JVM_SINGLE_ARG_NO_CHECK);
-    if (array.is_null()) {
-      Thread::clear_current_pending_exception();
-      return 0;
-    }
-  }
-
-  int index = 0;
-
-  if (referent->not_null()) {
-    const int length = array().length();
-
-    for (index = 1; index < length; index++) {
-      if (array().obj_at(index) == WeakRefArray::unused()) {
-        break;
-      }
-    }
-
-    if (index >= length) {
-      WeakRefArray::Raw new_array = 
-        WeakRefArray::create(length * 2 JVM_NO_CHECK);
-      if (new_array.is_null()) {
-        Thread::clear_current_pending_exception();
-        return 0;
-      }
-      TypeArray::array_copy((TypeArray*)&array, 0, 
-                            (TypeArray*)&new_array, 0, length, 
-                            sizeof(jobject));
-      array = new_array;
-    }
-
-    array().obj_at_put(index, referent);
-  }
-
-  set_reference_array(WeakGlobalRefType, owner, &array);
-
-  return make_reference(WeakGlobalRefType, owner, index);
-}
-
-void ObjectHeap::unregister_strong_reference(const int ref_index) {
-  GUARANTEE(is_strong_reference(ref_index), "Must be a strong reference");
-  
-  ObjArray::Raw array = get_reference_array(ref_index);
-  const unsigned index = get_reference_index(ref_index);
-
-  array().obj_at_clear(index);  
-}
-
-void ObjectHeap::unregister_weak_reference(const int ref_index) {
-  GUARANTEE(is_weak_reference(ref_index), "Must be a weak reference");
-
-  WeakRefArray::Raw array = get_reference_array(ref_index);  
-  const unsigned index = get_reference_index(ref_index);
-
-  array().remove(index);  
 }
 
 int ObjectHeap::register_global_ref_object(Oop* referent,
                                            ReferenceType type JVM_TRAPS) {
-  switch (type) {
-  case WEAK: 
-    return register_weak_reference(referent JVM_NO_CHECK_AT_BOTTOM);
-  default:
-    GUARANTEE(type == STRONG, "Invalid global reference type");
-    return register_strong_reference(referent JVM_NO_CHECK_AT_BOTTOM);
-  }
-}
- 
-void ObjectHeap::unregister_global_ref_object(const int ref_index) {
-  if (is_weak_reference(ref_index)) {
-    unregister_weak_reference(ref_index);
-  } else {
-    GUARANTEE(is_strong_reference(ref_index), 
-              "Invalid global reference type");
-    unregister_strong_reference(ref_index);
-  }
+  const int i = RefArray::current()->add(referent, type JVM_MUST_SUCCEED);
+  return make_global_reference( i );
 }
 
-OopDesc* ObjectHeap::get_global_ref_object(const int ref_index) {
-  return *decode_reference(ref_index);
-}
-
-int ObjectHeap::get_global_reference_owner(const int ref_index) {
-  GUARANTEE(is_global_reference(ref_index), "Not a global ref");
-  return get_reference_owner(ref_index);
-}
-
-#if ENABLE_JNI
-extern "C" OopDesc** decode_handle(const jobject ref) {
-  return ObjectHeap::decode_reference((const int)ref);
-}
+OopDesc* ObjectHeap::get_global_ref_object(const int ref) {
+#if ENABLE_ISOLATES
+  Task::Raw task = Task::get_task( get_global_reference_owner(ref) );
+  GUARANTEE( task.not_null(), "Wrong task" );
+  RefArray::Raw refs = task().global_references();
+#else
+  RefArray::Raw refs = RefArray::current();
 #endif
+  return refs().get( get_global_reference_index( ref ) );
+}
+
+void ObjectHeap::unregister_global_ref_object(const int ref) {
+#if ENABLE_ISOLATES
+  Task::Raw task = Task::get_task( get_global_reference_owner(ref) );
+  GUARANTEE( task.not_null(), "Wrong task" );
+  RefArray::Raw refs = task().global_references();
+#else
+  RefArray::Raw refs = RefArray::current();
+#endif
+  refs().remove( get_global_reference_index( ref ) );
+}
 
 #if !defined(AZZERT) && !ENABLE_ISOLATES
 OopDesc* ObjectHeap::allocate_raw(size_t size JVM_TRAPS) {
@@ -1104,7 +846,7 @@ OopDesc* ObjectHeap::clone(OopDesc* source JVM_TRAPS) {
   size_t size = source->object_size();
   UsingFastOops allocation_below;
   Oop::Fast source_handle = source;
-  OopDesc* result = allocate_raw(size JVM_ZCHECK_0(result));
+  OopDesc* result = allocate_raw(size JVM_ZCHECK(result));
   // Don't care about write_barrier - the result object is always in youngen
   jvm_memcpy(result, source_handle.obj(), size);
   return result;
@@ -1236,80 +978,107 @@ OopDesc* ObjectHeap::allocate(size_t size JVM_TRAPS) {
 //     [Old CompiledMethod #...]
 //     <--------------------_saved_compiler_area_top
 //     [New CompiledMethod, under construction]
-//     <--------------------_compiler_area_temp_bottom
-//     ... empty space ...
-//     <--------------------_compiler_area_temp_top
+//     [Int Array]
 //     [temp object#...]
 //     [temp object#2]
 //     [temp object#1]
-//     [temp object#0]: CodeGenerator
+//     [temp object#0]
 //     <--------------------_compiler_area_top == _heap_top
 //
 // Note that in case [2], the temp objects are allocated from the top of
 // the compiler area downwards. This makes it possible to collect the
 // old CompiledMethods if the New CompiledMethod needs more space to
-// compile. Empty space shrinks when new CompiledMethod expands or
-// temp objects are allocated.
-OopDesc* ObjectHeap::compiler_area_allocate_code(const int size JVM_TRAPS) {
-  GUARANTEE(_compiler_area_temp_bottom == NULL, 
+// compile. The Int Array fills the space between the New CompiledMethod
+// and the temp objects.
+OopDesc* ObjectHeap::compiler_area_allocate_code(size_t size JVM_TRAPS) {
+  GUARANTEE(_compiler_area_temp_object_bottom == NULL, 
             "no temp objects can be alive when allocating new compiled code");
-  {
-    const int free_bytes = DISTANCE(_compiler_area_top, compiler_area_end());
-    if( free_bytes < size ) {
-      const size_t slack = _heap_size / 32 + 4 * 1024;
-      if( compiler_area_soft_collect(size + slack) < size ) {
-        Throw::out_of_memory_error(JVM_SINGLE_ARG_THROW_0);
-      }
+  const size_t needed = size + ArrayDesc::allocation_size(0, sizeof(int));
+  OopDesc** const end = compiler_area_end();
+  const size_t free_bytes = DISTANCE(_compiler_area_top, end);
+  if (free_bytes < needed) {
+    const size_t slack = _heap_size / 32 + 4 * 1024;
+    if (compiler_area_soft_collect(needed + slack) < needed) {
+      Throw::out_of_memory_error(JVM_SINGLE_ARG_THROW_0);
     }
   }
 
+  GUARANTEE( DISTANCE(_compiler_area_top, end) >= (int)needed, "sanity" );
+
+  // [1] Allocate and clear the new CompiledMethod.
+  OopDesc* result = (OopDesc*)_compiler_area_top;
+  jvm_memset((void*)result, 0, size);
+
+  // [2] Create the filler array (used by compiler_area_allocate_temp_object)
+  ArrayDesc* filler = DERIVED(ArrayDesc*, _compiler_area_top, size);
+  size_t filler_element_bytes = DISTANCE(filler, end) - ArrayDesc::header_size();
+  size_t filler_element_count = filler_element_bytes / sizeof(int);
+  GUARANTEE(filler_element_count*sizeof(int) == filler_element_bytes,"sanity");
+  filler->initialize(Universe::int_array_class()->prototypical_near(),
+                     filler_element_count);
+
+  _compiler_area_temp_object_bottom = (OopDesc**)filler;
+  _compiler_area_top = end;
+
   PERFORMANCE_COUNTER_INCREMENT(num_of_c_alloc_objs, 1);
+  PERFORMANCE_COUNTER_INCREMENT(total_bytes_collected, size); // IMPL_NOTE:
+        // consider whether it should be fixed 
 
-  // [1] Allocate new CompiledMethod.
-  OopDesc* const result = (OopDesc*)_compiler_area_top;
-  OopDesc** const end = compiler_area_end();
-  GUARANTEE( DISTANCE(result, end) >= (int)size, "sanity" );
-
-  // [2] Set compiler temporary data boundaries
-  compiler_area_initialize( DERIVED(OopDesc**, result, size), end );
-
-  // [3] Clear the new CompiledMethod.
-  return (OopDesc*) jvm_memset(result, 0, size);
+  return result;
 }
 
-OopDesc* ObjectHeap::compiler_area_allocate_temp(const int size JVM_TRAPS){
-  if( free_memory_for_compiler_without_gc() < size ) {
-    // IMPL_NOTE: in the future we should consider
-    // (1) evicting and compacting compiled methods
-    // (2) shifting the compiler_area downwards while pinning all temp objects
-    // or continue allocating temp object below compiler_area_start
+OopDesc* ObjectHeap::compiler_area_allocate_temp(size_t size JVM_TRAPS){
+  GUARANTEE(_compiler_area_temp_object_bottom != NULL, 
+            "temp objects must be allocated after new compiled code has "
+            "been allocated");
+
+  ArrayDesc* filler = (ArrayDesc*)_compiler_area_temp_object_bottom;
+  size_t free_bytes = filler->_length * sizeof(int);
+  if (free_bytes < size) {
+    // IMPL_NOTE: in the future we should consider collecting the compiled
+    // methods, or even shifting the compiler_area downwards, while
+    // pinning all temp objects.
     Throw::out_of_memory_error(JVM_SINGLE_ARG_THROW_0);
   }
 
-  OopDesc** p = DERIVED(OopDesc**, _compiler_area_temp_top, -size);
-  _compiler_area_temp_top = p;
-  GUARANTEE( _compiler_area_temp_bottom <= _compiler_area_temp_top, "sanity" );
+  // Shrink the size of the filler array.
+  size_t filler_header_bytes = ArrayDesc::header_size();
+  size_t filler_element_bytes = free_bytes - size;
+  size_t filler_element_count = filler_element_bytes / sizeof(int);
+  size_t filler_bytes = filler_header_bytes + filler_element_bytes;
+  GUARANTEE(filler_element_count*sizeof(int) == filler_element_bytes,"sanity");
+  filler->_length = filler_element_count;
+
+  // The new object lives immediately after the shruken filler array.
+  OopDesc* result = DERIVED(OopDesc*, filler, filler_bytes);
 
   PERFORMANCE_COUNTER_INCREMENT(num_of_c_alloc_objs, 1);
+  PERFORMANCE_COUNTER_INCREMENT(total_bytes_collected, size); // IMPL_NOTE:
+                               // consider whether it should be fixed  
 
-  return (OopDesc*)jvm_memset((void*)p, 0, size);
+  return (OopDesc*)jvm_memset((void*)result, 0, size);
 }
 
-bool ObjectHeap::expand_current_compiled_method(const int delta) {
-  // This function actually just shrinks the space above
+bool ObjectHeap::expand_current_compiled_method(int delta) {
+  // This function actually just shrinks the filler object immediately above
   // the current compiled method. It's up to CompiledMethod::expand()
   // to modify the compiled method's contents.
+  GUARANTEE(_compiler_area_temp_object_bottom != NULL, 
+            "must be called only during compilation");
   GUARANTEE(align_allocation_size(delta) == (size_t)delta, "must be aligned");
 
-  if( free_memory_for_compiler_without_gc() < delta ) {
+  ArrayDesc* filler = (ArrayDesc*)_compiler_area_temp_object_bottom;
+  int free_bytes = (int)(filler->_length * sizeof(int));
+  if (free_bytes >= delta) {
+    filler = DERIVED(ArrayDesc*, filler, delta);
+    size_t filler_element_count = (free_bytes - delta) / sizeof(int);
+    filler->initialize(Universe::int_array_class()->prototypical_near(),
+                       filler_element_count);
+    _compiler_area_temp_object_bottom = (OopDesc**)filler;
+    return true;
+  } else {
     return false;
   }
-
-  _compiler_area_temp_bottom =
-    DERIVED(OopDesc**, _compiler_area_temp_bottom, delta);
-
-  PERFORMANCE_COUNTER_INCREMENT(num_of_c_alloc_objs, 1);
-  return true;
 }
 
 #endif
@@ -1341,9 +1110,8 @@ void ObjectHeap::dispose() {
   // IMPL_NOTE: not all of these are necessary ....
 
 #if ENABLE_COMPILER
-  _saved_compiler_area_top   = NULL;
-  _compiler_area_temp_top    = NULL;
-  _compiler_area_temp_bottom = NULL;
+  _saved_compiler_area_top          = NULL;
+  _compiler_area_temp_object_bottom = NULL;
 #endif
 
   LargeObjectDummy::uninitialize();
@@ -1413,6 +1181,8 @@ bool ObjectHeap::create() {
   }
 
   GUARANTEE(!YoungGenerationAtEndOfHeap, "sanity");
+  code_allocator = &compiler_area_allocate_code;
+  temp_allocator = &compiler_area_allocate_temp;
 #endif
 
 #ifndef PRODUCT
@@ -2005,15 +1775,13 @@ void ObjectHeap::roots_do_to( void do_oop(OopDesc**), const bool young_only,
     // We ignore the only_young flag here -- all pointers from
     // the compiled methods are scanned. This is safe, just not the fastest.
     CompiledMethodDesc* cm  = (CompiledMethodDesc*)_compiler_area_start;
-    CompiledMethodDesc* end = (CompiledMethodDesc*)_compiler_area_top;
-    {
-      const CodeGenerator* gen = _compiler_code_generator;
-      if( gen ) {
-        end = (CompiledMethodDesc*)gen->compiled_method()->obj();
-      }
+    CompiledMethodDesc* end = (CompiledMethodDesc*)
+      Compiler::current_compiled_method()->obj();
+    if( !end ) {
+      end = (CompiledMethodDesc*)_compiler_area_top;
     }
     while (cm < end) {
-      const FarClassDesc* far_class = decode_far_class(cm);
+      const FarClassDesc* far_class = decode_far_class_with_real_near(cm);
       const size_t size = cm->object_size_for(far_class);
       cm->oops_do_for(far_class, do_oop);
       cm = DERIVED(CompiledMethodDesc*, cm, size);
@@ -2031,9 +1799,15 @@ void ObjectHeap::roots_do_to( void do_oop(OopDesc**), const bool young_only,
     }
   }
   {
-    const CodeGenerator* gen = CodeGenerator::current();
-    if( gen ) {
-      gen->compiled_method()->obj()->oops_do( do_oop );
+    OopDesc* p = Compiler::current_compiled_method()->obj();
+    if( p ) {
+      OopDesc* const end = (OopDesc*)_compiler_area_top;
+      do {
+        const FarClassDesc* far_class = decode_far_class_with_real_near(p);
+        const size_t size = p->object_size_for(far_class);
+        p->oops_do_for(far_class, do_oop);
+        p = DERIVED(OopDesc*, p, size);
+      } while (p < end);
     }
   }
 #endif
@@ -2072,6 +1846,8 @@ inline void ObjectHeap::mark_objects( const bool is_full_collect ) {
     // Mark "young generation" objects referred from "old generation"
     mark_remembered_set();
   }
+  // Mark global references
+  global_refs_do(mark_root_and_stack, STRONG);
 
   // All non-finalizer-reachable roots are marked, handle potential marking
   // stack overflow
@@ -2103,7 +1879,7 @@ inline void ObjectHeap::mark_objects( const bool is_full_collect ) {
   unmark_pending_finalizers();
 
   // Clear all unmarked weak references
-  weak_refs_do(WeakRefArray::clear_non_marked);
+  global_refs_do(RefArray::clear_non_marked, WEAK);
 
   // Mark the pending finalizers once again,
   // so that finalization can happen with them around
@@ -2157,9 +1933,9 @@ void ObjectHeap::check_marking_stack_overflow() {
 }
 
 void ObjectHeap::mark_forward_pointer(OopDesc** p) {
+  OopDesc* obj = *p;
   GUARANTEE(p >= _collection_area_start && p < _inline_allocation_top,"Sanity");
-  OopDesc** obj = (OopDesc**)(*p);
-  if (obj > p && obj < _inline_allocation_top) {
+  if ((OopDesc**)obj > p && (OopDesc**)obj < _inline_allocation_top) {
     set_bit_for(p);
     if (TraceGC) {
        TTY_TRACE_CR(("   0x%x => 0x%x forward marked", p, obj));
@@ -2167,10 +1943,9 @@ void ObjectHeap::mark_forward_pointer(OopDesc** p) {
   }
 }
 
-inline OopDesc** ObjectHeap::mark_forward_pointers( void ) {
+inline OopDesc** ObjectHeap::mark_forward_pointers() {
   OopDesc** p = _collection_area_start;
-  OopDesc** const inline_allocation_top = _inline_allocation_top;
-  OopDesc** const end_scan = inline_allocation_top;
+  OopDesc** end_scan = _inline_allocation_top;
   address bitvector_base = _bitvector_base;
   while (p < end_scan && test_bit_for(p, bitvector_base)) {
     // By marking the pointers in the fixed part of young space, we can
@@ -2178,17 +1953,20 @@ inline OopDesc** ObjectHeap::mark_forward_pointers( void ) {
     // need to mark pointers to "moving space".  But we don't yet know where
     // that barrier is, so we mark all forward pointers.
     FarClassDesc* const blueprint = ((OopDesc*)p)->blueprint();
-    jint instance_size = blueprint->instance_size_as_jint();
+    const jint instance_size = blueprint->instance_size_as_jint();
     if (instance_size > 0) {
       // This is a common case: (non-array) Java object instance. In-line
       // OopDesc::oops_do_for() to make it run faster.
-      const jbyte* map = (jbyte*)blueprint->embedded_oop_map();      
-      for( OopDesc** base = p;; ) {
-        const jint entry = jint(*map++);
+      jbyte* map = (jbyte*)blueprint->embedded_oop_map();
+      OopDesc** base = p;
+      OopDesc** inline_allocation_top = _inline_allocation_top;
+      while (true) {
+        jint entry = (jint)(*map++);
         if (entry > 0) {
           base += entry;
-          OopDesc** obj = (OopDesc**)(*base);
-          if (obj > base && obj < inline_allocation_top) {
+          OopDesc* obj = *base;
+          if ((OopDesc**)obj > base && 
+              (OopDesc**)obj < inline_allocation_top) {
             set_bit_for(base, bitvector_base);
             if (TraceGC) {
               TTY_TRACE_CR(("   0x%x => 0x%x forward marked", base, obj));
@@ -2201,16 +1979,17 @@ inline OopDesc** ObjectHeap::mark_forward_pointers( void ) {
           base += (OopMapEscape - 1);
         }
       }
+      p = DERIVED(OopDesc**, p, instance_size);
     } else {
       ((OopDesc*)p)->oops_do_for(blueprint, mark_forward_pointer);
-      instance_size = ((OopDesc*)p)->object_size();
+      size_t size = ((OopDesc*)p)->object_size();
 
+      if (TraceGC) {
+        TTY_TRACE_CR(("TraceGC: 0x%x - 0x%x (size %d) fixed",
+                      p, DERIVED(OopDesc**, p, size), size));
+      }
+      p = DERIVED(OopDesc**, p, size);
     }
-    if (TraceGC) {
-      TTY_TRACE_CR(("TraceGC: 0x%x - 0x%x (size %d) fixed",
-                    p, DERIVED(OopDesc**, p, instance_size), instance_size));
-    }
-    p = DERIVED(OopDesc**, p, instance_size);
   }
   return p;
 }
@@ -2242,11 +2021,11 @@ inline OopDesc* ObjectHeap::rom_oop_from_offset(size_t offset) {
 #if ENABLE_SEGMENTED_ROM_TEXT_BLOCK
     return (OopDesc*)(int(ROM::min_text_seg_addr()) + offset);
 #else
-    return (OopDesc*)(int(_rom_text_block) + offset);
+    return (OopDesc*)(int(&_rom_text_block[0]) + offset);
 #endif
   } else {
     offset --;
-    return (OopDesc*)(int(_rom_data_block) + offset);
+    return (OopDesc*)(int(&_rom_data_block[0]) + offset);
   }
 }
 #endif // !ENABLE_HEAP_NEARS_IN_HEAP 
@@ -2267,9 +2046,6 @@ inline void ObjectHeap::compute_new_object_locations() {
   const int  slice_size             = _slice_size;
   const int  slice_shift            = _slice_shift;
   address bitvector_base            = _bitvector_base;
-
-  const juint* const last_bitvector_word_ptr =
-    get_bitvectorword_for_unaligned(inline_allocation_top);
 
   bool split_space = (old_generation_end != young_generation_start);
   bool compaction_started = false;
@@ -2375,14 +2151,16 @@ inline void ObjectHeap::compute_new_object_locations() {
 
       // Find next live object by scanning bitmap
       // Compute value of next_bitvector_word_ptr, next_p and bits
-      juint* bitvector_word_ptr = get_bitvectorword_for_unaligned(p);
-      const int trash_bits =
+      juint *bitvector_word_ptr = get_bitvectorword_for_unaligned(p);
+      int trash_bits =
           p - ObjectHeap::get_aligned_for_bitvectorword(bitvector_word_ptr);
       GUARANTEE(0 <= trash_bits && trash_bits <= 31, "Sanity");
 
       juint bitword = *bitvector_word_ptr & ~((1 << (trash_bits)) - 1);
 
       // Find non-zero bitvector word (if any)
+      juint* last_bitvector_word_ptr =
+         get_bitvectorword_for_unaligned(inline_allocation_top);
       while (bitvector_word_ptr <= last_bitvector_word_ptr && bitword == 0) {
         bitword = *++bitvector_word_ptr;
       }
@@ -2481,8 +2259,8 @@ void ObjectHeap::write_barrier_oops_update_interior_pointers(OopDesc** start,
 // Update interior pointers that live outside of the heap
 inline void
 ObjectHeap::update_other_interior_pointers( const bool is_full_collect ) {
-  TRACE_OTHER_UPDATE_INTERIOR("weak_references");
-  weak_refs_do(update_interior_pointer);
+  TRACE_OTHER_UPDATE_INTERIOR("global_refs_array");
+  global_refs_do(update_interior_pointer, STRONG|WEAK);
 
   TRACE_OTHER_UPDATE_INTERIOR("Roots");
   roots_do( update_interior_pointer, !is_full_collect );
@@ -3201,7 +2979,7 @@ void ObjectHeap::collect(size_t min_free_after_collection JVM_TRAPS) {
 inline void ObjectHeap::internal_collect_prologue(size_t min_free_after_collection) {
   EnforceRuntimeJavaStackDirection enfore_java_stack_direction;
 
-  EventLogger::start(EventLogger::GC);
+  EventLogger::log(EventLogger::GC_START);
 
   _collection_area_end = _inline_allocation_top;
   CACHE_QUICK_VAR(heap_start);
@@ -3402,7 +3180,7 @@ inline void ObjectHeap::internal_collect_epilogue(bool is_full_collect,
     TTY_TRACE_CR(( "\n*** ObjectHeap::internal_collect end ***" ));
   }
 
-  EventLogger::end(EventLogger::GC);
+  EventLogger::log(EventLogger::GC_END);
 }
 
 bool ObjectHeap::internal_collect(size_t min_free_after_collection JVM_TRAPS) {
@@ -3651,15 +3429,6 @@ inline OopDesc* ObjectHeap::decode_near(OopDesc* obj, OopDesc **heap_start,
   return n;
 }
 
-inline FarClassDesc* ObjectHeap::decode_far_class(const OopDesc* obj) {
-  GUARANTEE(contains(obj), "must be in heap");
-  OopDesc* n = obj->klass();
-  GUARANTEE(contains(n) || ROM::system_contains(n), "must be valid near");
-  OopDesc* f = n->klass();
-  GUARANTEE(contains(f) || ROM::system_contains(f), "must be in valid near");
-  return (FarClassDesc*) f;
-}
-
 inline FarClassDesc* ObjectHeap::decode_far_class_with_real_near(OopDesc* obj)
 {
   // NOTE: don't use QuickVars, as _compaction_start is being updated
@@ -3753,7 +3522,7 @@ void ObjectHeap::write_barrier_oops_do(void do_oop(OopDesc**),
   WRITE_BARRIER_OOPS_LOOP_END;
 }
 
-void ObjectHeap::expand_young_generation( void ) {
+void ObjectHeap::expand_young_generation() {
   set_inline_allocation_end( _compiler_area_start );
   verify_layout();
 }
@@ -3811,7 +3580,7 @@ void ObjectHeap::increase_compiler_usage(size_t min_free_after_collection) {
 }
 
 // Returns number of free bytes in the compiler area
-int ObjectHeap::compiler_area_soft_collect(size_t min_free_after_collection){
+size_t ObjectHeap::compiler_area_soft_collect(size_t min_free_after_collection){
   accumulate_current_task_memory_usage();
 
   // (0) check if collection is indeed necessary
@@ -3835,7 +3604,7 @@ int ObjectHeap::compiler_area_soft_collect(size_t min_free_after_collection){
   clear_inline_allocation_area();
 
   enable_allocation_trap( allocation_end );
-  return int(free_bytes);
+  return free_bytes;
 }
 
 inline int
@@ -3904,25 +3673,9 @@ inline void ObjectHeap::compiler_area_move_compiled_method (
     TTY_TRACE_CR(("TraceGC: moving compiled method [%d] %p => %p, %d bytes",
       index, src, dst, src->object_size() ));
   }
-#if ENABLE_JVMPI_PROFILE 
-  if( UseJvmpiProfiler && 
-      JVMPIProfile::VMjvmpiEventCompiledMethodUnloadIsEnabled() ){
-    const MethodDesc* method_desc = src->method();
-    const jint method_id = method_desc->method_id();
-    JVMPIProfile::VMjvmpiPostCompiledMethodUnloadEvent(method_id);
-  }
-#endif
 
   CompiledMethodCache::Map[index] = dst;
-  jvm_memmove(dst, src, src->object_size() );
-
-#if ENABLE_JVMPI_PROFILE 
-  if( UseJvmpiProfiler &&
-      JVMPIProfile::VMjvmpiEventCompiledMethodLoadIsEnabled() ) {
-    CompiledMethod::Raw compiled_method( dst );   
-    JVMPIProfile::VMjvmpiPostCompiledMethodLoadEvent(compiled_method);
-  }
-#endif
+  jvm_memmove(dst, src, src->object_size() );  
 }
 
 inline void ObjectHeap::compiler_area_compact( const int last_moving_up ) {
@@ -3953,7 +3706,31 @@ inline void ObjectHeap::compiler_area_compact( const int last_moving_up ) {
       const CompiledMethodDesc* const src = CompiledMethodCache::Map[i];
       CompiledMethodDesc* const dst =
         DERIVED(CompiledMethodDesc*, src, (int)src->_klass);
+
+#if ENABLE_JVMPI_PROFILE 
+      // compiled code has been moved, so send compiled method unload event
+      if(UseJvmpiProfiler && 
+         JVMPIProfile::VMjvmpiEventCompiledMethodUnloadIsEnabled()){
+        MethodDesc* method_desc = src->method();
+        jint method_id = method_desc->method_id();
+        JVMPIProfile::VMjvmpiPostCompiledMethodUnloadEvent(method_id);
+      }
+      int cs = src->object_size();
+#endif
+
       compiler_area_move_compiled_method( dst, src, i );
+
+#if ENABLE_JVMPI_PROFILE 
+      // compiled method has been moved to new location, send compiled method load event
+      if(UseJvmpiProfiler && 
+         JVMPIProfile::VMjvmpiEventCompiledMethodLoadIsEnabled()) {
+        UsingFastOops fast_oops;
+      
+        CompiledMethod::Fast compiled_method = dst;   
+        JVMPIProfile::VMjvmpiPostCompiledMethodLoadEvent(compiled_method);
+      }
+#endif
+
       dst->_klass = compiled_method_class;
     }
   }
@@ -3964,7 +3741,31 @@ inline void ObjectHeap::compiler_area_compact( const int last_moving_up ) {
       CompiledMethodDesc* const dst =
         DERIVED(CompiledMethodDesc*, src, (int)src->_klass);
       if( src != dst ) {
+        
+#if ENABLE_JVMPI_PROFILE 
+        // compiled code has been moved, so send compiled method unload event
+        if(UseJvmpiProfiler && 
+           JVMPIProfile::VMjvmpiEventCompiledMethodUnloadIsEnabled()) {
+        MethodDesc* method_desc = src->method();
+        jint method_id = method_desc->method_id();
+        JVMPIProfile::VMjvmpiPostCompiledMethodUnloadEvent(method_id);
+        }
+        int cs = src->object_size();
+#endif               
         compiler_area_move_compiled_method( dst, src, i );
+
+#if ENABLE_JVMPI_PROFILE 
+        // compiled method has been moved to new location, send compiled method load event
+        if(UseJvmpiProfiler && 
+           JVMPIProfile::VMjvmpiEventCompiledMethodLoadIsEnabled()) {
+          UsingFastOops fast_oops;
+          
+          CompiledMethod::Fast compiled_method = dst;    
+          JVMPIProfile::VMjvmpiPostCompiledMethodLoadEvent(compiled_method);
+        }
+#endif
+
+
       }
       dst->_klass = compiled_method_class;
     }
@@ -4027,17 +3828,16 @@ inline void ObjectHeap::compiler_area_update_pointers( void ) {
   #undef compiler_area_contains
 }
 
-CompiledMethodDesc* ObjectHeap::method_contains_instruction_of(void* pc){
-  if( pc < (CompiledMethodDesc*)_compiler_area_top ) {
-    CompiledMethodDesc* next = (CompiledMethodDesc*)_compiler_area_start;
-    if( pc > next ) {
-      CompiledMethodDesc* p;
-      while( (p = next) < pc ) {
-        next = DERIVED(CompiledMethodDesc*, p, p->object_size());
-      }
-      return p;
+CompiledMethodDesc* ObjectHeap::method_contain_instruction_of(void* pc){
+  CompiledMethodDesc * p   = (CompiledMethodDesc *)_compiler_area_start;
+  CompiledMethodDesc * end = (CompiledMethodDesc *)_compiler_area_top;
+  while (p < end) {
+    if( ( (unsigned long) pc >(unsigned long) p) && 
+        ( (unsigned long) pc <( (unsigned long)p + p->object_size() ))  ){
+        return p;
     }
-  }
+    p = DERIVED(CompiledMethodDesc*, p, p->object_size());
+  }   
   return NULL;
 }
 
@@ -4142,7 +3942,7 @@ void ObjectHeap::compact_and_move_compiler_area(const int compiler_area_shift) {
 #endif
 
   PERFORMANCE_COUNTER_INCREMENT(num_of_compiler_gc, 1);
-  EventLogger::start(EventLogger::COMPILER_GC);
+  EventLogger::log(EventLogger::COMPILER_GC_START);
 
   if (_saved_compiler_area_top != NULL) {
     GUARANTEE_R(_saved_compiler_area_top == _compiler_area_top, 
@@ -4211,7 +4011,7 @@ void ObjectHeap::compact_and_move_compiler_area(const int compiler_area_shift) {
     OsMisc_flush_icache((address)_compiler_area_start,
                         DISTANCE(_compiler_area_start, _compiler_area_top));
   }
-  EventLogger::end(EventLogger::COMPILER_GC);
+  EventLogger::log(EventLogger::COMPILER_GC_END);
 
   DIRTY_HEAP(_inline_allocation_top,
              DISTANCE(_inline_allocation_top, _compiler_area_start));
@@ -4300,37 +4100,21 @@ void ObjectHeap::iterate(ObjectHeapVisitor* visitor) {
   iterate( visitor, _heap_start, _inline_allocation_top );
 #if ENABLE_COMPILER
   {
+    UsingFastOops fast_oops;
+    Oop::Fast obj;
     const int upb = CompiledMethodCache::upb;
     for( int i = 0; i <= upb; i++ ) {
-      visitor->do_obj( (Oop*)&CompiledMethodCache::Map[i]);
+      obj.set_obj( CompiledMethodCache::Map[i] );
+      visitor->do_obj(&obj);
     }
   }
 
-  CodeGenerator* gen = CodeGenerator::current();
-  if( gen ) {
-    visitor->do_obj( gen->compiled_method() );
+  OopDesc** p = (OopDesc**) Compiler::current_compiled_method()->obj();
+  if( p ) {
+    iterate( visitor, p, _compiler_area_top );
   }
 #endif
 }
-#endif
-
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
-
-bool ObjectHeap::contains_live(OopDesc** target) {
-  if (_heap_start <= target && target < _inline_allocation_top) {
-    return true;
-  }
-  if (_compiler_area_start <= target && target < _compiler_area_top) {
-    return true;
-  }
-#if USE_LARGE_OBJECT_AREA
-  if( LargeObject::contains( (LargeObject*) target ) ) {
-    return true;
-  }
-#endif
-  return false;
-}
-
 #endif
 
 #ifndef PRODUCT
@@ -4353,18 +4137,28 @@ void ObjectHeap::verify_layout() {
   GUARANTEE_R(_heap_top                 <= _heap_limit,               "sanity");
   GUARANTEE_R(_heap_limit               <= _heap_end,                 "sanity");
 
-  if( _compiler_area_temp_bottom ) {
-    GUARANTEE_R(_compiler_area_start       <= _compiler_area_temp_bottom, "sanity");
-    GUARANTEE_R(_compiler_area_temp_bottom <= _compiler_area_temp_top,    "sanity");
-    GUARANTEE_R(_compiler_area_temp_top    <= _compiler_area_top,         "sanity");
-  }
-
   // Bit-vector chunk
   GUARANTEE_R(_bitvector_start       <  (address)_slices_start, "sanity");
 
   GUARANTEE_R(DISTANCE(_heap_top, _heap_limit)
               == (int)(MimimumMarkingStackSize * sizeof(OopDesc*)),
               "Inconsistent minimum marking stack size");
+}
+
+
+bool ObjectHeap::contains_live(OopDesc** target) {
+  if (_heap_start <= target && target < _inline_allocation_top) {
+    return true;
+  }
+  if (_compiler_area_start <= target && target < _compiler_area_top) {
+    return true;
+  }
+#if USE_LARGE_OBJECT_AREA
+  if( LargeObject::contains( (LargeObject*) target ) ) {
+    return true;
+  }
+#endif
+  return false;
 }
 
 OopDesc* ObjectHeap::slow_object_start(OopDesc** target) {
@@ -4548,8 +4342,6 @@ void ObjectHeap::verify_other_oop(OopDesc** p) {
 class VerifyObjects : public ObjectHeapVisitor {
   virtual void do_obj(Oop* obj) {
     // Verify oops
-    GUARANTEE( !(_compiler_area_top <= (OopDesc**)obj && ObjectHeap::compiler_area_end() > (OopDesc**) obj),
-      "Temp compiler object" );
     obj->obj()->near_do(ObjectHeap::verify_near_oop);
     obj->obj()->oops_do(ObjectHeap::verify_other_oop);
   }

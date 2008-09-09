@@ -89,8 +89,6 @@ int RegisterAllocator::_register_references[Assembler::number_of_registers]
 #if USE_HOT_ROUTINES
 // Write barrier for individual pointer store.
 void oop_write_barrier(OopDesc** addr, OopDesc* value) {
-  GUARANTEE( !ObjectHeap::is_gc_active(),
-             "The use of write barrier during GC" );
   // prefetch _heap_start and _heap_top to avoid stalls on ARM
   OopDesc ** heap_start = _heap_start;
   OopDesc ** old_generation_end = _old_generation_end;
@@ -108,10 +106,14 @@ void oop_write_barrier(OopDesc** addr, OopDesc* value) {
 
 #if USE_HOT_ROUTINES
 int Bytecodes::length_for(const Method* method, const int bci) {
-  const Code code = method->bytecode_at(bci);
+  Code code = method->bytecode_at(bci);
   check(code);
-  const int size = length_for(code);
-  return size ? size : wide_length_for(method, bci, code);
+  int size = Bytecodes::length_for(code);
+  if (size != 0) {
+    return size;
+  } else {
+    return wide_length_for(method, bci, code);
+  }
 }
 #endif
 
@@ -184,24 +186,29 @@ void RawLocation::read_value(Value& v, int index) {
 
 #if USE_HOT_ROUTINES
 // return the CRC for a given array of data
-juint Inflater::crc32(const unsigned char *data, const juint length) {
+juint Inflater::crc32(unsigned char *data, juint length) {
   juint crc = 0xFFFFFFFF;
-  const unsigned char* end = data + length;
+  unsigned char *end = data + length;
 
 #if ENABLE_FAST_CRC32
-  const juint *table = _fast_crc32_table;
+  juint *table = (juint*)&_fast_crc32_table[0];
 
   switch (length & 3) {
-    do {
-      crc = table[ ( crc ^ *data++ ) & 0xFF ] ^ (crc >> 8);
-    case 3:
-      crc = table[ ( crc ^ *data++ ) & 0xFF ] ^ (crc >> 8);
-    case 2:
-      crc = table[ ( crc ^ *data++ ) & 0xFF ] ^ (crc >> 8);
-    case 1:
-      crc = table[ ( crc ^ *data++ ) & 0xFF ] ^ (crc >> 8);
-    default:;
-    } while( data < end );
+  case 3:
+    crc = table[ ( crc ^ *data ) & 0xFF ] ^ (crc >> 8); data++;
+    // fall
+  case 2:
+    crc = table[ ( crc ^ *data ) & 0xFF ] ^ (crc >> 8); data++;
+    // fall
+  case 1:
+    crc = table[ ( crc ^ *data ) & 0xFF ] ^ (crc >> 8); data++;
+  }
+
+  for ( ; data < end;) {
+    crc = table[ ( crc ^ *data ) & 0xFF ] ^ (crc >> 8); data++;
+    crc = table[ ( crc ^ *data ) & 0xFF ] ^ (crc >> 8); data++;
+    crc = table[ ( crc ^ *data ) & 0xFF ] ^ (crc >> 8); data++;
+    crc = table[ ( crc ^ *data ) & 0xFF ] ^ (crc >> 8); data++;
   }
 
   GUARANTEE(data == end, "loop must be unrolled correctly");
@@ -662,8 +669,9 @@ int ConstantPool::name_and_type_ref_index_at(int index JVM_TRAPS) {
   TypeArray::Raw ta = tags();
   jubyte *tag_base = (jubyte*)ta().base_address();
   jint   *val_base = (jint*) ( (int)(obj()) + base_offset() );
-  int len = length();
-  jint ref_index, name_and_type_index;
+  const jushort len = length();
+  jint ref_index;
+  jushort name_and_type_index;
 
   if ((juint)index >= (juint)len) {
     goto error;
@@ -677,11 +685,11 @@ int ConstantPool::name_and_type_ref_index_at(int index JVM_TRAPS) {
     }
   }
 
-  name_and_type_index = extract_high_jshort_from_jint(ref_index);
+  name_and_type_index = extract_high_jushort_from_jint(ref_index);
 
   //WAS: cp_check_0(is_within_bounds(name_and_type_index));
   //WAS: cp_check_0(tag_at(name_and_type_index).is_name_and_type());
-  if ((juint)name_and_type_index >= (juint)len) {
+  if (name_and_type_index >= len) {
     goto error;
   }
 

@@ -436,6 +436,7 @@ void Task::cleanup_terminated_task(int id JVM_TRAPS) {
           *Universe::current_dictionary() = Universe::system_dictionary();
           StringTable::current()->set_null();
           SymbolTable::current()->set_null();
+          RefArray::current()->set_null();
           Task::current()->set_null();
           _current_task = NULL;
           Universe::update_relative_pointers();
@@ -467,8 +468,7 @@ void Task::cleanup_terminated_task(int id JVM_TRAPS) {
 #if defined(AZZERT) || USE_BINARY_IMAGE_LOADER
   ObjectHeap::full_collect(JVM_SINGLE_ARG_NO_CHECK);
 #if ENABLE_ISOLATES
-  GUARANTEE( ObjectHeap::get_task_memory_usage(id) <= 
-             BoundaryDesc::allocation_size(), "Leftover objects" );
+  GUARANTEE( ObjectHeap::get_task_memory_usage(id) == 0, "Leftover objects" );
 #endif
 #endif
 
@@ -493,12 +493,10 @@ void Task::terminate_current_isolate(Thread *thread JVM_TRAPS) {
   set_status(TASK_STOPPED);
 
 #if ENABLE_COMPILER
-  {
-    // if we own some suspended compilation - clear it
-    const CodeGenerator* gen = _compiler_code_generator;
-    if( gen && gen->task_id() == current_id() ) {
-      Compiler::abort_suspended_compilation();
-    }
+  // if we own some suspended compilation - clear it
+  const CompilerState* cs = Compiler::suspended_compiler_state();
+  if(cs->valid() && cs->task_id() == current_id()) {
+    Compiler::abort_suspended_compilation();
   }
 #endif
 
@@ -924,7 +922,7 @@ void Task::add_binary_image_handle(void* image_handle JVM_TRAPS) {
 #endif //IMAGE_MAPPING && !ENABLE_LIB_IMAGES
 #endif // USE_BINARY_IMAGE_LOADER
 #if ENABLE_ISOLATES
-bool Task::is_restricted_package(const char *name, int pkg_len) {
+bool Task::is_restricted_package(char *name, int pkg_len) {
   ObjArray::Raw restricted_packages_names = restricted_packages();
   if (restricted_packages_names.is_null()) return false;
   for (int i = 0; i < restricted_packages_names().length(); i++) {

@@ -113,14 +113,11 @@ public:
   }
 
 #if USE_BINARY_IMAGE_LOADER
-  static int binary_images_offset( void ) {
+  static int binary_images_offset() {
     return FIELD_OFFSET(TaskDesc, _binary_images);
   }
-  ReturnOop binary_images( void ) const {
+  ReturnOop binary_images() const {
     return obj_field(binary_images_offset());
-  }
-  void set_binary_images(OopDesc* value) {
-    obj_field_put(binary_images_offset(), value);
   }
   void set_binary_images(ObjArray *value) {
     obj_field_put(binary_images_offset(), value);
@@ -311,11 +308,8 @@ private:
   static int symbol_table_offset(void) {
     return FIELD_OFFSET(TaskDesc, _symbol_table);
   }
-  static int strong_references_offset(void) {
-    return FIELD_OFFSET(TaskDesc, _strong_references);
-  }
-  static int weak_references_offset(void) {
-    return FIELD_OFFSET(TaskDesc, _weak_references);
+  static int global_references_offset(void) {
+    return FIELD_OFFSET(TaskDesc, _global_references);
   }
 public:
 #define  SUSPEND_STATUS  (unsigned(1)<<31)
@@ -367,7 +361,7 @@ public:
   void suspend();
   void resume();
   bool is_suspended();
-  bool is_restricted_package(const char* name, int len);  
+  bool is_restricted_package(char *name, int len);  
   bool is_hidden_class(Symbol* class_name);  
 
   static bool is_valid_task_id(int task_id);
@@ -630,24 +624,14 @@ public:
     obj_field_put(symbol_table_offset(), value);
   }
 
-  ReturnOop strong_references(void) const {
-    return obj_field(strong_references_offset());
+  ReturnOop global_references(void) const {
+    return obj_field(global_references_offset());
   }
-  void set_strong_references(Oop* value) {
-    obj_field_put(strong_references_offset(), value);
+  void set_global_references(Oop* value) {
+    obj_field_put(global_references_offset(), value);
   }
-  void set_strong_references(OopDesc* value) {
-    obj_field_put(strong_references_offset(), value);
-  }
-
-  ReturnOop weak_references(void) const {
-    return obj_field(weak_references_offset());
-  }
-  void set_weak_references(Oop* value) {
-    obj_field_put(weak_references_offset(), value);
-  }
-  void set_weak_references(OopDesc* value) {
-    obj_field_put(weak_references_offset(), value);
+  void set_global_references(OopDesc* value) {
+    obj_field_put(global_references_offset(), value);
   }
 
   static int get_num_tasks() {

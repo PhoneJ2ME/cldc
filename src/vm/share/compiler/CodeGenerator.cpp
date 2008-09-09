@@ -1,25 +1,25 @@
 /*
- *
+ *    
  *
  * Portions Copyright  2000-2007 Sun Microsystems, Inc. All Rights
  * Reserved.  Use is subject to license terms.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
- *
+ * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
  * 2 only, as published by the Free Software Foundation.
- *
+ * 
  * This program is distributed in the hope that it will be useful, but
  * WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
  * General Public License version 2 for more details (a copy is
  * included at /legal/license.txt).
- *
+ * 
  * You should have received a copy of the GNU General Public License
  * version 2 along with this work; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA
- *
+ * 
  * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
  * Clara, CA 95054 or visit www.sun.com if you need additional
  * information or have any questions.
@@ -34,14 +34,7 @@
 
 #if ENABLE_COMPILER
 
-#if USE_COMPILER_LITERALS_MAP
-void CodeGenerator::set_has_literal_value( const Assembler::Register reg,
-                                           const int imm32 ) {
-  frame()->set_has_literal_value( reg, imm32 );
-}
-#endif
-
-void CodeGenerator::load_from_location(Value& result, jint index,
+void CodeGenerator::load_from_location(Value& result, jint index, 
                                        Condition cond) {
   const BasicType type = result.stack_type();
   LocationAddress address(index, type);
@@ -55,7 +48,7 @@ void CodeGenerator::store_to_location(Value& value, jint index) {
 }
 
 void CodeGenerator::flush_frame(JVM_SINGLE_ARG_TRAPS) {
-  frame()->flush(JVM_SINGLE_ARG_NO_CHECK);
+  frame()->flush(JVM_SINGLE_ARG_CHECK);
 }
 
 #ifndef ARM
@@ -85,7 +78,7 @@ void CodeGenerator::store_to_object(Value& value, Value& object, jint offset,
     }
 #else
 #if ENABLE_ARM_V7
-    bool could_use_xenon_features =
+    bool could_use_xenon_features = 
       is_inline_exception_allowed(ThrowExceptionStub::rte_null_pointer JVM_CHECK);
     if (!could_use_xenon_features)
 #endif
@@ -117,7 +110,7 @@ void CodeGenerator::check_free_space(JVM_SINGLE_ARG_TRAPS) {
 
 void CodeGenerator::ensure_sufficient_stack_for(int index, BasicType kind) {
   int adjusted_index = index + (is_two_word(kind) ? 1 : 0);
-  const int max_execution_stack_count =
+  const int max_execution_stack_count = 
     Compiler::root()->method()->max_execution_stack_count();
 
   int inliner_stack_count = 2;
@@ -127,8 +120,8 @@ void CodeGenerator::ensure_sufficient_stack_for(int index, BasicType kind) {
 
   int max_index = max_execution_stack_count + inliner_stack_count -
     Compiler::current()->num_stack_lock_words() - 1;
-  GUARANTEE(adjusted_index <= max_index ||
-            method()->is_native() || method()->is_abstract(),
+  GUARANTEE(adjusted_index <= max_index || 
+            method()->is_native() || method()->is_abstract(), 
             "max index should be max");
   if (adjusted_index > frame()->stack_pointer()) {
     frame()->set_stack_pointer(max_index);
@@ -137,21 +130,11 @@ void CodeGenerator::ensure_sufficient_stack_for(int index, BasicType kind) {
 
 // Use this for instructions that have not been implemented; the compiled
 // code will not be recompiled again and again, but we switch execution to
-// interpreter in the middle of the compiled method
+// interpreter in the middle of the compiled method 
 void CodeGenerator::go_to_interpreter(JVM_SINGLE_ARG_TRAPS) {
   COMPILER_COMMENT(("Continue in the interpreter"));
 
-#if ENABLE_INLINE
-  if (Compiler::is_inlining()) {
-    // Cannot deoptimize when the frame is omitted.
-    // Must abort current compilation discarding any generated code.
-    // The current method is marked as impossible to compile to prevent
-    // inlining on the next compilation attempt for the caller
-    Compiler::abort_active_compilation(true JVM_THROW);
-  }
-#endif
-
-  if (omit_stack_frame()) {
+  if (Compiler::omit_stack_frame()) {
     // Cannot deoptimize when the frame is omitted.
     // Must abort current compilation discarding any generated code.
     Compiler::abort_active_compilation(false JVM_THROW);
@@ -177,26 +160,11 @@ void CodeGenerator::uncommon_trap(JVM_SINGLE_ARG_TRAPS) {
     Compiler::abort_active_compilation(false JVM_THROW);
   }
 
-  if (omit_stack_frame()) {
+  if (Compiler::omit_stack_frame()) {
     // Cannot deoptimize when the frame is omitted.
     // Must abort current compilation discarding any generated code.
     Compiler::abort_active_compilation(false JVM_THROW);
   }
-
-#if ENABLE_INLINE
-  if (Compiler::is_inlining()) {
-    // Cannot deoptimize when the frame is omitted.
-    // Must abort current compilation discarding any generated code.
-    //
-    // NOTE: if there is an inlinable callee that generates an
-    // uncommon trap when compiled and this callee is never invoked, the
-    // caller will repeatedly be compiled.
-    // We mark the callee as impossible-to-compile to prevent further
-    // attempts to inline it. This can degrade performance if the callee is
-    // a hot method.
-    Compiler::abort_active_compilation(true JVM_THROW);
-  }
-#endif
 
 #if ENABLE_PERFORMANCE_COUNTERS
   jvm_perf_count.uncommon_traps_generated ++;
@@ -216,21 +184,21 @@ void CodeGenerator::osr_entry(bool force JVM_TRAPS) {
   GUARANTEE(!Compiler::is_inlining(),
             "OSR stubs not supported for inlined methods");
 
-  if (!omit_stack_frame() &&
+  if (!Compiler::omit_stack_frame() &&
       !GenerateROMImage && (force || (!Compiler::is_in_loop()))) {
     // Make sure it's possible to conform to this entry.
     frame()->conformance_entry(false);
 
     //cse
     frame()->wipe_notation_for_osr_entry();
-
+	
     COMPILER_COMMENT(("OSR entry"));
     Label osr_entry;
     bind(osr_entry);
 
-    OSRStub* stub = OSRStub::allocate( bci(), osr_entry JVM_NO_CHECK );
-    if( stub ) {
-      stub->insert();
+    OSRStub::Raw stub = OSRStub::allocate(bci(), osr_entry JVM_NO_CHECK);
+    if (stub.not_null()) {
+      stub().insert();
     }
   }
 }
@@ -271,7 +239,7 @@ BytecodeClosure::binary_op CodeGenerator::reverse_operation( const BytecodeClosu
   return BytecodeClosure::bin_rsb;
 }
 
-void CodeGenerator::int_unary(Value& result, Value& op1,
+void CodeGenerator::int_unary(Value& result, Value& op1, 
                               BytecodeClosure::unary_op op JVM_TRAPS) {
   if (op1.is_immediate()) {
     int_constant_fold(result, op1, op JVM_NO_CHECK_AT_BOTTOM);
@@ -280,7 +248,7 @@ void CodeGenerator::int_unary(Value& result, Value& op1,
   }
 }
 
-void CodeGenerator::int_binary(Value& result, Value& op1, Value& op2,
+void CodeGenerator::int_binary(Value& result, Value& op1, Value& op2, 
                                BytecodeClosure::binary_op op JVM_TRAPS) {
   if (op2.is_immediate()) {
     if (op1.is_immediate()) {
@@ -366,41 +334,41 @@ void CodeGenerator::int_constant_fold(Value& result, Value& op1, Value& op2,
   jint op2_imm = op2.as_int();
 
   switch (op) {
-    case BytecodeClosure::bin_sub  :
+    case BytecodeClosure::bin_sub  : 
       result_imm = op1_imm - op2_imm;
       break;
-    case BytecodeClosure::bin_add  :
+    case BytecodeClosure::bin_add  : 
       result_imm = op1_imm + op2_imm;
       break;
-    case BytecodeClosure::bin_and  :
+    case BytecodeClosure::bin_and  : 
       result_imm = op1_imm & op2_imm;
       break;
-    case BytecodeClosure::bin_xor  :
+    case BytecodeClosure::bin_xor  : 
       result_imm = op1_imm ^ op2_imm;
       break;
-    case BytecodeClosure::bin_or   :
+    case BytecodeClosure::bin_or   : 
       result_imm = op1_imm | op2_imm;
       break;
-    case BytecodeClosure::bin_shr  :
+    case BytecodeClosure::bin_shr  : 
       result_imm = op1_imm >> (op2_imm & 0x1f);
       break;
-    case BytecodeClosure::bin_shl  :
+    case BytecodeClosure::bin_shl  : 
       result_imm = op1_imm << (op2_imm & 0x1f);
       break;
-    case BytecodeClosure::bin_ushr :
+    case BytecodeClosure::bin_ushr : 
       result_imm = (juint)op1_imm >> (op2_imm & 0x1f);
       break;
-    case BytecodeClosure::bin_mul  :
+    case BytecodeClosure::bin_mul  : 
       result_imm = op1_imm * op2_imm;
       break;
-    case BytecodeClosure::bin_max  :
+    case BytecodeClosure::bin_max  : 
       result_imm = max(op1_imm,op2_imm);
       break;
-    case BytecodeClosure::bin_min  :
+    case BytecodeClosure::bin_min  : 
       result_imm = min(op1_imm,op2_imm);
       break;
-    case BytecodeClosure::bin_div  :
-      {
+    case BytecodeClosure::bin_div  : 
+      { 
         if (op2_imm == 0) {
           op1.materialize();
           int_binary_do(result, op1, op2, op JVM_CHECK);
@@ -428,10 +396,10 @@ void CodeGenerator::int_constant_fold(Value& result, Value& op1, Value& op2,
         }
         break;
       }
-    default :
+    default : 
       /* to shut comiler up */
       result_imm = 0;
-      SHOULD_NOT_REACH_HERE();
+      SHOULD_NOT_REACH_HERE();        
       break;
   }
   result.set_int(result_imm);
@@ -445,14 +413,14 @@ void CodeGenerator::int_constant_fold(Value& result, Value& op1,
   jint op1_imm = op1.as_int();
 
   switch (op) {
-    case BytecodeClosure::una_neg  :
+    case BytecodeClosure::una_neg  : 
       result_imm = -op1_imm;
       break;
-    case BytecodeClosure::una_abs  :
+    case BytecodeClosure::una_abs  : 
       result_imm = op1_imm < 0 ? -op1_imm : op1_imm;
       break;
-    default :
-      SHOULD_NOT_REACH_HERE();
+    default : 
+      SHOULD_NOT_REACH_HERE();        
       /* to shut comiler up */
       return;
   }
@@ -463,7 +431,7 @@ void CodeGenerator::long_constant_fold(Value& result, Value& op1, Value& op2,
                                        const BytecodeClosure::binary_op op JVM_TRAPS) {
   GUARANTEE(op1.is_immediate() && op2.is_immediate(),
             "Both operands must be immediate to do constant folding");
-
+  
   jlong result_imm;
   jlong op1_imm = op1.as_long();
   jlong op2_imm = op2.type() == T_LONG ? op2.as_long() : 0;
@@ -502,8 +470,8 @@ void CodeGenerator::long_constant_fold(Value& result, Value& op1, Value& op2,
     case BytecodeClosure::bin_min  :
       result_imm = op1_imm < op2_imm ? op1_imm : op2_imm;
       break;
-    case BytecodeClosure::bin_div  :
-      {
+    case BytecodeClosure::bin_div  : 
+      { 
         if (op2_imm == 0) {
           op1.materialize();
           long_binary_do(result, op1, op2, op JVM_CHECK);
@@ -518,7 +486,7 @@ void CodeGenerator::long_constant_fold(Value& result, Value& op1, Value& op2,
       }
 
     case BytecodeClosure::bin_rem  :
-      {
+      { 
         if (op2.as_long() == 0) {
           op1.materialize();
           long_binary_do(result, op1, op2, op JVM_CHECK);
@@ -532,7 +500,7 @@ void CodeGenerator::long_constant_fold(Value& result, Value& op1, Value& op2,
         break;
       }
 
-    default :
+    default : 
       SHOULD_NOT_REACH_HERE();
       /* to shut comiler up */
       return;
@@ -541,23 +509,23 @@ void CodeGenerator::long_constant_fold(Value& result, Value& op1, Value& op2,
   result.set_long(result_imm);
 }
 
-void CodeGenerator::long_constant_fold(Value& result, Value& op1,
+void CodeGenerator::long_constant_fold(Value& result, Value& op1, 
                                        const BytecodeClosure::unary_op op JVM_TRAPS) {
   JVM_IGNORE_TRAPS;
-  GUARANTEE(op1.is_immediate(),
+  GUARANTEE(op1.is_immediate(), 
             "Operand must be immediate to do constant folding");
   jlong result_imm = 0; /* IMPL_NOTE: -Wuninitialized (sh3) */
   jlong op1_imm = op1.as_long();
 
   switch (op) {
-    case BytecodeClosure::una_neg  :
+    case BytecodeClosure::una_neg  : 
       result_imm = -op1_imm;
       break;
-    case BytecodeClosure::una_abs  :
+    case BytecodeClosure::una_abs  : 
       result_imm = op1_imm < 0 ? -op1_imm : op1_imm;
       break;
-    default :
-      SHOULD_NOT_REACH_HERE();
+    default : 
+      SHOULD_NOT_REACH_HERE();        
       /* to shut comiler up */
       return;
   }
@@ -565,25 +533,25 @@ void CodeGenerator::long_constant_fold(Value& result, Value& op1,
 }
 
 #if ENABLE_FLOAT
-void CodeGenerator::float_constant_fold(Value& result, Value& op1,
+void CodeGenerator::float_constant_fold(Value& result, Value& op1, 
                                         const BytecodeClosure::unary_op op JVM_TRAPS) {
   JVM_IGNORE_TRAPS;
-  GUARANTEE(op1.is_immediate(),
+  GUARANTEE(op1.is_immediate(), 
             "Operand must be immediate to do constant folding");
   GUARANTEE(op == BytecodeClosure::una_neg || op == BytecodeClosure::una_abs,
             "Sanity");
 
-  if (op == BytecodeClosure::una_neg) {
+  if (op == BytecodeClosure::una_neg) { 
     result.set_raw_int(op1.as_raw_int() ^ 0x80000000);
-  } else {
+  } else { 
     result.set_raw_int(op1.as_raw_int() & ~0x80000000);
   }
 }
 
-void CodeGenerator::double_constant_fold(Value& result, Value& op1,
+void CodeGenerator::double_constant_fold(Value& result, Value& op1, 
                                          const BytecodeClosure::unary_op op JVM_TRAPS) {
   JVM_IGNORE_TRAPS;
-  GUARANTEE(op1.is_immediate(),
+  GUARANTEE(op1.is_immediate(), 
             "Operand must be immediate to do constant folding");
   GUARANTEE(op == BytecodeClosure::una_neg || op == BytecodeClosure::una_abs,
             "Sanity");
@@ -592,9 +560,9 @@ void CodeGenerator::double_constant_fold(Value& result, Value& op1,
          ? ((jlong) 1) << 31
          // Longs and doubles have the same endianness
          : ((jlong) 1) << 63;
-  if (op == BytecodeClosure::una_neg) {
+  if (op == BytecodeClosure::una_neg) { 
     result.set_raw_long(op1.as_raw_long() ^ flipper);
-  } else {
+  } else { 
     result.set_raw_long(op1.as_raw_long() & ~flipper);
   }
 }
@@ -627,57 +595,37 @@ void CodeGenerator::branch(int destination JVM_TRAPS) {
 
 
 void CodeGenerator::branch_if(BytecodeClosure::cond_op condition,
-       int destination, Value& op1, Value& op2, const bool flags_set JVM_TRAPS)
-{
+                              int destination, Value& op1, Value& op2 JVM_TRAPS) {
   if (op1.is_immediate()) {
     if (op2.is_immediate()) {
       if (compare(condition, op1.as_int(), op2.as_int())) {
         branch(destination JVM_NO_CHECK_AT_BOTTOM);
-      } else {
+      } else { 
         // elide since it is a nop
       }
-    } else {
+    } else { 
       branch_if(BytecodeClosure::reverse(condition), destination,
-                op2, op1, flags_set JVM_NO_CHECK_AT_BOTTOM);
+                op2, op1 JVM_NO_CHECK_AT_BOTTOM);
     }
-  } else {
-    if( OptimizeForwardBranches ) {
-      const int next_bci = Compiler::closure()->next_bytecode_index();
-      if( destination > next_bci && destination - next_bci < 15 ) {
-        const bool opt = forward_branch_optimize(next_bci, condition,
-                                        destination, op1, op2 JVM_CHECK);
+  } else { 
+    int next_bci = Compiler::closure()->next_bytecode_index();
+    if (destination > next_bci && destination - next_bci < 15) {
+      if (OptimizeForwardBranches) { 
+        bool opt = forward_branch_optimize(next_bci, condition, destination,
+                                           op1, op2 JVM_CHECK);
         if (opt) {
           return;
         }
       }
     }
-#if ENABLE_CONDITIONAL_BRANCH_OPTIMIZATIONS
-    // Zero comparison may alter carry flag
-    // 'eq' and 'ne' are not sensitive to carry
-    // 'lt' and 'ge' must be tranlated to 's' and 'ns'
-    // 'gt' and 'le" cannot be translated
-    if( !flags_set || condition == BytecodeClosure::gt
-                   || condition == BytecodeClosure::le ) {
-      cmp_values(op1, op2, condition);
-    } else {
-      switch( condition ) {
-        case BytecodeClosure::lt:
-          condition = BytecodeClosure::negative; break;
-        case BytecodeClosure::ge:
-          condition = BytecodeClosure::positive; break;
-      }
-    }
-#else
-    cmp_values(op1, op2, condition);
-#endif
-    conditional_jump(condition, destination, true JVM_NO_CHECK_AT_BOTTOM);
+    branch_if_do(condition, op1, op2, destination JVM_NO_CHECK_AT_BOTTOM); 
   }
 }
 
 bool CodeGenerator::is_inline_exception_allowed(int rte JVM_TRAPS) {
   Method* m = Compiler::root()->method();
-  const bool has_monitors = m->access_flags().is_synchronized() ||
-                            m->access_flags().has_monitor_bytecodes();
+  bool has_monitors = m->access_flags().is_synchronized() ||
+                      m->access_flags().has_monitor_bytecodes();
   if (has_monitors) {
     return false;
   }
@@ -687,12 +635,14 @@ bool CodeGenerator::is_inline_exception_allowed(int rte JVM_TRAPS) {
     return true;
   }
 
-  GUARANTEE(rte == ThrowExceptionStub::rte_null_pointer ||
+  GUARANTEE(rte == ThrowExceptionStub::rte_null_pointer || 
             rte == ThrowExceptionStub::rte_array_index_out_of_bounds,"sanity");
 
-  const int handler_bci = m->exception_handler_bci_for(
-    ThrowExceptionStub::exception_class(rte), bci() JVM_NO_CHECK);
-  return handler_bci == -1;
+  UsingFastOops fast_oops;
+  InstanceClass::Fast klass = ThrowExceptionStub::exception_class(rte);
+  int handler_bci = m->exception_handler_bci_for(&klass, bci()
+                                                        JVM_CHECK_0);
+  return (handler_bci == -1);
 }
 
 void CodeGenerator::maybe_null_check(Value& value JVM_TRAPS) {
@@ -720,7 +670,7 @@ void CodeGenerator::maybe_null_check_by_npce(Value& value, bool fakeldr, bool is
 void CodeGenerator::move(Value& dst, ExtendedValue& src, Condition cond) {
   if (src.is_value()) {
     // XValue represents a Value
-    move(dst, src.value(), cond);
+    move(dst, src.value(), cond); 
   } else if (src.is_oop()) {
     // XValue represents an Oop
     move(dst, src.oop(), cond);
@@ -731,29 +681,30 @@ void CodeGenerator::move(Value& dst, ExtendedValue& src, Condition cond) {
 }
 
 void CodeGenerator::branch_if_do(BytecodeClosure::cond_op condition,
-                                 Value& op1, Value& op2,
+                                 Value& op1, Value& op2, 
                                  int destination JVM_TRAPS) {
   cmp_values(op1, op2, condition);
   conditional_jump(condition, destination, true JVM_NO_CHECK_AT_BOTTOM);
 }
 
-void CodeGenerator::conditional_jump(const BytecodeClosure::cond_op condition,
-                                     const int destination,
-                                     const bool assume_backward_jumps_are_taken
+void CodeGenerator::conditional_jump(BytecodeClosure::cond_op condition,
+                                     int destination,
+                                     bool assume_backward_jumps_are_taken
                                      JVM_TRAPS) {
   if ((assume_backward_jumps_are_taken && destination <= bci()) ||
       Compiler::current()->is_branch_taken(bci())) {
     Label fall_through;
     conditional_jump_do(BytecodeClosure::negate(condition), fall_through);
     COMPILER_COMMENT(("Creating continuation for fallthrough to bci = %d",
-                      next_bci() ));
+                      bci() + Bytecodes::length_for(method(), bci())));
     CompilationContinuation::insert(
-                      next_bci(), fall_through JVM_CHECK);
+                        bci() + Bytecodes::length_for(method(), bci()),
+                        fall_through JVM_CHECK);
     branch(destination JVM_NO_CHECK_AT_BOTTOM);
   } else {
     Label branch_taken;
     conditional_jump_do(condition, branch_taken);
-    COMPILER_COMMENT(("Creating continuation for target bci = %d",
+    COMPILER_COMMENT(("Creating continuation for target bci = %d", 
                       destination));
     CompilationContinuation::insert(destination,
                                     branch_taken JVM_NO_CHECK_AT_BOTTOM);
@@ -764,59 +715,22 @@ void CodeGenerator::conditional_jump(const BytecodeClosure::cond_op condition,
 void CodeGenerator::append_callinfo_record(const int code_offset
                                            JVM_TRAPS) {
   const int number_of_tags = frame()->virtual_stack_pointer() + 1;
-  const int root_bci = Compiler::root()->compiler_bci();
 
-  callinfo_writer()->start_record(code_offset, root_bci,
-                                number_of_tags JVM_CHECK);
-  frame()->fill_callinfo_record(callinfo_writer());
-  callinfo_writer()->commit_record();
+  CallInfoWriter * const callinfo_writer = Compiler::callinfo_writer();
+  
+  callinfo_writer->start_record(code_offset, bci(), number_of_tags JVM_CHECK);
+
+  frame()->fill_callinfo_record(callinfo_writer);
+  callinfo_writer->commit_record();
 
 #ifdef AZZERT
   // Read back and verify this record.
-  const CompiledMethod * const cm = compiled_method();
+  const CompiledMethod * const cm = Compiler::current_compiled_method();
   CallInfoRecord callinfo(cm, (address)cm->entry() + code_offset);
-  GUARANTEE(callinfo.bci() == root_bci, "Sanity");
+  GUARANTEE(callinfo.bci() == bci(), "Sanity");
 #endif
 }
 #endif // ENABLE_APPENDED_CALLINFO
-
-OopDesc* CodeGenerator::finish( void ) {
-  {
-    // Insert terminating sentinel.
-    COMPILER_PERFORMANCE_COUNTER_IN_BLOCK(sentinel);
-    generate_sentinel();
-  }
-
-#if ENABLE_APPENDED_CALLINFO
-  _callinfo_writer.commit_table();
-#endif
-  // Shrink compiled method object to correct size
-  const jint code_size = this->code_size();
-  const jint relocation_size = this->relocation_size();
-  INCREMENT_COMPILER_PERFORMANCE_COUNTER(relocation, relocation_size);
-
-  CompiledMethod::Raw cm( compiled_method() );
-  cm().shrink(code_size, relocation_size);
-#if ENABLE_TTY_TRACE
-  if( Verbose || PrintCompilation ) {
-    if (VerbosePointers) {
-      TTY_TRACE_CR((" [compiled method (0x%x) size=%d, code=%d, reloc=%d, "
-                    "entry=0x%x]",
-        cm().obj(), cm().object_size(), code_size, relocation_size,
-        cm().entry() ));
-    } else {
-      TTY_TRACE_CR((" [compiled method size=%d, code=%d, reloc=%d]",
-        cm().object_size(), code_size, relocation_size ));
-    }
-  }
-
-  if( PrintCompiledCode && OptimizeCompiledCodeVerbose ) {
-    tty->print_cr("Before Optimization:");
-    cm().print_code_on(tty);
-  }
-#endif
-  return cm;
-}
 
 class ForwardBranchOptimizer : public BytecodeClosure {
   CodeGenerator* _cg;
@@ -854,45 +768,45 @@ public:
   virtual void return_op(BasicType kind JVM_TRAPS);
 
   // Stack operations
-  virtual void nop(JVM_SINGLE_ARG_TRAPS) {
+  virtual void nop(JVM_SINGLE_ARG_TRAPS) { 
     JVM_IGNORE_TRAPS;
-    simple_instruction(false);
+    simple_instruction(false); 
   }
-  virtual void pop(JVM_SINGLE_ARG_TRAPS) {
+  virtual void pop(JVM_SINGLE_ARG_TRAPS) { 
     JVM_IGNORE_TRAPS;
-    simple_instruction(false);
+    simple_instruction(false); 
   }
-  virtual void pop2(JVM_SINGLE_ARG_TRAPS) {
+  virtual void pop2(JVM_SINGLE_ARG_TRAPS) { 
     JVM_IGNORE_TRAPS;
-    simple_instruction(false);
+    simple_instruction(false); 
   }
-  virtual void dup(JVM_SINGLE_ARG_TRAPS) {
+  virtual void dup(JVM_SINGLE_ARG_TRAPS) { 
     JVM_IGNORE_TRAPS;
-    simple_instruction(false);
+    simple_instruction(false); 
   }
-  virtual void dup2(JVM_SINGLE_ARG_TRAPS) {
+  virtual void dup2(JVM_SINGLE_ARG_TRAPS) { 
     JVM_IGNORE_TRAPS;
-    simple_instruction(false);
+    simple_instruction(false); 
   }
-  virtual void dup_x1(JVM_SINGLE_ARG_TRAPS) {
+  virtual void dup_x1(JVM_SINGLE_ARG_TRAPS) { 
     JVM_IGNORE_TRAPS;
-    simple_instruction(false);
+    simple_instruction(false); 
   }
-  virtual void dup2_x1(JVM_SINGLE_ARG_TRAPS) {
+  virtual void dup2_x1(JVM_SINGLE_ARG_TRAPS) { 
     JVM_IGNORE_TRAPS;
-    simple_instruction(false);
+    simple_instruction(false); 
   }
-  virtual void dup_x2(JVM_SINGLE_ARG_TRAPS) {
+  virtual void dup_x2(JVM_SINGLE_ARG_TRAPS) { 
     JVM_IGNORE_TRAPS;
-    simple_instruction(false);
+    simple_instruction(false); 
   }
-  virtual void dup2_x2(JVM_SINGLE_ARG_TRAPS) {
+  virtual void dup2_x2(JVM_SINGLE_ARG_TRAPS) { 
     JVM_IGNORE_TRAPS;
-    simple_instruction(false);
+    simple_instruction(false); 
   }
-  virtual void swap(JVM_SINGLE_ARG_TRAPS) {
+  virtual void swap(JVM_SINGLE_ARG_TRAPS) { 
     JVM_IGNORE_TRAPS;
-    simple_instruction(false);
+    simple_instruction(false); 
   }
 
   // Array operations
@@ -914,13 +828,13 @@ public:
       { simple_instruction(true); JVM_IGNORE_TRAPS; }
   virtual void new_object_array(int /*index*/ JVM_TRAPS)
       { simple_instruction(true); JVM_IGNORE_TRAPS; }
-  virtual void new_multi_array(int /*index*/, int /*num_of_dims*/ JVM_TRAPS)
+  virtual void new_multi_array(int /*index*/, int /*num_of_dims*/ JVM_TRAPS) 
       { simple_instruction(true); JVM_IGNORE_TRAPS; }
   virtual void fast_get_field(BasicType /*field_type*/, int /*field_offset*/
-                              JVM_TRAPS)
+                              JVM_TRAPS) 
       { simple_instruction(true); JVM_IGNORE_TRAPS; }
   virtual void fast_put_field(BasicType /*field_type*/, int /*field_offset*/
-                              JVM_TRAPS)
+                              JVM_TRAPS) 
       { simple_instruction(true); JVM_IGNORE_TRAPS; }
 
   // Unary arithmetic operations
@@ -931,7 +845,7 @@ public:
   virtual void convert(BasicType /*from*/, BasicType /*to*/ JVM_TRAPS)
       { simple_instruction(false); JVM_IGNORE_TRAPS; }
 
-  virtual void binary(BasicType kind, binary_op op JVM_TRAPS) {
+  virtual void binary(BasicType kind, binary_op op JVM_TRAPS) { 
     JVM_IGNORE_TRAPS;
     bool can_error =
         (kind == T_INT || kind == T_LONG) && (op == bin_div || op == bin_rem);
@@ -948,8 +862,8 @@ public:
     JVM_IGNORE_TRAPS;
   }
 #endif //!ENABLE_CPU_VARIANT
-
-private:
+  
+private:  
   void simple_instruction(bool has_exception);
   ExtendedValue* push_simple(BasicType kind);
   bool verify_duplication();
@@ -981,9 +895,9 @@ bool ForwardBranchOptimizer::run(Method* method, CodeGenerator* cg,
   _cg    = cg;
 
   for (int i = 0; bci < _final_bci; i++) {
-    _next_bci = method->next_bci(bci);
+    _next_bci = bci + Bytecodes::length_for(method, bci);
     _next_state = Abort;
-    const Bytecodes::Code code = method->bytecode_at(bci);
+    Bytecodes::Code code = method->bytecode_at(bci);
     method->iterate_bytecode(bci, this, code JVM_CHECK_0);
     bci = _next_bci;
     if ((_state = _next_state) == Abort) {
@@ -1007,7 +921,7 @@ bool ForwardBranchOptimizer::run(Method* method, CodeGenerator* cg,
         cg->if_then_else(result, condition,
                          op1, op2, _load_true, _load_false JVM_CHECK_0);
       } else {
-        cg->if_then_else(result, BytecodeClosure::negate(condition),
+        cg->if_then_else(result, BytecodeClosure::negate(condition), 
                          op1, op2, _load_false, _load_true JVM_CHECK_0);
       }
 
@@ -1016,7 +930,7 @@ bool ForwardBranchOptimizer::run(Method* method, CodeGenerator* cg,
       frame->push(result);
       bcc->set_next_bytecode_index(_etc_true_start);
       return true;
-    }
+    }                          
 
 
     case Goto: {
@@ -1036,7 +950,7 @@ bool ForwardBranchOptimizer::run(Method* method, CodeGenerator* cg,
       frame->value_at(index_value, _iinc_index);
       frame->clear(_iinc_index);
       // Increment index_value if the condition is false.
-      cg->if_iinc(result, BytecodeClosure::negate(condition), op1, op2,
+      cg->if_iinc(result, BytecodeClosure::negate(condition), op1, op2, 
                   index_value, _iinc_delta JVM_CHECK_0);
       frame->value_at_put(_iinc_index, result);
       bcc->set_next_bytecode_index(_final_bci);
@@ -1049,56 +963,56 @@ bool ForwardBranchOptimizer::run(Method* method, CodeGenerator* cg,
   }
 }
 
-void ForwardBranchOptimizer::push_int   (jint    value JVM_TRAPS) {
+void ForwardBranchOptimizer::push_int   (jint    value JVM_TRAPS) { 
   JVM_IGNORE_TRAPS;
   ExtendedValue* current_load = push_simple(T_INT);
-  if (current_load != NULL) {
+  if (current_load != NULL) { 
     current_load->is_value(T_INT);
     current_load->value().set_int(value);
   }
 }
 
-void ForwardBranchOptimizer::push_long  (jlong   value JVM_TRAPS) {
+void ForwardBranchOptimizer::push_long  (jlong   value JVM_TRAPS) { 
   JVM_IGNORE_TRAPS;
   ExtendedValue* current_load = push_simple(T_LONG);
-  if (current_load != NULL) {
+  if (current_load != NULL) { 
     current_load->is_value(T_LONG);
     current_load->value().set_long(value);
   }
 }
 
 #if ENABLE_FLOAT
-void ForwardBranchOptimizer::push_float (jfloat  value JVM_TRAPS) {
+void ForwardBranchOptimizer::push_float (jfloat  value JVM_TRAPS) { 
   JVM_IGNORE_TRAPS;
   ExtendedValue* current_load = push_simple(T_FLOAT);
-  if (current_load != NULL) {
+  if (current_load != NULL) { 
     current_load->is_value(T_FLOAT);
     current_load->value().set_float(value);
   }
 }
 
-void ForwardBranchOptimizer::push_double(jdouble value JVM_TRAPS) {
+void ForwardBranchOptimizer::push_double(jdouble value JVM_TRAPS) { 
   JVM_IGNORE_TRAPS;
   ExtendedValue* current_load = push_simple(T_DOUBLE);
-  if (current_load != NULL) {
+  if (current_load != NULL) { 
     current_load->is_value(T_DOUBLE);
     current_load->value().set_double(value);
   }
 }
 #endif
 
-void ForwardBranchOptimizer::push_obj   (Oop* value JVM_TRAPS) {
+void ForwardBranchOptimizer::push_obj   (Oop* value JVM_TRAPS) { 
   JVM_IGNORE_TRAPS;
   ExtendedValue* current_load = push_simple(T_OBJECT);
-  if (current_load != NULL) {
+  if (current_load != NULL) { 
     current_load->set_obj(value);
   }
 }
 
-void ForwardBranchOptimizer::load_local(BasicType kind, int index JVM_TRAPS)  {
+void ForwardBranchOptimizer::load_local(BasicType kind, int index JVM_TRAPS)  { 
   JVM_IGNORE_TRAPS;
   ExtendedValue* current_load = push_simple(kind);
-  if (current_load != NULL) {
+  if (current_load != NULL) { 
     VirtualStackFrame* frame = _cg->frame();
     frame->value_at(*current_load, Compiler::current_local_base() + index);
   }
@@ -1119,7 +1033,7 @@ ExtendedValue* ForwardBranchOptimizer::push_simple(BasicType kind) {
     case LoadEtcReturn:
       // The first instruction after a goto/return
         _etc_true_start = _next_bci;
-      if (kind == _load_type && verify_duplication() &&
+      if (kind == _load_type && verify_duplication() && 
          (_state == LoadEtcReturn || ((_final_bci - _next_bci) == _etc_length))) {
         // This is the same type of load, and the rest of our code precisely
         // matches what we have before
@@ -1138,26 +1052,25 @@ ExtendedValue* ForwardBranchOptimizer::push_simple(BasicType kind) {
   }
 }
 
-void ForwardBranchOptimizer::store_local(BasicType /*kind*/, int index JVM_TRAPS) {
+void ForwardBranchOptimizer::store_local(BasicType /*kind*/, int index JVM_TRAPS) { 
   JVM_IGNORE_TRAPS;
-  if (_state == Load && _next_bci == _final_bci) {
+  if (_state == Load && _next_bci == _final_bci) { 
     // Optimize Load + Store as if it were an if-then-else
     VirtualStackFrame* frame = _cg->frame();
-    const int real_index = Compiler::current_local_base() + index;
     // TRUE:   local = local
-    frame->value_at(_load_true, real_index);
-    frame->clear(real_index);
+    frame->value_at(_load_true, Compiler::current_local_base() + index);
+    frame->clear(index);
     _etc_true_start = bci();
     // We fix things up so we look like if-then-else
     _next_state  = LoadEtcStopLoadEtcDone;
-  } else {
+  } else { 
     simple_instruction(false);
   }
 }
 
-void ForwardBranchOptimizer::increment_local_int(int index, jint offset JVM_TRAPS){
+void ForwardBranchOptimizer::increment_local_int(int index, jint offset JVM_TRAPS){ 
   JVM_IGNORE_TRAPS;
-  if (_state == Start && _next_bci == _final_bci) {
+  if (_state == Start && _next_bci == _final_bci) { 
     // Optimize this if it is the sole instruction
     _next_state = Iinc;
     _iinc_index = Compiler::current_local_base() + index;
@@ -1167,15 +1080,15 @@ void ForwardBranchOptimizer::increment_local_int(int index, jint offset JVM_TRAP
   }
 }
 
-void ForwardBranchOptimizer::simple_instruction(bool has_exception) {
+void ForwardBranchOptimizer::simple_instruction(bool has_exception) { 
   switch(_state) {
     case Load: case LoadEtc:
       if (has_exception) {
         TypeArray::Raw exception_table = method()->exception_table();
-        if (exception_table().length() == 0) {
+        if (exception_table().length() == 0) { 
           _next_state = LoadEtc;
         }
-      } else {
+      } else { 
         _next_state = LoadEtc;
       }
       break;
@@ -1189,8 +1102,8 @@ void ForwardBranchOptimizer::branch(int dest JVM_TRAPS) {
   if (_next_bci == _final_bci && dest > _next_bci) {
     _final_bci = dest;
     switch(_state) {
-      case Start:
-        _next_state = Goto;
+      case Start:            
+        _next_state = Goto; 
         _raw_goto_target = dest;
         _final_bci = _next_bci;
         break;
@@ -1198,7 +1111,7 @@ void ForwardBranchOptimizer::branch(int dest JVM_TRAPS) {
         _etc_length = bci() - _etc_false_start;
         _next_state = LoadEtcGoto;
         break;
-      default:
+      default: 
         ;
     }
   }
@@ -1207,17 +1120,17 @@ void ForwardBranchOptimizer::branch(int dest JVM_TRAPS) {
 void ForwardBranchOptimizer::return_op(BasicType /*kind*/ JVM_TRAPS) {
   JVM_IGNORE_TRAPS;
   if (_next_bci == _final_bci) {
-    switch(_state) {
+    switch(_state) { 
       case Load: case LoadEtc:
         _next_state = LoadEtcReturn;
-        _final_bci = method_size();
+        _final_bci = method()->code_size();
         _etc_length = _next_bci - _etc_false_start;
         break;
     }
   }
-}
+}  
 
-bool ForwardBranchOptimizer::verify_duplication() {
+bool ForwardBranchOptimizer::verify_duplication() { 
   Method* m = method();
   int start1 = _etc_false_start;
   int start2 = _etc_true_start;
@@ -1226,7 +1139,7 @@ bool ForwardBranchOptimizer::verify_duplication() {
     return false;
   }
   for (int i = 0; i < _etc_length; i++) {
-    if (m->ubyte_at(start1 + i) != m->ubyte_at(start2 + i)) {
+    if (m->ubyte_at(start1 + i) != m->ubyte_at(start2 + i)) { 
       return false;
     }
   }
@@ -1238,11 +1151,11 @@ bool ForwardBranchOptimizer::verify_duplication() {
 void ForwardBranchOptimizer::show_comments(int bci, int end) {
   if (GenerateCompilerComments) {
     COMPILER_COMMENT(("Optimization of forward branch"));
-    while (bci < end) {
+    while (bci < end) { 
       FixedArrayOutputStream output;
       method()->print_bytecodes(&output, bci);
       _cg->comment(output.array());
-      bci = next_bci(bci);
+      bci += Bytecodes::length_for(method(), bci);
     }
   }
 }

@@ -31,8 +31,50 @@
 
 #if ENABLE_COMPILER
 
-class CompilationQueueElement: public CompilerObject {  
+class CompilationQueueElement: public MixedOop {
  public:
+  // To avoid endless lists of friends the static offset computation routines
+  // are all public. 
+  static jint type_offset() {
+    return FIELD_OFFSET(CompilationQueueElementDesc, _type);
+  }
+  static jint bci_offset() {
+    return FIELD_OFFSET(CompilationQueueElementDesc, _bci);
+  }
+  static jint frame_offset() {
+    return FIELD_OFFSET(CompilationQueueElementDesc, _frame);
+  }
+  static jint entry_label_offset() {
+    return FIELD_OFFSET(CompilationQueueElementDesc, _entry_label);
+  }
+  static jint return_label_offset() {
+    return FIELD_OFFSET(CompilationQueueElementDesc, _return_label);
+  }
+  static jint register_0_offset() {
+    return FIELD_OFFSET(CompilationQueueElementDesc, _register_0);
+  }
+  static jint register_1_offset() {
+    return FIELD_OFFSET(CompilationQueueElementDesc, _register_1);
+  }
+  static jint info_offset() {
+    return FIELD_OFFSET(CompilationQueueElementDesc, _info);
+  }
+  static jint is_suspended_offset() {
+    return FIELD_OFFSET(CompilationQueueElementDesc, _is_suspended);
+  }
+  static jint code_size_before_offset() {
+    return FIELD_OFFSET(CompilationQueueElementDesc, _code_size_before);
+  }
+  static jint entry_has_been_bound_offset() {
+    return FIELD_OFFSET(CompilationQueueElementDesc, _entry_has_been_bound);
+  }
+  static jint next_offset() {
+    return FIELD_OFFSET(CompilationQueueElementDesc, _next);
+  }
+
+ public:
+  HANDLE_DEFINITION(CompilationQueueElement, MixedOop);
+
   enum CompilationQueueElementType {
     compilation_continuation,
     throw_exception_stub,
@@ -52,26 +94,6 @@ class CompilationQueueElement: public CompilerObject {
 #endif
   };
 
- protected:
-  CompilationQueueElement*     _next;   // Link to next element in queue
-  VirtualStackFrame*           _frame;  // The virtual stack frame  
-  CompilationQueueElementType  _type;   // Type of this queue element  
-  int                          _bci;    // The bytecode index
-  // Labels.
-  int                          _entry_label;
-  int                          _return_label;
-  // Registers.
-  Assembler::Register          _register_0;
-  Assembler::Register          _register_1;
-  // A spare location
-  int                          _info;
-  // Used by CompilationContinuation: code size before compiling this element.
-  int                          _code_size_before;
-  // true if this is a CompilationContinuation and it has been suspended.
-  jboolean                     _is_suspended;
-  jboolean                     _entry_has_been_bound;
-
- public:
 #if ENABLE_LOOP_OPTIMIZATION && ARM
   enum {
     max_search_length   = 3
@@ -94,32 +116,35 @@ class CompilationQueueElement: public CompilerObject {
   void custom_compile(custom_compile_func producer JVM_TRAPS);
 
 public:
-  BinaryAssembler::Label entry_label( void ) const {
+  BinaryAssembler::Label entry_label() {
     BinaryAssembler::Label L; 
-    L._encoding = _entry_label; 
+    L._encoding = int_field(entry_label_offset()); 
     return L;
   }
-  void set_entry_label( const BinaryAssembler::Label value ) { 
-    _entry_label = value._encoding;
-  }
-  void clear_entry_label( void ) {
-    _entry_label = 0;
+  void  set_entry_label(BinaryAssembler::Label& value) { 
+    int_field_put(entry_label_offset(), value._encoding);
   }
 
-  BinaryAssembler::Label return_label( void ) const {
+  void clear_entry_label() {
+    int_field_put(entry_label_offset(), 0);
+  }
+
+  BinaryAssembler::Label return_label() {
     BinaryAssembler::Label L;
-    L._encoding = _return_label;
+    L._encoding = int_field(return_label_offset());
     return L;
   }
-  void set_return_label( const BinaryAssembler::Label value ) {
-    _return_label = value._encoding;
-  } 
-  void clear_return_label( void ) {
-    _return_label = 0;
+  void set_return_label(BinaryAssembler::Label& value) {
+    int_field_put(return_label_offset(), value._encoding);
+  }
+ 
+  void clear_return_label() {
+    int_field_put(return_label_offset(), 0);
   }
 
- private:  
-  static CompilationQueueElement* _pool;  // Pool of recycled elements
+ private:
+  // Pool of recycled elements, MUST BE RESET BEFORE GC
+  static CompilationQueueElementDesc* _pool;
  public:
   static void reset_pool ( void ) { _pool = NULL; }
 
@@ -128,10 +153,9 @@ public:
   inline void free( void );
 
   // CompilationQueueElement
-  static CompilationQueueElement*
-    allocate( const CompilationQueueElementType type, const int bci JVM_TRAPS );
+  static ReturnOop allocate(CompilationQueueElementType type, int bci JVM_TRAPS);
 
-  void insert( void );
+  void insert();
 
   // Compile this CompilationQueueElement.
   // Returns true if the element finished compilation, false if it
@@ -139,130 +163,117 @@ public:
   bool compile(JVM_SINGLE_ARG_TRAPS);
 
   // Field accessors.
-  CompilationQueueElementType type( void ) const {
-    return _type;
+  CompilationQueueElementType type() {
+    return (CompilationQueueElementType) int_field(type_offset());
   }
-  void set_type(const CompilationQueueElementType value) {
-    _type = value;
-  }
-
-  VirtualStackFrame* frame ( void ) const { return _frame; }
-  void set_frame( VirtualStackFrame* value ) { _frame = value; }
-
-  jint bci( void ) const   { return _bci; }
-  void set_bci( const jint value ) { _bci = value; }
-
-  Assembler::Register register_0( void ) const {
-    return _register_0;
-  }
-  void set_register_0( const Assembler::Register value ) {
-    _register_0 = value;
+  void set_type(CompilationQueueElementType value) {
+    int_field_put(type_offset(), value);
   }
 
-  Assembler::Register register_1( void ) const {
-    return _register_1;
-  }
-  void set_register_1( const Assembler::Register value ) {
-    _register_1 = value;
+  jint bci()               { return int_field(bci_offset()); }
+  void set_bci(jint value) { int_field_put(bci_offset(), value);
   }
 
-  jint info( void ) const { return _info; }
-  void set_info( const jint value ) { _info = value; }
-
-  bool is_suspended( void ) const {
-    return _is_suspended;
-  }
-  void set_is_suspended( const bool value ) {
-    _is_suspended = CAST_TO_JBOOLEAN(value);
+  // ^VirtualStackFrame
+  ReturnOop frame()  { return obj_field(frame_offset()); }
+  void set_frame(VirtualStackFrame* value) {
+      obj_field_put(frame_offset(), value);
   }
 
-  bool entry_has_been_bound( void ) const {
-    return _entry_has_been_bound;
+  Assembler::Register register_0(){
+    return (Assembler::Register) int_field(register_0_offset());
   }
-  void set_entry_has_been_bound( const bool value ) {
-    _entry_has_been_bound = CAST_TO_JBOOLEAN(value);
-  }
-
-  jint code_size_before( void ) const {
-    return _code_size_before;
-  }
-  void set_code_size_before( const jint value ) {
-    _code_size_before = value;
+  void set_register_0(Assembler::Register value) {
+    int_field_put(register_0_offset(), value);
   }
 
-  CompilationQueueElement* next( void ) const {
-    return _next;
+  Assembler::Register register_1() {
+    return (Assembler::Register) int_field(register_1_offset());
   }
-  void set_next( CompilationQueueElement* value ) {
-    _next = value;
+  void set_register_1(Assembler::Register value) {
+    int_field_put(register_1_offset(), value);
+  }
+
+  jint info() {
+    return int_field(info_offset());
+  }
+  void set_info(jint value) {
+    int_field_put(info_offset(), value);
+  }
+  bool is_suspended() {
+    return bool_field(is_suspended_offset());
+  }
+  void set_is_suspended(bool value) {
+    bool_field_put(is_suspended_offset(), CAST_TO_JBOOLEAN(value));
+  }
+  bool entry_has_been_bound() {
+    return bool_field(entry_has_been_bound_offset());
+  }
+  void set_entry_has_been_bound(bool value) {
+    bool_field_put(entry_has_been_bound_offset(), CAST_TO_JBOOLEAN(value));
+  }
+  jint code_size_before() {
+    return int_field(code_size_before_offset());
+  }
+  void set_code_size_before(jint value) {
+    int_field_put(code_size_before_offset(), value);
+  }
+
+  ReturnOop next() { return obj_field(next_offset()); }
+
+  void set_next(CompilationQueueElement* value) {
+    obj_field_put(next_offset(), value);
   }
 };
 
-#define DEFINE_CAST( name, subtype )\
-static name* cast( CompilationQueueElement* value ) {             \
-  GUARANTEE(value->type() == subtype, "Type check");              \
-  return (name*) value;                                           \
-}                                                                 \
-static const name* cast( const CompilationQueueElement* value ) { \
-  GUARANTEE(value->type() == subtype, "Type check");              \
-  return (const name*) value;                                     \
-}
-
-
 class CompilationContinuation: public CompilationQueueElement {
-  void begin_compile(JVM_SINGLE_ARG_TRAPS);
-  bool compile_bytecodes(JVM_SINGLE_ARG_TRAPS);
-  void end_compile( void );
-
  public:
-  static CompilationContinuation* insert( const jint bci,
-                    const BinaryAssembler::Label entry_label JVM_TRAPS);
+  HANDLE_DEFINITION(CompilationContinuation, CompilationQueueElement);
 
-  static CompilationContinuation* insert( Compiler * const compiler,
-                                          const jint bci,
-                                          const BinaryAssembler::Label entry_label 
-                                          JVM_TRAPS);
-
-  enum { 
-    cc_flag_need_osr_entry        = 1,
-    cc_flag_is_exception_handler  = 2,
-    cc_flag_run_immediately       = 4,
-    cc_flag_forward_branch_target = 8
-  };
-
-  void set_need_osr_entry( void ) {
-    set_info(info() | cc_flag_need_osr_entry);
-  }
-  bool need_osr_entry( void ) const {
-    return (info() & cc_flag_need_osr_entry) != 0;
-  }
-
-  void set_is_exception_handler( void ) { 
-    set_info(info() | cc_flag_is_exception_handler);
-  }
-  bool is_exception_handler( void ) const {
-    return (info() & cc_flag_is_exception_handler) != 0;
-  }
-
-  void set_run_immediately( void ) {
-    set_info(info() | cc_flag_run_immediately);
-  }
-  bool run_immediately( void ) const {
-    return (info() & cc_flag_run_immediately) != 0;
-  }
-
-  void set_forward_branch_target( void ) { 
-    set_info(info() | cc_flag_forward_branch_target); 
-  }
-  bool forward_branch_target( void ) const { 
-    return (info() & cc_flag_forward_branch_target) != 0;
-  }
+  static ReturnOop insert(jint bci,
+                          BinaryAssembler::Label& entry_label JVM_TRAPS);
 
   // Compile this continuation.
   // Returns true if the element finished compilation, false if it
   // has been suspended and needs to be resumed in the future.
   bool compile(JVM_SINGLE_ARG_TRAPS);
-  DEFINE_CAST( CompilationContinuation, compilation_continuation )
+
+  static CompilationContinuation* cast(CompilationQueueElement* value) { 
+    GUARANTEE(value->type() == compilation_continuation, "Type check");
+    return (CompilationContinuation*) value;
+  }
+
+  enum { 
+     cc_flag_need_osr_entry        = 1,
+     cc_flag_is_exception_handler  = 2,
+     cc_flag_run_immediately       = 4,
+     cc_flag_forward_branch_target = 8
+  };
+
+  void set_need_osr_entry() { set_info(info() | cc_flag_need_osr_entry); }
+  bool need_osr_entry()     { return (info() & cc_flag_need_osr_entry) != 0; }
+
+  void set_is_exception_handler() { 
+    set_info(info() | cc_flag_is_exception_handler);
+  }
+  bool is_exception_handler() {
+    return (info() & cc_flag_is_exception_handler) != 0;
+  }
+
+  void set_run_immediately() { set_info(info() | cc_flag_run_immediately); }
+  bool run_immediately()     { return (info() & cc_flag_run_immediately) != 0;}
+
+  void set_forward_branch_target() { 
+    set_info(info() | cc_flag_forward_branch_target); 
+  }
+  bool forward_branch_target()     { 
+    return (info() & cc_flag_forward_branch_target) != 0;
+  }
+
+private:
+  void begin_compile(JVM_SINGLE_ARG_TRAPS);
+  bool compile_bytecodes(JVM_SINGLE_ARG_TRAPS);
+  void end_compile( void );
 };
 
 
@@ -279,32 +290,37 @@ class ThrowExceptionStub: public CompilationQueueElement {
   };
   static address exception_allocator(int rte);
   static ReturnOop exception_class(int rte);
-private:
-  // ^ThrowExceptionStub
-  static ThrowExceptionStub* allocate(RuntimeException rte, int bci JVM_TRAPS);
-protected:
-  static ThrowExceptionStub* allocate_or_share(RuntimeException rte JVM_TRAPS);
+
+  HANDLE_DEFINITION(ThrowExceptionStub, CompilationQueueElement);
 
 private:
-  address exception_thrower( void ) const;
+  // ^ThrowExceptionStub
+  static ReturnOop allocate(RuntimeException rte, int bci JVM_TRAPS);
+protected:
+  static ReturnOop allocate_or_share(RuntimeException rte JVM_TRAPS);
+
+private:
+  address exception_thrower();
 
   void set_rte(RuntimeException rte) {
     GUARANTEE(info() == 0, "Only set rte once");
     set_info((jint)rte);
   }
-  RuntimeException get_rte( void ) const {
-    return RuntimeException(info() & ~0x80000000);
+  RuntimeException get_rte()  {
+    return (RuntimeException)(info() & ~0x80000000);
   }
 
 public:
-  void set_is_persistent( void ) { set_info(info() | 0x80000000); }
-  bool is_persistent    ( void ) const { return info() < 0; }
+  void set_is_persistent() { set_info(info() | 0x80000000); }
+  bool is_persistent()  { return info() < 0; }
 
   // Throw an exception.
   void compile(JVM_SINGLE_ARG_TRAPS);
 
-  DEFINE_CAST( ThrowExceptionStub, throw_exception_stub )
-
+  static ThrowExceptionStub* cast(CompilationQueueElement* value) {
+    GUARANTEE(value->type() == throw_exception_stub, "Type check");
+    return (ThrowExceptionStub*) value;
+  }
 #if ENABLE_NPCE  
   friend class CodeGenerator;
 #endif  
@@ -316,36 +332,47 @@ public:
 inline void CompilationQueueElement::free( void ) {
   if( !( type() == CompilationQueueElement::throw_exception_stub &&
          ThrowExceptionStub::cast(this)->is_persistent() ) ) {
-    _next = _pool;
-    _pool = this;
+    CompilationQueueElementDesc* p = (CompilationQueueElementDesc*) obj();
+    set_next((CompilationQueueElement*)&_pool);
+    _pool = p;
   }
 }
 
-#define BEGIN_THROW_EXCEPTION_STUB_SUBCLASS( name, type )\
-class name: public ThrowExceptionStub {                   \
- public:                                                  \
-  static name* allocate_or_share(JVM_SINGLE_ARG_TRAPS) {  \
-    return (name*) ThrowExceptionStub::allocate_or_share( \
-      type JVM_NO_CHECK_AT_BOTTOM);                       \
+class UnlockExceptionStub: public ThrowExceptionStub {
+ public:
+  static ReturnOop
+  allocate_or_share(JVM_SINGLE_ARG_TRAPS) {
+    return ThrowExceptionStub::allocate_or_share(rte_illegal_monitor_state
+                                                 JVM_NO_CHECK_AT_BOTTOM);
   }
-
-BEGIN_THROW_EXCEPTION_STUB_SUBCLASS( UnlockExceptionStub,
-  rte_illegal_monitor_state )
 };
 
-BEGIN_THROW_EXCEPTION_STUB_SUBCLASS( IndexCheckStub,
-  rte_array_index_out_of_bounds )
+class IndexCheckStub: public ThrowExceptionStub {
+ public:
+  static ReturnOop
+  allocate_or_share(JVM_SINGLE_ARG_TRAPS) {
+    return ThrowExceptionStub::allocate_or_share(rte_array_index_out_of_bounds
+                                                 JVM_NO_CHECK_AT_BOTTOM);
+  }
 };
 
-BEGIN_THROW_EXCEPTION_STUB_SUBCLASS( NullCheckStub,
-  rte_null_pointer )
+class NullCheckStub: public ThrowExceptionStub {
+ public:
+  HANDLE_DEFINITION(NullCheckStub, ThrowExceptionStub);
+  static ReturnOop
+  allocate_or_share(JVM_SINGLE_ARG_TRAPS) {
+    return ThrowExceptionStub::allocate_or_share(rte_null_pointer
+                                                 JVM_NO_CHECK_AT_BOTTOM);
+  }
 #if ENABLE_NPCE
   //the stub related with a byte code which will emit two LDR instrs
-  bool is_two_words( void ) const { return _return_label != 0; }
+  bool is_two_words() {
+    return int_field(return_label_offset()) != 0;
+  }
 
   //the offset from the first LDR to the second LDR in words
-  jint offset_of_second_instr_in_words( void ) const {
-    return _return_label;
+  jint offset_of_second_instr_in_words() {
+    return int_field(return_label_offset());
   }
 
   //set the offset from the second LDR to the first LDR in words.
@@ -353,266 +380,360 @@ BEGIN_THROW_EXCEPTION_STUB_SUBCLASS( NullCheckStub,
   //second inst on the stub,
   //so we will generate another npce relation item 
   //for the second ldr/str.
-  void set_is_two_instr( const int offset = 1 ) {
-    _return_label = offset;
+  void set_is_two_instr(int offset = 1) {
+    int_field_put(return_label_offset(), offset);
   }
 #endif
 };
 
-BEGIN_THROW_EXCEPTION_STUB_SUBCLASS( ZeroDivisorCheckStub,
-  rte_division_by_zero )
+class ZeroDivisorCheckStub: public ThrowExceptionStub {
+ public:
+  HANDLE_DEFINITION(ZeroDivisorCheckStub, ThrowExceptionStub);
+  static ReturnOop
+  allocate_or_share(JVM_SINGLE_ARG_TRAPS) {
+    return ThrowExceptionStub::allocate_or_share(rte_division_by_zero
+                                                 JVM_NO_CHECK_AT_BOTTOM);
+  }
 };
 
-BEGIN_THROW_EXCEPTION_STUB_SUBCLASS( IncompatibleClassChangeStub,
-  rte_incompatible_class_change )
+class IncompatibleClassChangeStub: public ThrowExceptionStub {
+ public:
+  HANDLE_DEFINITION(IncompatibleClassChangeStub, ThrowExceptionStub);
+  static ReturnOop
+  allocate_or_share(JVM_SINGLE_ARG_TRAPS) {
+    return ThrowExceptionStub::allocate_or_share(rte_incompatible_class_change
+                                                 JVM_NO_CHECK_AT_BOTTOM);
+  }
 };
 
 class TypeCheckStub: public CompilationQueueElement {
  public:
-  static TypeCheckStub* allocate( const jint bci,
-                         const BinaryAssembler::Label entry_label,
-                         const BinaryAssembler::Label return_label JVM_TRAPS) {
-    TypeCheckStub* stub = (TypeCheckStub*)
-      CompilationQueueElement::allocate( type_check_stub, bci JVM_NO_CHECK );
-    if( stub ) {
-      stub->set_entry_label ( entry_label  ); 
-      stub->set_return_label( return_label );
+  HANDLE_DEFINITION(TypeCheckStub, CompilationQueueElement);
+
+  // ^TypeCheckStub
+  static ReturnOop allocate(jint bci,
+                            BinaryAssembler::Label& entry_label,
+                            BinaryAssembler::Label& return_label JVM_TRAPS) {
+    TypeCheckStub::Raw stub =
+      CompilationQueueElement::allocate(type_check_stub, bci
+                                        JVM_NO_CHECK);
+    if (stub.not_null()) {
+      stub().set_entry_label(entry_label); 
+      stub().set_return_label(return_label);
     }
     return stub;
   }
 
   void compile(JVM_SINGLE_ARG_TRAPS);
-  DEFINE_CAST( TypeCheckStub, type_check_stub )
+  
+  static TypeCheckStub* cast(CompilationQueueElement* value) {
+    GUARANTEE(value->type() == type_check_stub, "Type check");
+    return (TypeCheckStub*) value;
+  }
+
+ private:
 };
 
 class InstanceOfStub: public CompilationQueueElement {
  public:
-  Assembler::Register result_register( void ) const {
+  HANDLE_DEFINITION(InstanceOfStub, CompilationQueueElement);
+
+  Assembler::Register result_register() {
     return register_0();
   }
-  void set_result_register( const Assembler::Register value) {
-    set_register_0(value);
-  }
-
-  int class_id( void ) const {
+  int class_id() {
     return info();
   }
-  void set_class_id( const int class_id ) {
-    set_info( class_id );
+  void set_result_register(Assembler::Register value) {
+    set_register_0(value);
+  }
+  void set_class_id(int class_id) {
+    set_info(class_id);
   }
 
-  static InstanceOfStub* allocate(const jint bci, const jint class_id,
-           const BinaryAssembler::Label entry_label,
-           const BinaryAssembler::Label return_label, 
-           const BinaryAssembler::Register result_register JVM_TRAPS) {
-    InstanceOfStub* stub = (InstanceOfStub*)
-      CompilationQueueElement::allocate(instance_of_stub, bci JVM_NO_CHECK);
-    if( stub ) {
-      stub->set_entry_label( entry_label ); 
-      stub->set_return_label( return_label );
-      stub->set_result_register( result_register );
-      stub->set_class_id( class_id );
+  // ^InstanceOfStub
+  static ReturnOop allocate(jint bci, jint class_id,
+                            BinaryAssembler::Label& entry_label,
+                            BinaryAssembler::Label& return_label, 
+                            BinaryAssembler::Register result_register
+                            JVM_TRAPS) {
+    InstanceOfStub::Raw stub =
+        CompilationQueueElement::allocate(instance_of_stub, bci
+                                          JVM_NO_CHECK);
+    if (stub.not_null()) {
+      stub().set_entry_label(entry_label); 
+      stub().set_return_label(return_label);
+      stub().set_result_register(result_register);
+      stub().set_class_id(class_id);
     }
     return stub;
   }
 
-  void compile( JVM_SINGLE_ARG_TRAPS );
-  DEFINE_CAST( InstanceOfStub, instance_of_stub )
+  void compile(JVM_SINGLE_ARG_TRAPS);
+
+  static InstanceOfStub* cast(CompilationQueueElement* value) {
+    GUARANTEE(value->type() == instance_of_stub, "Type check");
+    return (InstanceOfStub*) value;
+  }
+
 };
 
 class CheckCastStub: public CompilationQueueElement {
  public:
-  int class_id( void ) const {
+  HANDLE_DEFINITION(CheckCastStub, CompilationQueueElement);
+
+  int class_id() {
     return info();
   }
-  void set_class_id( const int class_id ) {
-    set_info( class_id );
+  void set_class_id(int class_id) {
+    set_info(class_id);
   }
 
-  static void insert( const int bci, const int class_id,
-                      const BinaryAssembler::Label entry_label,
-                      const BinaryAssembler::Label return_label JVM_TRAPS);
+  void compile(JVM_SINGLE_ARG_TRAPS);
 
-  void compile( JVM_SINGLE_ARG_TRAPS );
-  DEFINE_CAST( CheckCastStub, check_cast_stub )
+  static void insert(int bci, int class_id,
+                     BinaryAssembler::Label& entry_label,
+                     BinaryAssembler::Label& return_label JVM_TRAPS);
+
+  static CheckCastStub* cast(CompilationQueueElement* value) {
+    GUARANTEE(value->type() == check_cast_stub, "Type check");
+    return (CheckCastStub*) value;
+  }
+
 };
 
 class StackOverflowStub: public CompilationQueueElement {
  public:
-  static StackOverflowStub* allocate( const BinaryAssembler::Label entry_label,
-                            const BinaryAssembler::Label return_label,
+  HANDLE_DEFINITION(StackOverflowStub, CompilationQueueElement);
+
+  void compile(JVM_SINGLE_ARG_TRAPS);
+
+  // ^StackOverflowStub
+  static ReturnOop allocate(BinaryAssembler::Label& entry_label,
+                            BinaryAssembler::Label& return_label,
                             const Assembler::Register stack_pointer,
                             const Assembler::Register method_pointer JVM_TRAPS) {
-    StackOverflowStub* stub = (StackOverflowStub*)
+    StackOverflowStub::Raw stub =
       CompilationQueueElement::allocate(stack_overflow_stub, 0 JVM_NO_CHECK);
-    if( stub ) {
-      stub->set_entry_label(entry_label); 
-      stub->set_return_label(return_label);
-      stub->set_register_1(method_pointer);
-      stub->set_register_0(stack_pointer);
+    if (stub.not_null()) {
+      stub().set_entry_label(entry_label); 
+      stub().set_return_label(return_label);
+      stub().set_register_1(method_pointer);
+      stub().set_register_0(stack_pointer);
     }
     return stub;
   }
 
-  void compile(JVM_SINGLE_ARG_TRAPS);
-  DEFINE_CAST( StackOverflowStub, stack_overflow_stub )
+  static StackOverflowStub* cast(CompilationQueueElement* value) {
+    GUARANTEE(value->type() == stack_overflow_stub, "Type check");
+    return (StackOverflowStub*) value;
+  }
+ 
+ private:
 };
 
 class TimerTickStub: public CompilationQueueElement {
  public:
-  enum { invalid_code_offset   = -1 };
+  HANDLE_DEFINITION(TimerTickStub, CompilationQueueElement);
 
-  static TimerTickStub* allocate( const jint bci,
-                         const BinaryAssembler::Label entry_label,
-                         const BinaryAssembler::Label return_label JVM_TRAPS) {
+  void compile(JVM_SINGLE_ARG_TRAPS);
+
+  enum {
+    invalid_code_offset   = -1
+  };
+
+  static ReturnOop allocate(jint bci,
+                            BinaryAssembler::Label& entry_label,
+                            BinaryAssembler::Label& return_label
+                            JVM_TRAPS) {
     return allocate(bci, invalid_code_offset, 
                     entry_label, return_label JVM_NO_CHECK_AT_BOTTOM);
   }
 
-  static TimerTickStub* allocate( const jint bci, const jint code_offset,
-                          const BinaryAssembler::Label entry_label,
-                          const BinaryAssembler::Label return_label JVM_TRAPS) {
-    TimerTickStub* stub = (TimerTickStub*)
-        CompilationQueueElement::allocate(timer_tick_stub, bci JVM_NO_CHECK);
-    if( stub ) {
-      stub->set_info(code_offset);
-      stub->set_entry_label(entry_label); 
-      stub->set_return_label(return_label);
+  // ^TimerTickStub
+  static ReturnOop allocate(jint bci, jint code_offset,
+                            BinaryAssembler::Label& entry_label,
+                            BinaryAssembler::Label& return_label                            
+                            JVM_TRAPS) {
+    TimerTickStub::Raw stub =
+        CompilationQueueElement::allocate(timer_tick_stub, bci
+                                          JVM_NO_CHECK);
+    if (stub.not_null()) {
+      stub().set_info(code_offset);
+      stub().set_entry_label(entry_label); 
+      stub().set_return_label(return_label);
     }
     return stub;
   }
 
-  void compile(JVM_SINGLE_ARG_TRAPS);
-  DEFINE_CAST( TimerTickStub, timer_tick_stub )
+  static TimerTickStub* cast(CompilationQueueElement* value) {
+    GUARANTEE(value->type() == timer_tick_stub, "Type check");
+    return (TimerTickStub*) value;
+  }
+ 
+ private:
 };
 
 class QuickCatchStub: public CompilationQueueElement {
  public:
-  static QuickCatchStub* allocate(const jint bci,
-                            const Value &value, const jint handler_bci,
-                            const BinaryAssembler::Label entry_label JVM_TRAPS);
+  HANDLE_DEFINITION(QuickCatchStub, CompilationQueueElement);
 
   void compile(JVM_SINGLE_ARG_TRAPS);
-  DEFINE_CAST( QuickCatchStub, quick_catch_stub )
+
+  // ^QuickCatchStub
+  static ReturnOop allocate(jint bci,
+                            const Value &value, jint handler_bci,
+                            BinaryAssembler::Label& entry_label JVM_TRAPS);
+
+  static QuickCatchStub* cast(CompilationQueueElement* value) {
+    GUARANTEE(value->type() == quick_catch_stub, "Type check");
+    return (QuickCatchStub*) value;
+  }
 };
 
 class OSRStub: public CompilationQueueElement {
-  void emit_osr_entry_and_callinfo(CodeGenerator* gen JVM_TRAPS);
+ private:
+  void emit_osr_entry_and_callinfo(CodeGenerator *gen JVM_TRAPS);
 
  public:
-  static OSRStub* allocate( const jint bci,
-                            const BinaryAssembler::Label entry_label JVM_TRAPS){
-    OSRStub* stub = (OSRStub*)
-      CompilationQueueElement::allocate(osr_stub, bci JVM_NO_CHECK);
-    if( stub ) {
-      stub->set_entry_label(entry_label);
+  HANDLE_DEFINITION(OSRStub, CompilationQueueElement);
+
+  void compile(JVM_SINGLE_ARG_TRAPS);
+
+  // ^OSRStub
+  static ReturnOop allocate(jint bci,
+                            BinaryAssembler::Label& entry_label
+                            JVM_TRAPS) {
+    OSRStub::Raw stub =
+        CompilationQueueElement::allocate(osr_stub, bci
+                                          JVM_NO_CHECK);
+    if (stub.not_null()) {
+      stub().set_entry_label(entry_label);
     }
     return stub;
   }
 
-  void compile(JVM_SINGLE_ARG_TRAPS);
-  DEFINE_CAST( OSRStub, osr_stub )
+  static OSRStub* cast(CompilationQueueElement* value) {
+    GUARANTEE(value->type() == osr_stub, "Type check");
+    return (OSRStub*) value;
+  }
+ 
 };
 
 #if ENABLE_INLINE_COMPILER_STUBS
 class NewObjectStub: public CompilationQueueElement {
  public:
-  Assembler::Register result_register( void ) const {
+  HANDLE_DEFINITION(NewObjectStub, CompilationQueueElement);
+
+  Assembler::Register result_register() {
     return register_0();
   }
-  void set_result_register( const Assembler::Register value ) {
-    set_register_0( value );
-  }
-
-  Assembler::Register java_near( void ) const {
+  Assembler::Register java_near() {
     return register_1();
   }
-  void set_java_near( const Assembler::Register value ) {
-    set_register_1(value);
-  }
-
-  static NewObjectStub* allocate( const jint bci,
-                          const Assembler::Register obj,
-                          const Assembler::Register jnear,
-                          const BinaryAssembler::Label entry_label,
-                          const BinaryAssembler::Label return_label JVM_TRAPS) {
-    NewObjectStub* stub = (NewObjectStub*)
-        CompilationQueueElement::allocate(new_object_stub, bci JVM_NO_CHECK);
-    if( stub ) {
-      stub->set_result_register(obj);
-      stub->set_java_near(jnear);
-      stub->set_entry_label(entry_label); 
-      stub->set_return_label(return_label);
-    }
-    return stub;
-  }
-
-  void compile(JVM_SINGLE_ARG_TRAPS);
-  DEFINE_CAST( NewObjectStub, new_object_stub )
-};
-
-class NewTypeArrayStub: public CompilationQueueElement {
- public:
-  Assembler::Register result_register( void ) const {
-    return register_0();
-  }
-  void set_result_register(const Assembler::Register value ) {
-    set_register_0( value );
-  }
-
-  Assembler::Register java_near( void ) const {
-    return register_1();
+  void set_result_register(Assembler::Register value) {
+    set_register_0(value);
   }
   void set_java_near(Assembler::Register value) {
     set_register_1(value);
   }
 
-  Assembler::Register length( void ) const {
-    return Assembler::Register( info() );
-  }
-  void set_length( const Assembler::Register value ) {
-    set_info( int(value) );
-  }
+  void compile(JVM_SINGLE_ARG_TRAPS);
 
-  static NewTypeArrayStub* allocate(const jint bci,
+  // ^NewObjectStub
+  static ReturnOop allocate(jint bci,
                             const Assembler::Register obj,
                             const Assembler::Register jnear,
-                            const Assembler::Register length,
-                            const BinaryAssembler::Label entry_label,
-                            const BinaryAssembler::Label return_label JVM_TRAPS) {
-    NewTypeArrayStub* stub = (NewTypeArrayStub*)
-        CompilationQueueElement::allocate(new_type_array_stub, bci JVM_NO_CHECK);
-    if( stub ) {
-      stub->set_result_register(obj);
-      stub->set_java_near(jnear);
-      stub->set_length(length);
-      stub->set_entry_label(entry_label); 
-      stub->set_return_label(return_label);
+                            BinaryAssembler::Label& entry_label,
+                            BinaryAssembler::Label& return_label JVM_TRAPS) {
+    NewObjectStub::Raw stub =
+        CompilationQueueElement::allocate(new_object_stub, bci
+                                          JVM_NO_CHECK);
+    if (stub.not_null()) {
+      stub().set_result_register(obj);
+      stub().set_java_near(jnear);
+      stub().set_entry_label(entry_label); 
+      stub().set_return_label(return_label);
     }
     return stub;
   }
 
+  static NewObjectStub* cast(CompilationQueueElement* value) {
+    GUARANTEE(value->type() == new_object_stub, "Type check");
+    return (NewObjectStub*) value;
+  }
+ 
+};
+
+class NewTypeArrayStub: public CompilationQueueElement {
+ public:
+  HANDLE_DEFINITION(NewTypeArrayStub, CompilationQueueElement);
+
+  Assembler::Register result_register() {
+    return register_0();
+  }
+  Assembler::Register java_near() {
+    return register_1();
+  }
+  Assembler::Register length() {
+    return (Assembler::Register)info();
+  }
+  void set_result_register(Assembler::Register value) {
+    set_register_0(value);
+  }
+  void set_java_near(Assembler::Register value) {
+    set_register_1(value);
+  }
+  void set_length(Assembler::Register value) {
+    set_info((int)value);
+  }
+
   void compile(JVM_SINGLE_ARG_TRAPS);
-  DEFINE_CAST( NewTypeArrayStub, new_type_array_stub )
+
+  // ^NewTypeArrayStub
+  static ReturnOop allocate(jint bci,
+                            const Assembler::Register obj,
+                            const Assembler::Register jnear,
+                            const Assembler::Register length,
+                            BinaryAssembler::Label& entry_label,
+                            BinaryAssembler::Label& return_label JVM_TRAPS) {
+    NewTypeArrayStub::Raw stub =
+        CompilationQueueElement::allocate(new_type_array_stub, bci
+                                          JVM_NO_CHECK);
+    if (stub.not_null()) {
+      stub().set_result_register(obj);
+      stub().set_java_near(jnear);
+      stub().set_length(length);
+      stub().set_entry_label(entry_label); 
+      stub().set_return_label(return_label);
+    }
+    return stub;
+  }
+
+  static NewTypeArrayStub* cast(CompilationQueueElement* value) {
+    GUARANTEE(value->type() == new_type_array_stub, "Type check");
+    return (NewTypeArrayStub*) value;
+  }
+ 
 };
 #endif // ENABLE_INLINE_COMPILER_STUBS
 
 #if ENABLE_INTERNAL_CODE_OPTIMIZER
-class EntryStub: public CompilationQueueElement  {
+class EntryStub:  public CompilationQueueElement  {
  public:
-  static EntryStub* allocate( const jint bci, 
-                      const BinaryAssembler::Label entry_label JVM_TRAPS) {
-    EntryStub* stub = (EntryStub*)
+
+  HANDLE_DEFINITION(EntryStub, CompilationQueueElement);
+
+  static ReturnOop allocate(jint bci, 
+                          BinaryAssembler::Label& entry_label JVM_TRAPS) {
+    EntryStub::Raw stub =
           CompilationQueueElement::allocate(entry_stub, bci JVM_NO_CHECK);
-    if( stub ) {
-      stub->set_entry_label( entry_label );
+    if (stub.not_null()) {
+      stub().set_entry_label(entry_label);
     }
     return stub;
   }
+
 };
 #endif
-
-#undef DEFINE_CAST
-#undef BEGIN_THROW_EXCEPTION_STUB_SUBCLASS
-
 #endif /* ENABLE_COMPILER */

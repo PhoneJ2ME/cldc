@@ -27,7 +27,7 @@
 // This file contains the shared part of the source and binary assembler.
 // Ideally, this structure should match the structure for the ARM port.
 
-class Assembler: public AssemblerCommon {
+class Assembler: public GlobalObj {
  public:
   enum Condition {
     // Order is relevant!
@@ -129,12 +129,12 @@ class Assembler: public AssemblerCommon {
   // Test that a given register is indeed valid.
   static bool is_valid_int_register(Register reg) {
     return (reg >= (Register)first_int_register  && 
-            reg <= (Register)last_int_register);
+	    reg <= (Register)last_int_register);
   }
   static bool is_valid_byte_register(Register reg) {
     return (reg >= (Register)eax && 
-            reg <= (Register)ebx || reg >= (Register)first_byte_register && 
-            reg <= (Register)last_byte_register);
+	    reg <= (Register)ebx || reg >= (Register)first_byte_register && 
+	    reg <= (Register)last_byte_register);
   }
   static bool is_valid_register(Register reg) {
     return reg >= first_register      && reg <= last_register;
@@ -145,11 +145,11 @@ class Assembler: public AssemblerCommon {
   // for platform-independant code
   static Register reg(Register r)               { return r; }
 
-#if USE_DEBUG_PRINTING
+#ifndef PRODUCT
   // Name accessors.
-  static const char* name_for_byte_register(const Register reg);
-  static const char* name_for_work_register(const Register reg);
-  static const char* name_for_long_register(const Register reg);
+  static const char* name_for_byte_register(Register reg);
+  static const char* name_for_work_register(Register reg);
+  static const char* name_for_long_register(Register reg);
 #endif
 
   enum ScaleFactor {
@@ -159,7 +159,4 @@ class Assembler: public AssemblerCommon {
     times_4  =  2,
     times_8  =  3
   };
-};
-
-class Macros: public Assembler {
 };

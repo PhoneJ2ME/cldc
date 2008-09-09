@@ -249,7 +249,7 @@ int Arguments::parse_one_arg(int argc, char** argv) {
   }
 #endif
 
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
+#ifndef PRODUCT
   else if (jvm_strcmp(argv[0], "-verbose") == 0) {
 #if ENABLE_TTY_TRACE
     VerboseGC = true;
@@ -268,8 +268,6 @@ int Arguments::parse_one_arg(int argc, char** argv) {
                        STATIC_STRLEN(COMPILE_ONLY_CLASS)) == 0) {
     _class_CompileOnly = argv[0] + STATIC_STRLEN(COMPILE_ONLY_CLASS);
   }
-#endif
-#if !defined(PRODUCT)
   else if (jvm_strcmp(argv[0], "-compilertestconfig") == 0) {
     if (argc < 2) {
       JVMSPI_DisplayUsage((char*)"Compiler test config file not specified.");
@@ -348,7 +346,6 @@ int Arguments::parse_one_arg(int argc, char** argv) {
       // Turn off any optimizations that would change bytecode offsets
       CompactROMFieldTables = false;
       CompactROMMethodTables = false;
-      CompactROMBytecodes         = false;
       RenameNonPublicROMSymbols   = false;
       AggressiveROMSymbolRenaming = false;
     }
@@ -434,10 +431,10 @@ bool Arguments::parse_method_trap_param(const char* arg) {
 //             CompileOnly helpers
 //--------------------------------------------------
 
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
+#ifndef PRODUCT
 
-char* Arguments::_method_CompileOnly;
-char* Arguments::_class_CompileOnly;
+char* Arguments::_method_CompileOnly    = NULL;
+char* Arguments::_class_CompileOnly     = NULL;
 
 bool Arguments::must_compile_method(Symbol* class_name, Symbol* method_name
                                     JVM_TRAPS) {

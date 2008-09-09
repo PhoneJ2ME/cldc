@@ -4,22 +4,22 @@
  * Portions Copyright  2000-2007 Sun Microsystems, Inc. All Rights
  * Reserved.  Use is subject to license terms.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
- *
+ * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
  * 2 only, as published by the Free Software Foundation.
- *
+ * 
  * This program is distributed in the hope that it will be useful, but
  * WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
  * General Public License version 2 for more details (a copy is
  * included at /legal/license.txt).
- *
+ * 
  * You should have received a copy of the GNU General Public License
  * version 2 along with this work; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA
- *
+ * 
  * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
  * Clara, CA 95054 or visit www.sun.com if you need additional
  * information or have any questions.
@@ -154,15 +154,6 @@ void native_math_sqrt_entry()                      {}
 void native_math_ceil_entry()                      {}
 void native_math_floor_entry()                     {}
 
-#if ENABLE_CLDC_111 || ENABLE_EXTENDED_API
-
-void native_math_asin_entry()                      {}
-void native_math_acos_entry()                      {}
-void native_math_atan_entry()                      {}
-void native_math_atan2_entry()                     {}
-
-#endif // ENABLE_CLDC_111
-
 void native_string_charAt_entry()                  {}
 void native_string_init_entry()                    {}
 void native_string_equals_entry()                  {}
@@ -200,30 +191,13 @@ jlong interpreter_pair_counters[1];
 void cautious_invoke() {}
 #endif
 
-#if USE_REFLECTION || ENABLE_JAVA_DEBUGGER
+#if ENABLE_REFLECTION || ENABLE_JAVA_DEBUGGER
 void entry_return_void()   {}
 void entry_return_word()   {}
 void entry_return_long()   {}
 void entry_return_float()  {}
 void entry_return_double() {}
 void entry_return_object() {}
-#endif
-
-#if ENABLE_JNI
-void    invoke_entry_void()   {}
-jint    invoke_entry_word()   { return 0; }
-jlong   invoke_entry_long()   { return 0; }
-jfloat  invoke_entry_float()  { return 0; }
-jdouble invoke_entry_double() { return 0; }
-void    invoke_entry_return_point() {}
-
-void invoke_entry_void_return()   {}
-void invoke_entry_word_return()   {}
-void invoke_entry_long_return()   {}
-void invoke_entry_float_return()  {}
-void invoke_entry_double_return() {}
-
-void default_return_point() {}
 #endif
 
 jint assembler_loop_type;
@@ -302,11 +276,7 @@ address gp_shared_call_vm_oop_ptr;
 address gp_shared_call_vm_exception_ptr;
 
 #if ENABLE_FLOAT
-
-#if USE_ARM_VFP_RUN_FAST_MODE
 void   jvm_set_vfp_fast_mode()      {}
-#endif
-
 int    jvm_fcmpl(float, float)      { return 0; }
 int    jvm_fcmpg(float, float)      { return 0; }
 int    jvm_dcmpl(double, double)    { return 0; }

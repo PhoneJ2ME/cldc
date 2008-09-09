@@ -200,8 +200,7 @@ class SymbolStream : public UTF8Stream {
   friend class CharacterStream;
 };
 
-#if !defined(PRODUCT) || ENABLE_JNI
-
+#ifndef PRODUCT
 class UnicodeStream : public CharacterStream {
  private:
   virtual jchar raw_read() { return char_at(_unicode_index++); }
@@ -216,9 +215,9 @@ class UnicodeStream : public CharacterStream {
     reset();
   }
 
-  virtual int utf8_length();
  private:
   virtual jchar char_at(int index) JVM_PURE_VIRTUAL_1_PARAM_0(index);
+  virtual int utf8_length();
   int utf8_size(jchar c);
 
  private:
@@ -243,10 +242,6 @@ class CharStream : public UnicodeStream {
  private:
   TypeArray* _array;
 };
-
-#endif
-
-#ifndef PRODUCT
 
 class ConcatenatedStream : public CharacterStream {
  public:

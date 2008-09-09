@@ -279,10 +279,10 @@ JavaFrame::find_compiled_method( const address frame_pc ) {
   CompiledMethodDesc* method_desc = (CompiledMethodDesc*)cm().obj();
   jint code_size = method_desc->code_size();
   if ( code_size < offset && offset > 0 ) {
-        //this is a unlinked method which is still be used
-        method_desc = ObjectHeap::method_contains_instruction_of(frame_pc);
-        CompiledMethod::Raw ncm = method_desc;
-        return method_desc;
+  	//this is a unlinked method which is still be used
+    	method_desc = ObjectHeap::method_contain_instruction_of(frame_pc);
+	CompiledMethod::Raw ncm = method_desc;
+	return method_desc;
   }
 #endif  
   return (CompiledMethodDesc*)cm.obj();
@@ -322,7 +322,7 @@ void JavaFrame::fill_in_compiled_frame() {
 
   // Fill in stack bottom pointer
   Method::Raw m = raw_compiled_method()->method();
-  const AccessFlags flags = m().access_flags();
+  AccessFlags flags = m().access_flags();
   if (!flags.is_synchronized() && !flags.has_monitor_bytecodes() ) {
     set_empty_stack_bottom_pointer();
   }
@@ -410,7 +410,7 @@ void JavaFrame::deoptimize(const Method * callee) {
       (address)invoke5_deoptimization_entry_4,
     };
 
-    const Bytecodes::Code bc = method().bytecode_at(bci);
+    Bytecodes::Code bc = method().bytecode_at(bci);
     GUARANTEE(bc == Bytecodes::_invokevirtual || 
               bc == Bytecodes::_invokespecial || 
               bc == Bytecodes::_invokestatic  ||
@@ -865,7 +865,7 @@ JavaFrame::find_exception_frame(Thread* thread,
   }
 
   if (frame.is_java_frame() &&
-        (frame.as_JavaFrame().bci_with_flags() & overflow_frame_flag) != 0) {
+	(frame.as_JavaFrame().bci_with_flags() & overflow_frame_flag) != 0) {
     // There is a 'fake' frame constructed in
     // interpreter_grow_stack.
     // We need to the frame because we don't want to find
@@ -881,13 +881,6 @@ JavaFrame::find_exception_frame(Thread* thread,
         bci = -1; 
         break;
       } else {
-#if ENABLE_JNI
-        if (frame.as_EntryFrame().is_jni_frame()) {
-          // We should not go before the JNI frame
-          bci = -1; 
-          break;
-        }
-#endif
         // These never have exception handlers.  Just ignore them
         frame.as_EntryFrame().caller_is(frame);
       }
@@ -898,7 +891,7 @@ JavaFrame::find_exception_frame(Thread* thread,
       if (!killing_thread) { 
         exception_bci = frame.as_JavaFrame().bci();
         // We just ignore any exceptions, and return -1 if that happens
-        bci = method().exception_handler_bci_for(exception_class(),
+        bci = method().exception_handler_bci_for(&exception_class,
                                                  exception_bci JVM_CHECK_0);
       }
       if (bci >= 0) { 
@@ -1065,56 +1058,8 @@ void JavaFrame::osr_replace_frame(jint bci) {
 
 #endif
 
-#if !defined(PRODUCT)
 
-void StackValue::verify() {
-  switch(tag()) {
-    case int_tag:
-    case float_tag:
-    case long_tag:
-    case long2_tag:
-    case double_tag:
-    case double2_tag:
-    case ret_tag:
-    case uninitialized_tag:
-      return;
-    case obj_tag: {
-      JavaOop::Raw value = as_obj();
-      GUARANTEE(value.is_null() || value.is_java_oop(),
-                "Must be java object");
-      AZZERT_ONLY_VAR(value);
-      break;
-    }
-    default:
-      SHOULD_NOT_REACH_HERE();
-  }
-}
-
-#endif
-
-#if !defined(PRODUCT)
-
-void JavaFrame::verify() {
-  // Verify expression stack
-  jint elength = expression_length();
-  jint llength = local_length();
-  int i;
-  int map_length;
-  TypeArray::Raw map = generate_stack_map(map_length);
-  for (i = map_length; --i >= 0; ) { 
-    if (map().byte_at(i) == obj_tag) { 
-      StackValue* sv = i < llength ? local_at(i, llength)
-                                   : expression_at(map_length - i - 1,elength);
-      JavaOop::Raw value = sv->as_obj();
-      GUARANTEE(value.is_null() || value.is_java_oop(), "Must be java object");
-      AZZERT_ONLY_VAR(value);
-    }
-  }
-}
-
-#endif
-
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE
+#ifndef PRODUCT
 
 void StackValue::print_on(Stream* st, jint tag) {
   if (is_int(tag)) {
@@ -1140,6 +1085,29 @@ void StackValue::print_on(Stream* st, jint tag) {
     st->print("(error in tag [%d])", tag);
   }
   st->cr();
+}
+
+void StackValue::verify() {
+  switch(tag()) {
+    case int_tag:
+    case float_tag:
+    case long_tag:
+    case long2_tag:
+    case double_tag:
+    case double2_tag:
+    case ret_tag:
+    case uninitialized_tag:
+      return;
+    case obj_tag: {
+      JavaOop::Raw value = as_obj();
+      GUARANTEE(value.is_null() || value.is_java_oop(),
+                "Must be java object");
+      AZZERT_ONLY_VAR(value);
+      break;
+    }
+    default:
+      SHOULD_NOT_REACH_HERE();
+  }
 }
 
 void Frame::init(Thread *thread, address guessed_fp) {
@@ -1530,6 +1498,24 @@ void Frame::get_min_max(int& min, int& max, int value) {
   }
   if (max < value) {
     max = value;
+  }
+}
+
+void JavaFrame::verify() {
+  // Verify expression stack
+  jint elength = expression_length();
+  jint llength = local_length();
+  int i;
+  int map_length;
+  TypeArray::Raw map = generate_stack_map(map_length);
+  for (i = map_length; --i >= 0; ) { 
+    if (map().byte_at(i) == obj_tag) { 
+      StackValue* sv = i < llength ? local_at(i, llength)
+                                   : expression_at(map_length - i - 1,elength);
+      JavaOop::Raw value = sv->as_obj();
+      GUARANTEE(value.is_null() || value.is_java_oop(), "Must be java object");
+      AZZERT_ONLY_VAR(value);
+    }
   }
 }
 

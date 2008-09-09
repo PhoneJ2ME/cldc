@@ -26,94 +26,62 @@
 
 #if ENABLE_COMPILER
 
-class FPURegisterMap {
+class FPURegisterMap: public TypeArray {
  public:
-  typedef Assembler::Register Register;
+  HANDLE_DEFINITION(FPURegisterMap, TypeArray);
 
- private:
-  enum {
-    size = Assembler::number_of_float_registers,
-    item_bits = 4,
+  void reset();
+  void clear();
 
-    empty_stack = 0,
-    item_base = Assembler::fp0 - 1,   // 0 is undef value
-    item_mask = (1 << item_bits) - 1,
-    last_item_mask = item_mask << (item_bits*(size-1))
-  };
+  bool is_empty()                             { return top_of_stack() == 0;         }
+  Assembler::Register top_of_stack_register() { return register_at(top_of_stack()); }
 
-  unsigned _stack;
-
-  static unsigned encode ( const Register reg ) {
-    GUARANTEE( Assembler::fp0 <= reg && reg <= Assembler::fp7, "Sanity" );
-    return unsigned(reg) - item_base;
+  bool is_top_of_stack(Assembler::Register reg) {
+    return (top_of_stack_register() == reg);
   }
 
-  static Register decode ( const unsigned value ) {
-    GUARANTEE( value != empty_stack, "FPU Register stack underflow" );
-    return Register( (value & item_mask) + item_base );
+  bool is_unused(Assembler::Register reg) { return !is_on_stack(reg); }
+  bool is_on_stack(Assembler::Register reg);
+  bool is_clearable();
+
+  void push(Assembler::Register reg) {
+    GUARANTEE(top_of_stack() < Assembler::number_of_float_registers, "FPU Register stack overflow");
+
+    set_top_of_stack(top_of_stack() + 1);
+    set_register_at(top_of_stack(), reg);
   }
 
- public:
-  void reset( void ) { _stack = empty_stack; }
+  void pop() {
+    GUARANTEE(top_of_stack() > 0, "FPU Register stack underflow");
 
-  void clear( void );
-
-  bool is_empty( void ) const { return _stack == empty_stack;  }
-
-  Register top_of_stack_register( void ) const {
-    return decode( _stack );
-  }
-  bool is_top_of_stack( const Register reg ) const {
-    return top_of_stack_register() == reg;
+    set_register_at(top_of_stack(), Assembler::no_reg);
+    set_top_of_stack(top_of_stack() - 1);
   }
 
-  bool is_unused( const Register reg) const {
-    return !is_on_stack(reg);
-  }
-
-  unsigned is_on_stack(const Register reg) const ;
-
-  void push( const Register reg ) {
-    GUARANTEE( !(_stack & last_item_mask) , "FPU Register stack overflow" );
-    _stack = encode( reg ) | (_stack << item_bits);
-  }
-
-  void pop( void ) {
-    GUARANTEE( !is_empty(), "FPU Register stack underflow" );
-    _stack >>= item_bits;
-  }
-
-  void pop( const Register reg ) {
-    GUARANTEE(top_of_stack_register() == reg,
-              "Can only pop register at top of stack");
+  void pop(Assembler::Register reg) {
+    GUARANTEE(register_at(top_of_stack()) == reg, "Can only pop register at top of stack");
     pop();
   }
 
-  int index_for( const Register reg ) const;
+  int index_for(Assembler::Register reg);
 
-  Register register_for( const int index ) const {
-    GUARANTEE( (_stack >> (index*item_bits)) != 0, "Index out of bounds");
-    return decode( _stack >> (index*item_bits) );
+  Assembler::Register register_for(int index) {
+    GUARANTEE(0 < index && index <= top_of_stack(), "Index out of bounds");
+
+    return register_at(top_of_stack() - index);
   }
 
-  int swap_with_top(const Register reg) {
-    const unsigned encoded_reg = encode( reg );
-    // Swaps reg with top of stack and returns index (before swap) of reg.
-    int i = 0;
-    for( unsigned x = _stack; (x & item_mask) != encoded_reg; x >>= item_bits ) {
-      GUARANTEE( x != empty_stack, "Sanity" );
-      i++;
-    }
-    const int shift = i * item_bits;
-    _stack = ((_stack &~item_mask) & ~(item_mask << shift)) | encoded_reg |
-             ((_stack & item_mask) << shift );
-    return i;
-  }
+  int swap_with_top(Assembler::Register reg);
 
 #ifndef PRODUCT
-  bool is_clearable( void ) const;
-  void dump( const bool as_comment) const;
+  void dump(bool as_comment);
 #endif
+
+ private:
+  int top_of_stack() const                                 { return int_at(0);                          }
+  void set_top_of_stack(int index)                         { int_at_put(0, index);                      }
+  Assembler::Register register_at(int index) const         { return (Assembler::Register)int_at(index); }
+  void set_register_at(int index, Assembler::Register reg) { int_at_put(index, (jint)reg);              }
 };
 
 #endif

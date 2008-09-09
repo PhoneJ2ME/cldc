@@ -46,10 +46,10 @@ jint ClassInfo::itable_size(int nof_interfaces, int nof_methods) {
        + nof_methods    * sizeof(jobject);
 }
 
-#if !defined(PRODUCT) || ENABLE_ROM_GENERATOR || ENABLE_TTY_TRACE ||\
-                         ENABLE_PERFORMANCE_COUNTERS
+#ifndef PRODUCT
+
 void ClassInfo::print_name_on(Stream* st) {
-#if ENABLE_TTY_TRACE
+#if USE_DEBUG_PRINTING
   if (!check_valid_for_print(st)) {
     return;
   }
@@ -67,11 +67,9 @@ void ClassInfo::print_name_on(Stream* st) {
   }
 #endif
 }
-#endif
 
-#if !defined(PRODUCT) || ENABLE_ROM_GENERATOR || ENABLE_TTY_TRACE
 void ClassInfo::print_value_on(Stream* st) {
-#if ENABLE_TTY_TRACE
+#if USE_DEBUG_PRINTING
   st->print("ClassInfo ");
 
   ReturnOop raw_name = obj_field(name_offset());
@@ -82,9 +80,6 @@ void ClassInfo::print_value_on(Stream* st) {
   print_name_on(st);
 #endif
 }
-#endif
-
-#if !defined(PRODUCT)
 
 void ClassInfo::iterate(OopVisitor* visitor) {
 #if USE_OOP_VISITOR
@@ -146,7 +141,7 @@ void ClassInfo::iterate(OopVisitor* visitor) {
       NamedField id("local_interfaces", true);
       visitor->do_oop(&id, local_interfaces_offset(), true);
     }
-#if USE_REFLECTION
+#if ENABLE_REFLECTION
     {
       NamedField id("inner_classes", true);
       visitor->do_oop(&id, inner_classes_offset(), true);
@@ -176,7 +171,7 @@ void ClassInfo::iterate_oopmaps(oopmaps_doer do_map, void* param) {
   OOPMAP_ENTRY_4(do_map, param, T_INT,   static_field_end);
 #endif
   OOPMAP_ENTRY_5(do_map, param, T_OBJECT,local_interfaces,OOPMAP_VARIABLE_OBJ);
-#if USE_REFLECTION
+#if ENABLE_REFLECTION
   OOPMAP_ENTRY_5(do_map, param, T_OBJECT,inner_classes,   OOPMAP_VARIABLE_OBJ);
 #endif
   OOPMAP_ENTRY_5(do_map, param, T_OBJECT,constants,       OOPMAP_VARIABLE_OBJ);
@@ -301,7 +296,7 @@ int ClassInfo::generate_fieldmap(TypeArray* field_map) {
     // _local_interfaces
     field_map->byte_at_put(map_index++, T_OBJECT);
     offset += sizeof(jobject);
-#if USE_REFLECTION
+#if ENABLE_REFLECTION
     // _inner_classes
     field_map->byte_at_put(map_index++, T_OBJECT);
     offset += sizeof(jobject);

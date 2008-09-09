@@ -293,7 +293,7 @@ class ConstantPool: public Oop {
 
   // JVM_CONSTANT_ClassIndex
   int klass_index_at(int index JVM_TRAPS) {
-    int offset = offset_from_checked_index(index JVM_ZCHECK_0(offset));
+    int offset = offset_from_checked_index(index JVM_ZCHECK(offset));
     cp_check_0(ConstantTag::is_klass_index(tag_value_at(index)));
     return int_field(offset);
   }
@@ -317,7 +317,7 @@ class ConstantPool: public Oop {
   }
 
   jint field_or_method_at(int index JVM_TRAPS) {
-    int offset = offset_from_checked_index(index JVM_ZCHECK_0(offset));
+    int offset = offset_from_checked_index(index JVM_ZCHECK(offset));
     cp_check_0(ConstantTag::is_field_or_method(tag_value_at(index)));
     int result = int_field(offset);
     GUARANTEE(result != 0, "sanity for JVM_ZCHECK");
@@ -496,9 +496,6 @@ class ConstantPool: public Oop {
   jint value32_at(int index) {
     return int_field(offset_from_index(index));
   }
-  void value32_at_put(int index, jint value) {
-    int_field_put(offset_from_index(index), value);
-  }
   jlong value64_at(int index) {
     GUARANTEE(tag_at(index).is_long() || tag_at(index).is_double(),
               "Corrupted constant pool");
@@ -524,7 +521,7 @@ class ConstantPool: public Oop {
  private:
   // check field access in quickened case
   void check_quickened_field_access(int index, InstanceClass* sender_class, 
-                                    bool is_static, bool is_get JVM_TRAPS);
+				    bool is_static, bool is_get JVM_TRAPS);
 
   // The class file parser is allowed to call the at_put methods
   friend class ClassFileParser;

@@ -33,12 +33,12 @@ class JavaVTable : public AllStatic {
   // computes vtable length (in words)
   static void compute_vtable_size(int &vtable_length,
                            InstanceClass* super, ObjArray* methods, 
-                           const AccessFlags class_flags,
+                           AccessFlags class_flags,
                            Symbol* classname);
 
   // returns the vtable size of java.lang.Object
   static int base_vtable_size() {
-    return USE_REFLECTION ? 4 : 3;
+    return ENABLE_REFLECTION ? 4 : 3;
   }
 
  private:

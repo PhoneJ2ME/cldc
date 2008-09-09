@@ -159,7 +159,7 @@ ifeq ($(ENABLE_ISOLATES), true)
 	@touch $@ 
 ifeq ($(os_family), linux)
 	@cp $(JVMWorkSpace)/src/tests/dynamic_natives/lib.c $(DYN_NATIVES_DIR) 
-	@gcc -fPIC -I$(DIST_DIR)/include/ -DLINUX -c dyn_natives/lib.c  -o dyn_natives/lib.obj
+	@gcc -fPIC -I$(BuildSpace)/linux_i386/dist/include/ -DLINUX -c dyn_natives/lib.c  -o dyn_natives/lib.obj
 	@gcc -shared -o dyn_natives/lib.so dyn_natives/lib.obj
 endif
 endif
@@ -236,7 +236,7 @@ ROM_CFG = $(WorkSpace)/src/tests/test_rom.cfg
 
 ROMImage.cpp: $(ROMCLASSES_ZIP) $(ROM_CFG) $(ROM_GENERATOR) 
 	$(ROM_GENERATOR) -cp $(ROMCLASSES_ZIP)$(PATHSEP)$(RESOURCES_ZIP) \
-		-romize =HeapCapacity16M \
+		-romize =HeapCapacity8M \
 		-romconfig $(ROM_CFG) \
 		-romincludepath $(WorkSpace)/src/vm \
 		+EnableAllROMOptimizations \

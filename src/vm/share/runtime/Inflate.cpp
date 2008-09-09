@@ -231,8 +231,7 @@ int Inflater::inflate_stored(JVM_SINGLE_ARG_TRAPS) {
   (void)inLength;
 
   GUARANTEE(inDataSize == 0, "inDataSize != 0");
-  GUARANTEE(!isIncremental || outOffset == out_dumped(), 
-            "output buffer should be fresh for incremental inflate");
+  GUARANTEE(outOffset == out_dumped(), "output buffer should be fresh");
   GUARANTEE(length <= (int) outLength, "INFLATER_OUTPUT_BUFFER too small");
   AZZERT_ONLY_VAR(outLength);
 

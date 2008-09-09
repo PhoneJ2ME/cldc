@@ -4,22 +4,22 @@
  * Portions Copyright  2000-2007 Sun Microsystems, Inc. All Rights
  * Reserved.  Use is subject to license terms.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
- *
+ * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License version
  * 2 only, as published by the Free Software Foundation.
- *
+ * 
  * This program is distributed in the hope that it will be useful, but
  * WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
  * General Public License version 2 for more details (a copy is
  * included at /legal/license.txt).
- *
+ * 
  * You should have received a copy of the GNU General Public License
  * version 2 along with this work; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA
- *
+ * 
  * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
  * Clara, CA 95054 or visit www.sun.com if you need additional
  * information or have any questions.
@@ -34,9 +34,7 @@
 
 #if ENABLE_COMPILER
 
-int VirtualStackFrame::_location_map_size;
-
-Method* VirtualStackFrame::method( void ) {
+Method* VirtualStackFrame::method() {
   return Compiler::root()->method();
 }
 
@@ -113,13 +111,15 @@ void VirtualStackFrame::wipe_notation_for_osr_entry() {
 #endif
 
 
-bool VirtualStackFrame::is_mapped_by(const RawLocation* item,
-                                     const Assembler::Register reg) const {
+bool VirtualStackFrame::is_mapped_by(RawLocation *item,
+                                     Assembler::Register reg) const {
+  AllocationDisabler allocation_not_allowed;
+
   if (!item->is_flushed() && item->in_register()) {
     if (item->value() == (jint)reg) {
       return true;
     }
-    const BasicType type = item->type();
+    BasicType type = item->type();
     if (is_two_word(type)) {
       item ++; // Advance to next stack item
       if (item->value() == (jint)reg) {
@@ -132,8 +132,10 @@ bool VirtualStackFrame::is_mapped_by(const RawLocation* item,
 
 bool
 VirtualStackFrame::is_mapping_something(const Assembler::Register reg) const {
-  const RawLocation* raw_location = raw_location_at(0);
-  const RawLocation* end  = raw_location_end(raw_location);
+  AllocationDisabler allocation_not_allowed;
+
+  register RawLocation *raw_location = raw_location_at(0);
+  register RawLocation *end  = raw_location_end(raw_location);
 
   while (raw_location < end) {
     if (!raw_location->is_flushed() && raw_location->in_register()) {
@@ -177,17 +179,40 @@ VirtualStackFrame::is_mapping_something(const Assembler::Register reg) const {
   return false;
 }
 
-bool VirtualStackFrame::fits_compiled_compact_format( void ) const {
-  const RawLocation *raw_location = raw_location_at(0);
-  const RawLocation *end  = raw_location_end(raw_location);
+ReturnOop VirtualStackFrame::allocate(int location_map_size JVM_TRAPS) {
+  const size_t size = header_size() +
+                      literals_map_size * sizeof(jint) +
+                      location_map_size;
+  UsingFastOops fast_oops;
+  VirtualStackFrame::Fast frame =
+      Universe::new_mixed_oop_in_compiler_area(
+               MixedOopDesc::Type_VirtualStackFrame, size,
+               VirtualStackFrameDesc::pointer_count() JVM_OZCHECK(frame));
 
-  for( ; raw_location < end; raw_location++ ) {
-    const BasicType t = raw_location->type();
-    switch( t ) {
-      case T_ILLEGAL:
-      case T_OBJECT :
-      case T_INT    : break;
-      default: return false;
+#if USE_COMPILER_FPU_MAP
+  TypeArray::Raw fpu_map =
+      Universe::new_int_array_in_compiler_area(
+                              Assembler::number_of_float_registers + 1
+                              JVM_OZCHECK(fpu_map));
+  frame().set_fpu_register_map(&fpu_map);
+#endif
+
+  return frame;
+}
+
+bool VirtualStackFrame::fits_compiled_compact_format() const {
+  AllocationDisabler allocation_not_allowed;
+
+  register RawLocation *raw_location = raw_location_at(0);
+  register RawLocation *end  = raw_location_end(raw_location);
+
+  while (raw_location < end) {
+    BasicType t = raw_location->type();
+    raw_location ++;
+    if (   t != T_ILLEGAL
+        && t != T_OBJECT
+        && t != T_INT) {
+      return false;
     }
     // Only one-word items can fit in compiled compact format
     GUARANTEE(!is_two_word(t), "sanity");
@@ -282,7 +307,8 @@ void VirtualStackFrame::fill_callinfo_record(CallInfoWriter* writer) {
 }
 #endif // ENABLE_APPENDED_CALLINFO
 
-VirtualStackFrame* VirtualStackFrame::create(Method* method JVM_TRAPS) {
+ReturnOop VirtualStackFrame::create(Method* method JVM_TRAPS) {
+  UsingFastOops fast_oops;
   // Allocate a new virtual stack frame with a location map.
   // Since all entries in the location map initially are zero this will
   // make all locations contain an uninitialized zero value.
@@ -296,21 +322,23 @@ VirtualStackFrame* VirtualStackFrame::create(Method* method JVM_TRAPS) {
   inliner_stack_count += 3;
 #endif
 
-  set_location_map_size( Location::size() *
-    (inliner_stack_count + method->max_execution_stack_count() -
-     num_stack_lock_words()) + size_of_tag_stack(method) );
+  int location_map_size = Location::size() *
+      (inliner_stack_count + method->max_execution_stack_count() -
+       num_stack_lock_words());
 
-  VirtualStackFrame* frame =
-    VirtualStackFrame::allocate(JVM_SINGLE_ARG_ZCHECK_0( frame ) );
+  location_map_size += size_of_tag_stack(method);
+
+  VirtualStackFrame::Fast frame =
+     VirtualStackFrame::allocate(location_map_size JVM_CHECK_0);
 
   // Setup the stack pointer and the virtual stack pointer.
-  {
-    const int real_stack_pointer = code_generator()->omit_stack_frame() ?
-      method->size_of_parameters() : method->max_locals();
-    frame->set_real_stack_pointer( real_stack_pointer - 1 );
+  if (Compiler::omit_stack_frame()) {
+    frame().set_real_stack_pointer(method->size_of_parameters() - 1);
+  } else {
+    frame().set_real_stack_pointer(method->max_locals() - 1);
   }
-  frame->set_virtual_stack_pointer(method->max_locals() - 1);
-  frame->clear_flush_count();
+  frame().set_virtual_stack_pointer(method->max_locals() - 1);
+  frame().clear_flush_count();
 
   AllocationDisabler allocation_not_allowed_in_this_block;
   {
@@ -319,7 +347,7 @@ VirtualStackFrame* VirtualStackFrame::create(Method* method JVM_TRAPS) {
             !ss.eos(); ss.next()) {
       const BasicType type = ss.type();
       const int index = ss.index();
-      RawLocation* raw_location = frame->raw_location_at(index);
+      RawLocation* raw_location = frame().raw_location_at(index);
       Value value(type);
       if (index == 0 && !method->is_static()) {
         value.set_must_be_nonnull();
@@ -328,7 +356,7 @@ VirtualStackFrame* VirtualStackFrame::create(Method* method JVM_TRAPS) {
       raw_location->mark_as_flushed();
 #if ENABLE_COMPILER_TYPE_INFO
       if (type == T_OBJECT || type == T_ARRAY) {
-        JavaClass::Raw type_class = (index == 0 && !method->is_static()) ?
+        JavaClass::Raw type_class = (index == 0 && !method->is_static()) ? 
           method->holder() : ss.type_klass();
         GUARANTEE(type_class.not_null(), "Sanity");
         raw_location->set_class_id(type_class().class_id());
@@ -339,9 +367,9 @@ VirtualStackFrame* VirtualStackFrame::create(Method* method JVM_TRAPS) {
 #endif
     }
 
-    for (int k = method->size_of_parameters(); k < frame->locations(); k++) {
+    for (int k = method->size_of_parameters(); k < frame().locations(); k++) {
       // initialize all locations that aren't parameters to illegal values
-      RawLocation* raw_location = frame->raw_location_at(k);
+      RawLocation* raw_location = frame().raw_location_at(k);
       Value value(T_ILLEGAL);
       raw_location->write_value(value);
     }
@@ -350,13 +378,69 @@ VirtualStackFrame* VirtualStackFrame::create(Method* method JVM_TRAPS) {
   return frame;
 }
 
-VirtualStackFrame* VirtualStackFrame::clone(JVM_SINGLE_ARG_TRAPS) {
-  VirtualStackFrame* result =
-    VirtualStackFrame::allocate(JVM_SINGLE_ARG_NO_CHECK);
-  if( result ) {
-    copy_to( result );
+void VirtualStackFrame::copy_to(VirtualStackFrame* dst) const {
+  AllocationDisabler allocation_not_allowed;
+
+  // Copy location and literals maps.
+  GUARANTEE(dst->object_size() == object_size(), "sanity");
+
+  // Need to copy only the locations that are actually in use. I.e.,
+  //
+  //     virtual_stack_pointer()---+
+  //                               v
+  //     [literals_map_size][Y][Y][Y][n][n]
+  //
+  // Note that virtual_stack_pointer() is a "full stack": it points to
+  // the current top of stack, so the number of used stack elements are
+  // virtual_stack_pointer()+1
+
+  size_t literals_bytes = literals_map_size * sizeof(int);
+  size_t location_bytes = (virtual_stack_pointer()+1) * Location::size();
+  //size_t location_bytes = location_map_size();
+  size_t copy_bytes = literals_bytes + location_bytes;
+
+  address map_src = literals_map_base();
+  address map_dst = dst->literals_map_base();
+  jvm_memmove(map_dst, map_src, copy_bytes);
+
+#if ENABLE_ARM_VFP
+  {
+    const jint* src_mask = literals_mask_addr();
+    jint* dst_mask = dst->literals_mask_addr();
+    dst_mask[0] = src_mask[0];
+    dst_mask[1] = src_mask[1];
   }
-  return result;
+#endif
+
+#ifdef AZZERT
+  //size_t left_over_bytes = object_size() - (header_size() + copy_bytes);
+  //if (left_over_bytes > 0) {
+  //  map_dst += copy_bytes;
+  //  jvm_memset(map_dst, 0xab, left_over_bytes);
+  //}
+#endif
+
+#if USE_COMPILER_FPU_MAP
+  {
+    TypeArray::Raw my_fpu_map = fpu_register_map();
+    TypeArray::Raw new_fpu_map = dst->fpu_register_map();
+    TypeArray::array_copy(&my_fpu_map, 0, &new_fpu_map, 0,
+      my_fpu_map().length());
+  }
+#endif
+
+  dst->set_real_stack_pointer(stack_pointer());
+  dst->set_virtual_stack_pointer(virtual_stack_pointer());
+  dst->set_flush_count(flush_count());
+  //remember array length
+  dst->set_bound_mask(bound_mask());
+}
+
+ReturnOop VirtualStackFrame::clone(JVM_SINGLE_ARG_TRAPS) {
+  VirtualStackFrame::Raw result =
+    VirtualStackFrame::allocate(location_map_size() JVM_CHECK_0);
+  copy_to(&result);
+  return result.obj();
 }
 
 void VirtualStackFrame::clear() {
@@ -374,25 +458,24 @@ void VirtualStackFrame::clear() {
   }
 }
 
-VirtualStackFrame*
-VirtualStackFrame::clone_for_exception(int handler_bci JVM_TRAPS) {
+ReturnOop VirtualStackFrame::clone_for_exception(int handler_bci JVM_TRAPS) {
+  UsingFastOops fast_oops;
   int first_stack = method()->max_locals();
-  VirtualStackFrame* result = clone(JVM_SINGLE_ARG_NO_CHECK);
-  if( result ) {
-    result->set_virtual_stack_pointer(first_stack);
-    result->set_real_stack_pointer(first_stack);
-    Location location(result, first_stack);
-    Value value(T_OBJECT);
-    location.write_value(value);
-    result->mark_as_flushed();
-    result->conform_to_stack_map(handler_bci);
-  }
+  VirtualStackFrame::Fast result = clone(JVM_SINGLE_ARG_CHECK_0);
+  result().set_virtual_stack_pointer(first_stack);
+  result().set_real_stack_pointer(first_stack);
+  Location location(&result, first_stack);
+  Value value(T_OBJECT);
+  location.write_value(value);
+  result().mark_as_flushed();
+  result().conform_to_stack_map(handler_bci);
   return result;
 }
 
 void VirtualStackFrame::clear(int location) {
-  const Value value(T_ILLEGAL);
-  raw_location_at(location)->write_value(value);
+  RawLocation *raw_location = raw_location_at(location);
+  Value value(T_ILLEGAL);
+  raw_location->write_value(value);
 }
 
 void VirtualStackFrame::set_stack_pointer(int location) {
@@ -483,13 +566,16 @@ void VirtualStackFrame::flush(JVM_SINGLE_ARG_TRAPS) {
   set_stack_pointer(virtual_stack_pointer());
 
 #if USE_COMPILER_FPU_MAP && ENABLE_FLOAT
-  GUARANTEE( fpu_register_map().is_clearable(),
-             "mapped registers exist on FPU stack" );
+  // ensure x86 FPU stack is cleared
+  FPURegisterMap::Raw fpu_map = fpu_register_map();
+  GUARANTEE(fpu_map().is_clearable(), "mapped registers exist on FPU stack");
   code_generator()->fpu_clear();
 #endif
 
   set_flush_count(flush_count() + 1);
+
   ABORT_CSE_TRACKING;
+
 }
 
 void VirtualStackFrame::mark_as_flushed() {
@@ -503,6 +589,7 @@ void VirtualStackFrame::mark_as_flushed() {
 
   //remember array length: clear cached value
   clear_bound();
+
 }
 
 void VirtualStackFrame::conform_to_stack_map(int bci) {
@@ -622,8 +709,9 @@ void VirtualStackFrame::conformance_entry(bool merging) {
   }
 
 #if USE_COMPILER_FPU_MAP && ENABLE_FLOAT
-  GUARANTEE( fpu_register_map().is_clearable(),
-             "mapped registers exist on FPU stack" );
+  UsingFastOops fast_oops;
+  FPURegisterMap::Fast fpu_map = fpu_register_map();
+  GUARANTEE(fpu_map().is_clearable(), "mapped registers exist on FPU stack");
   code_generator()->fpu_clear();
 #endif //
 
@@ -683,6 +771,8 @@ void VirtualStackFrame::flush_fpu() {
 
 inline void VirtualStackFrame::conform_to_prologue(VirtualStackFrame* other) {
   REGISTER_REFERENCES_CHECKER;
+
+  UsingFastOops fast_oops;
   GUARANTEE(virtual_stack_pointer() == other->virtual_stack_pointer(),
             "other must have same virtual stack pointer");
 
@@ -693,10 +783,11 @@ inline void VirtualStackFrame::conform_to_prologue(VirtualStackFrame* other) {
 #if USE_COMPILER_FPU_MAP && ENABLE_FLOAT
   flush_fpu();
 
-  GUARANTEE( fpu_register_map().is_clearable(),
-             "mapped registers exist on FPU stack" );
+  FPURegisterMap::Fast fpu_map = fpu_register_map();
+  FPURegisterMap::Fast other_fpu_map = other->fpu_register_map();
+  GUARANTEE(fpu_map().is_clearable(), "mapped registers exist on FPU stack");
   code_generator()->fpu_clear();
-  GUARANTEE( other->fpu_register_map().is_empty(),
+  GUARANTEE(other_fpu_map().is_empty(),
             "destination x86 FPU stack should be empty");
 #endif
 
@@ -1759,7 +1850,6 @@ void VirtualStackFrame::verify_conform_to(VirtualStackFrame* other) {
   }
 #endif
 
-#if ENABLE_VSF_MERGE_TEST
   {
 #if ENABLE_TTY_TRACE
     TemporaryModifyGlobal print(&PrintCompiledCodeAsYouGo, VerboseVSFMerge);
@@ -1768,7 +1858,6 @@ void VirtualStackFrame::verify_conform_to(VirtualStackFrame* other) {
     SETUP_ERROR_CHECKER_ARG;
     VSFMergeTest::verify_merge(this, other JVM_CHECK);
   }
-#endif
 }
 #endif // PRODUCT
 
@@ -2165,14 +2254,15 @@ void VirtualStackFrame::push(const Value& value) {
   value_at_put(virtual_stack_pointer() - (double_word ? 1 : 0), value);
 }
 
-// This function is used to determine whether the receiver needs a null check
-// without loading the receiver value into a register.
-jubyte VirtualStackFrame::receiver_flags(const int size_of_parameters) const {
-  const int location = virtual_stack_pointer() - size_of_parameters + 1;
-  const RawLocation* raw_location = raw_location_at( location );
+// This function is used to determine whether invokevirtual_final needs to
+// load the receiver into a register in order to check for null.
+bool VirtualStackFrame::reveiver_must_be_nonnull(int size_of_parameters) const
+{
+  int location = virtual_stack_pointer() - size_of_parameters + 1;
+  RawLocation *raw_location = raw_location_at(location);
   GUARANTEE(raw_location->stack_type() == T_OBJECT, "sanity");
 
-  return raw_location->flags();
+  return (raw_location->flags() & Value::F_MUST_BE_NONNULL) != 0;
 }
 
 void VirtualStackFrame::set_value_must_be_nonnull(Value &value) {
@@ -2249,8 +2339,8 @@ void VirtualStackFrame::set_value_class(Value &value, JavaClass * java_class) {
 
   while (raw_location < end) {
     BasicType type = raw_location->stack_type();
-    if (type == T_OBJECT && !raw_location->is_flushed() &&
-        raw_location->in_register() &&
+    if (type == T_OBJECT && !raw_location->is_flushed() && 
+        raw_location->in_register() && 
         raw_location->get_register() == value_register) {
       raw_location->set_class_id(class_id);
       if (is_final_type) {
@@ -2297,20 +2387,26 @@ Assembler::Register VirtualStackFrame::get_literal(int imm32,
 
 void VirtualStackFrame::clear_literals(void) {
 #if ENABLE_ARM_VFP
-  _literals_mask[ 0 ] = 0;
-  _literals_mask[ 1 ] = 0;
-#endif
-  jvm_memset(_literals_map, 0, sizeof _literals_map);
+  {
+    jint* p = literals_mask_addr();
+    p[0] = 0;
+    p[1] = 0;
+  }
+#endif  
+  jvm_memset(literals_map_base(), 0, literals_map_size * sizeof(int));
 }
 
 bool VirtualStackFrame::has_no_literals(void) const{
 #if ENABLE_ARM_VFP
-  if( _literals_mask[0] | _literals_mask[1] ) {
-    return false;
+  {
+    const jint* p = literals_mask_addr();
+    if( p[0] | p[1] ) {
+      return false;
+    }
   }
-#endif
+#endif  
   for( int i = 0; i < Assembler::number_of_registers; i++ ) {
-    if (get_literal(Assembler::Register(i))) {
+    if (get_literal(Assembler::Register(i))) { 
       return false;
     }
   }
@@ -2320,7 +2416,7 @@ bool VirtualStackFrame::has_no_literals(void) const{
 
 #if ENABLE_ARM_VFP
 Assembler::Register VirtualStackFrame::find_zero(void) const {
-  const jint* masks = literals_mask();
+  const jint* masks = literals_mask_addr();
   int reg = 0;
   if( masks[0] == 0 ) {
     masks++;
@@ -2338,9 +2434,10 @@ Assembler::Register VirtualStackFrame::find_zero(void) const {
 Assembler::Register VirtualStackFrame::find_non_NaN(void) const {
   GUARANTEE( find_zero() == Assembler::no_reg, "must search for zeroes first" );
   // We prefer NaNs in VFP registers, so do the backward search
+  const jint* literals_map_base = obj()->int_field_addr(literals_map_base_offset());
   Assembler::Register reg = Assembler::s31;
   do {
-    const jint imm32 = get_literal(Assembler::Register(reg));
+    const jint imm32 = literals_map_base[reg];
     if (is_non_NaN(imm32)) {
       return reg;
     }
@@ -2351,9 +2448,10 @@ Assembler::Register VirtualStackFrame::find_non_NaN(void) const {
 
 Assembler::Register VirtualStackFrame::find_double_non_NaN(void) const {
   // We prefer NaNs in VFP registers, so do the backward search
+  const jint* literals_map_base = obj()->int_field_addr(literals_map_base_offset());
   int reg = Assembler::s31;
   do {
-    const jint imm32 = get_literal(Assembler::Register(reg));
+    const jint imm32 = literals_map_base[reg];    
     if (is_non_NaN(imm32)) {
       return Assembler::Register(reg - 1);
     }
@@ -2363,7 +2461,7 @@ Assembler::Register VirtualStackFrame::find_double_non_NaN(void) const {
 }
 
 Assembler::Register VirtualStackFrame::find_double_vfp_literal(const jint lo, const jint hi) const {
-  const jint* literals_map_base = literals_map();
+  const jint* literals_map_base = obj()->int_field_addr(literals_map_base_offset());
   int reg = Assembler::s0;
   do {
     if (literals_map_base[reg] == lo && literals_map_base[reg + 1] == hi) {
@@ -2373,7 +2471,7 @@ Assembler::Register VirtualStackFrame::find_double_vfp_literal(const jint lo, co
   } while (reg < Assembler::s31);
   return Assembler::no_reg;
 }
-#endif
+#endif    
 
 
 #if ENABLE_REMEMBER_ARRAY_CHECK && \
@@ -2391,7 +2489,7 @@ bool VirtualStackFrame::is_value_must_be_index_checked(
   if(!value.is_two_word() &&
     RegisterAllocator::is_checked_before(value.lo_register())) {
     VERBOSE_CSE(("reg %s is mark as index checked ",
-          Disassembler::register_name(value.lo_register())));
+          Disassembler::reg_name(value.lo_register())));
 
     return true;
   }
@@ -2424,7 +2522,7 @@ void VirtualStackFrame::set_value_must_be_index_checked(
 #if ENABLE_CSE
   if ( !value.is_two_word() ) {
     VERBOSE_CSE(("reg %s is index checked before ",
-          Disassembler::register_name(value.lo_register())));
+          Disassembler::reg_name(value.lo_register())));
      RegisterAllocator::set_checked_before(value.lo_register());
   }
 #endif
@@ -2589,10 +2687,10 @@ void VirtualStackFrame::set_boundary_flag(void) {
 bool VirtualStackFrame::is_allocated(const Assembler::Register reg) const {
   AllocationDisabler allocation_not_allowed;
 
-  const RawLocation* raw_location = raw_location_at(0);
-  const RawLocation* end  = raw_location_end(raw_location);
+  register RawLocation *raw_location = raw_location_at(0);
+  register RawLocation *end  = raw_location_end(raw_location);
 
-  for( ; raw_location < end; raw_location ++ ) {
+  while (raw_location < end) {
     if (raw_location->in_register()) {
       if (raw_location->value() == (jint)reg) {
         return true;
@@ -2608,6 +2706,7 @@ bool VirtualStackFrame::is_allocated(const Assembler::Register reg) const {
         raw_location ++;
       }
     }
+    raw_location ++;
   }
 
 #if USE_COMPILER_LITERALS_MAP
@@ -2788,12 +2887,12 @@ void VirtualStackFrame::dump(bool as_comment) {
           } else
 #endif
           {
-            jvm_sprintf(p, "%s:%s", Disassembler::register_name(reg_hi),
-                                    Disassembler::register_name(reg_lo));
+            jvm_sprintf(p, "%s:%s", Disassembler::reg_name(reg_hi),
+                                    Disassembler::reg_name(reg_lo));
           }
 #else
           jvm_sprintf(p, "%s:%s", Assembler::name_for_long_register(reg_hi),
-                                  Assembler::name_for_long_register(reg_lo));
+                              Assembler::name_for_long_register(reg_lo));
 #endif // USE_COMPILER_LITERALS_MAP
           p += jvm_strlen(p);
         } else {
@@ -2801,18 +2900,18 @@ void VirtualStackFrame::dump(bool as_comment) {
 #if USE_COMPILER_LITERALS_MAP
 #if ENABLE_ARM_VFP
           if( value.type() == T_FLOAT ) {
-            Disassembler::vfp_reg_name( 's', reg - Assembler::s0, p );
+            Disassembler::vfp_reg_name( 's', reg - Assembler::s0, p );            
           } else
 #endif
           {
-            jvm_sprintf(p, "%s", Disassembler::register_name(reg));
+            jvm_sprintf(p, "%s", Disassembler::reg_name(reg));
           }
           p += jvm_strlen(p);
 #else
           jvm_sprintf(p, "%s", Assembler::name_for_long_register(reg));
           p += jvm_strlen(p);
           if (value.type() == T_FLOAT || value.type() == T_DOUBLE) {
-            const FPURegisterMap& fpu_map = fpu_register_map();
+            FPURegisterMap fpu_map = fpu_register_map();
             jvm_sprintf(p, " ST(%d)", fpu_map.index_for(reg));
             p += jvm_strlen(p);
           }
@@ -2869,10 +2968,10 @@ void VirtualStackFrame::dump(bool as_comment) {
                       break;
       case T_FLOAT  : jvm_sprintf(p, " (float)");
                       break;
-      case T_OBJECT :
+      case T_OBJECT : 
 #if ENABLE_COMPILER_TYPE_INFO
       {
-        JavaClass::Raw java_class =
+        JavaClass::Raw java_class = 
           Universe::class_from_id(location.class_id());
         GUARANTEE(java_class.not_null(), "Sanity");
         Symbol::Raw class_name = java_class().name();
@@ -2930,7 +3029,7 @@ void VirtualStackFrame::dump(bool as_comment) {
       jvm_sprintf(p, ", %c%d = %d", prefix, r, les.value());
 #else
       jvm_sprintf(p, ", r%d = %d", les.reg(), les.value());
-#endif
+#endif      
       p += jvm_strlen(p);
     }
   }
@@ -2978,10 +3077,10 @@ void RawLocationData::p() {
 
 void PreserveVirtualStackFrameState::save(JVM_SINGLE_ARG_TRAPS) {
   _saved_frame = Compiler::current()->get_cached_preserved_frame();
-  if( _saved_frame == NULL ) {
-    _saved_frame = frame()->clone(JVM_SINGLE_ARG_ZCHECK(_saved_frame));
+  if (_saved_frame.is_null()) {
+    _saved_frame = frame()->clone(JVM_SINGLE_ARG_CHECK);
   } else {
-    frame()->copy_to( _saved_frame );
+   frame()->copy_to(&_saved_frame);
   }
 
 #if NOT_CURRENTLY_USED
@@ -3004,7 +3103,7 @@ void PreserveVirtualStackFrameState::save(JVM_SINGLE_ARG_TRAPS) {
   frame()->flush(JVM_SINGLE_ARG_CHECK);
 }
 
-void PreserveVirtualStackFrameState::restore( void ) {
+void PreserveVirtualStackFrameState::restore() {
   // If we got outofmemory above when calling clone() we don't have a
   // saved frame and we have a pending exception so we need to just return
   JVM_DELAYED_CHECK;
@@ -3018,14 +3117,32 @@ void PreserveVirtualStackFrameState::restore( void ) {
 
 #if USE_COMPILER_FPU_MAP
   // remove the contents in the FPU
-  frame()->fpu_register_map().reset();
+  FPURegisterMap fpu_map = _saved_frame().fpu_register_map();
+  if (!fpu_map.is_empty()) {
+    fpu_map.reset();
+  }
 #endif
 
+
   frame()->conform_to(saved_frame());
+
   Compiler::current()->set_cached_preserved_frame(saved_frame());
 
   // Make sure we don't use it anymore
-  AZZERT_ONLY(_saved_frame = NULL);
+  AZZERT_ONLY(_saved_frame.set_null());
+}
+
+VirtualStackFrameContext::VirtualStackFrameContext(VirtualStackFrame* context) {
+  GUARANTEE(context->not_null(), "Sanity");
+  _saved_frame = Compiler::frame();
+  Compiler::set_frame(context);
+  jvm_fast_globals.compiler_frame = Compiler::frame();
+}
+
+VirtualStackFrameContext::~VirtualStackFrameContext() {
+  Compiler::frame()->conform_to(&_saved_frame);
+  Compiler::set_frame(&_saved_frame);
+  jvm_fast_globals.compiler_frame = Compiler::frame();
 }
 
 #if ENABLE_COMPRESSED_VSF
@@ -3050,7 +3167,7 @@ static inline void vsf_flush_do(address* regs, OopDesc* method, jushort* pool) {
   expr = m().uses_monitors() ?
     *(address**)(fp + JavaFrame::stack_bottom_pointer_offset()) + adjustment :
     (address*)(fp + JavaFrame::empty_stack_offset()) + adjustment;
-
+  
   for (reg_list &= Relocation::reg_mask; reg_list != 0; reg_list >>= 1) {
     if (reg_list & 1) {
       do {
@@ -3107,7 +3224,7 @@ static inline void vsf_restore_do(address* regs, OopDesc* method, jushort* pool)
   expr = m().uses_monitors() ?
     *(address**)(fp + JavaFrame::stack_bottom_pointer_offset()) + adjustment :
     (address*)(fp + JavaFrame::empty_stack_offset()) + adjustment;
-
+  
   for (reg_list &= Relocation::reg_mask; reg_list != 0; reg_list >>= 1) {
     if (reg_list & 1) {
       do {

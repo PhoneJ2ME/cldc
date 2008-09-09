@@ -24,137 +24,67 @@
  * information or have any questions.
  */
 
-#if USE_EVENT_LOGGER
-#  define EVENT_LOGGER_RETURN ;
+#if ENABLE_PERFORMANCE_COUNTERS && USE_DEBUG_PRINTING
+#define EVENT_LOGGER_RETURN
+#define EVENT_LOGGER_RETURN0
 #else
-#  define EVENT_LOGGER_RETURN {}
+#define EVENT_LOGGER_RETURN   {}
+#define EVENT_LOGGER_RETURN0  {return 0;}
 #endif
 
 class EventLogger : public AllStatic {
 public:
 
 #define EVENT_LOGGER_TYPES_DO(template) \
-  template(SCREEN_UPDATE )\
-  template(COMPILER_GC   )\
-  template(COMPILE       )\
-  template(GC            )\
-  template(LOAD_CLASS    )\
+  template(CLASS_LOAD_START) \
+  template(CLASS_LOAD_END) \
+  template(COMPILER_GC_START) \
+  template(COMPILER_GC_END) \
+  template(COMPILE_START) \
+  template(COMPILE_END) \
+  template(GC_START) \
+  template(GC_END) \
+  template(VERIFY_START) \
+  template(VERIFY_END)
 
 #define DECLARE_EVENT_LOGGER_TYPE(x) x,
+
   enum EventType {
     EVENT_LOGGER_TYPES_DO(DECLARE_EVENT_LOGGER_TYPE)
     _number_of_event_types
   };
-#undef DECLARE_EVENT_LOGGER_TYPE
+  enum {
+    GC_TYPE_YOUNG,
+    GC_TYPE_FULL,
+    GC_TYPE_COMPILER_AREA,
+    _last_event_arg_
+  };
 
-  enum EventKind { START, END };
+  static void initialize()                         EVENT_LOGGER_RETURN;
+  static void log(EventType /*type*/)              EVENT_LOGGER_RETURN;
+  static void log(EventType /*type*/, int /*arg*/) EVENT_LOGGER_RETURN;
+  static void dump()                               EVENT_LOGGER_RETURN;
+  static void dump(Stream *)                       EVENT_LOGGER_RETURN;
+  static void dispose()                            EVENT_LOGGER_RETURN;
 
-#if ENABLE_EXTENDED_EVENT_LOGGER
-  static const char* _event_names[];
-  static int add_event_type( const char name[] );
-  static bool validate_event_type( const char c );
-  static bool validate_event_type( const char name[] );
-#else
-  static const char* const _event_names[];
-#endif
+  enum {
+    BLOCK_SIZE = 1024
+  };
+  struct LogEntry {
+    int       _hrtick_delta;  // Number of hrticks from the last recorded event
+    EventType _type;
+  };
 
-  static const char* name( const int type ) {
-    return _event_names[ type ];
-  }
+  struct LogEntryBlock {
+    LogEntryBlock * _next;
+    int             _used_count;
+    LogEntry        _entries[1];
+  };
 
-  static void initialize( void )             EVENT_LOGGER_RETURN
-  static void dump( void )                   EVENT_LOGGER_RETURN
-  static void dump( Stream* )                EVENT_LOGGER_RETURN
-  static void dispose( void )                EVENT_LOGGER_RETURN
-
-#if USE_EVENT_LOGGER
 private:
-  static void log( const unsigned type );
-public:
-  static void log( const EventType type, const EventKind kind ) {
-    log( (type << 1) | kind );
-  }
-  static void start( const EventType type ) { log( type, START ); }
-  static void end  ( const EventType type ) { log( type, END   ); }
-#else
-  static void start( const EventType ) {}
-  static void end  ( const EventType ) {}
-#endif
+  static jlong          _last_hrticks;
+  static LogEntryBlock *_head;
+  static LogEntryBlock *_tail;
 
-  struct Entry {
-    enum {
-      delta_bits = 26,
-      event_type_bit_offset = delta_bits + 1,
-#if ENABLE_EXTENDED_EVENT_LOGGER
-      event_type_bits = 32 - event_type_bit_offset,
-      max_event_types = 1 << event_type_bits,
-#endif
-      delta_mask = (1 << delta_bits) - 1,
-      end_mask = 1 << delta_bits
-    };
-
-    unsigned _packed_data;
-
-    // Number of hrticks from the last recorded event
-    static unsigned delta  ( const unsigned packed_data ) {
-      return packed_data & delta_mask;
-    }
-    static unsigned type   ( const unsigned packed_data ) {
-      return EventType(packed_data >> event_type_bit_offset);
-    }
-    static unsigned is_end ( const unsigned packed_data ) {
-      return packed_data & end_mask;
-    }
-    static const char* name( const unsigned packed_data ) {
-      return EventLogger::name( type( packed_data ) );
-    }    
-    static const char* kind( const unsigned packed_data ) {
-      return is_end( packed_data ) ? "end  " : "start";
-    }
-
-    unsigned delta    ( void ) const { return delta ( _packed_data ); }
-    unsigned type     ( void ) const { return type  ( _packed_data ); }
-    unsigned is_end   ( void ) const { return is_end( _packed_data ); }
-    const char* name  ( void ) const { return name  ( _packed_data ); }
-    const char* kind  ( void ) const { return kind  ( _packed_data ); }
-    
-    void set ( const unsigned type, const jlong time );
-    jlong dump( Stream* s, jlong time ) const;
-
-    static jlong now ( void );
-    static void initialize ( void );
-    static void terminate  ( void ) {}
-    static bool use_usec   ( void ) { return _use_usec; }
-
-    static jlong _last;
-    static jlong _freq;
-    static bool  _use_usec;
-#if USE_EVENT_LOG_TIMER_DOWNSAMPLING
-    static jbyte _shift;
-#endif
-  };
-
-  struct Block {
-    enum { size = 4096 };
-
-    Block* _next;
-    Entry  _entries[size];
-
-    int used ( void ) const;
-
-    static Block* _head;
-    static Block* _tail;
-    static int    _used;
-
-    static void initialize( void );
-    static void terminate ( void );
-
-    static void overflow  ( void );
-    static Block* allocate( void );
-    static void log       ( const unsigned type );
-
-    jlong dump( Stream* s, jlong time ) const;
-  };
+  static LogEntry *allocate() EVENT_LOGGER_RETURN0;
 };
-
-#undef EVENT_LOGGER_RETURN

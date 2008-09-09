@@ -165,16 +165,6 @@ void JVM_Stop(int exit_code);
 jlong JVM_TimeSlice(void);
 
 /*
- * For use in SlaveMode only -- check if the VM is running now.
- * The VM is in running state after JVM_Start() returns successfully and 
- * until JVM_CleanUp() is invoked.
- *
- * Return 1 if the VM is running.
- * Return 0 if not.
- */ 
-int JVM_IsStarted(void);
-
-/*
  * For use in SlaveMode only -- clean up the VM and returns exit
  * code.
  */
@@ -645,36 +635,6 @@ int JVM_GarbageCollect(int flags, int requested_free_bytes);
 #define JVM_COLLECT_YOUNG_SPACE_ONLY     (1 << 0)
 #define JVM_COLLECT_COMPILER_AREA        (1 << 1)
 
-
-/*
- * Register a new event type
- * Event name must be a non-empty C string of no more than
- *   JVM_MAX_EVENT_NAME_LENGTH letters, digits and underscores.
- *
- * Returns unique ID for the event
- * If extended event logger is disabled or
- *    max number of event types is exceeded,
- * returns -1.
- *
- * Repeated registration of the same type name returns previous ID.
- */
-int JVM_RegisterEventType(const char* name);
-#define JVM_MAX_EVENT_NAME_LENGTH 32
-
-/*
- * Record an event start/end JVM EventLogger:
- *
- * JVM_EVENT_SCREEN_UPDATE
- * or a registered event type if extended event logger is enabled.
- *
- * If event logger is enabled and event type is valid, records the event and
- * returns KNI_TRUE. Otherwise returns KNI_FALSE.
- */
-jboolean JVM_LogEventStart(int type);
-jboolean JVM_LogEventEnd  (int type);
-#define JVM_EVENT_SCREEN_UPDATE 0
-
-
 #if ENABLE_ISOLATES
 
 /*
@@ -794,15 +754,6 @@ JVM_SOFTFP_LINKAGE jdouble jvm_sqrt(jdouble x);
 JVM_SOFTFP_LINKAGE jdouble jvm_ceil(jdouble x);
 JVM_SOFTFP_LINKAGE jdouble jvm_floor(jdouble x);
 JVM_SOFTFP_LINKAGE jdouble jvm_fabs(jdouble x);
-
-#if ENABLE_CLDC_111 || ENABLE_EXTENDED_API
-
-JVM_SOFTFP_LINKAGE jdouble jvm_asin(jdouble x);
-JVM_SOFTFP_LINKAGE jdouble jvm_acos(jdouble x);
-JVM_SOFTFP_LINKAGE jdouble jvm_atan(jdouble x);
-JVM_SOFTFP_LINKAGE jdouble jvm_atan2(jdouble x, jdouble y);
-
-#endif
 
 JVM_SOFTFP_LINKAGE jdouble jvm_double_from_msw_lsw(jint msw, jint lsw);
 JVM_SOFTFP_LINKAGE jint    jvm_double_msw(jdouble d);
