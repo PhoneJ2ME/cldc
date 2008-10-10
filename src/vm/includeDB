@@ -404,6 +404,10 @@ SocketTransport.cpp              SocketTransport.hpp
 SocketTransport.cpp              JavaDebugger.hpp
 SocketTransport.cpp              ObjectHeap_<iarch>.hpp
 
+PCSLSocketTransport.cpp          SocketTransport.hpp
+PCSLSocketTransport.cpp          JavaDebugger.hpp
+PCSLSocketTransport.cpp          ObjectHeap_<iarch>.hpp
+
 TransportDesc.hpp                MixedOopDesc.hpp
 
 Transport.hpp                    TransportDesc.hpp
@@ -2806,6 +2810,11 @@ BSDSocket.cpp                    sni.h
 BSDSocket.cpp                    OS.hpp
 BSDSocket.cpp                    Globals.hpp
 
+#if ENABLE_JAVA_DEBUGGER
+BSDSocket.cpp                    Transport.hpp
+BSDSocket.cpp                    SocketTransport.hpp
+#endif
+
 PCSLSocket.cpp                   GlobalDefinitions.hpp
 PCSLSocket.cpp                   jvm.h
 PCSLSocket.cpp                   sni.h
@@ -3062,8 +3071,6 @@ ReflectionNatives.cpp           SystemDictionary.hpp
 ReflectionNatives.cpp           Throw.hpp
 ReflectionNatives.cpp           TypeArrayClass.hpp
 ReflectionNatives.cpp           Universe.hpp
-ReflectionNatives.cpp           ClassParserState.hpp
-ReflectionNatives.cpp           ClassFileParser.hpp
 
 ParsedTypeSymbol.hpp            TypeSymbol.hpp
 ParsedTypeSymbol.cpp            ParsedTypeSymbol.hpp
