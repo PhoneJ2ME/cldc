@@ -524,11 +524,9 @@ protected:
   #include "../arm/Assembler_vfp.hpp"
 
   void flds_stub(const Register sd, const int offset) {
-    check_imm( abs(offset), 10 );
-    emit( short(offset & 0x7FF));
-
     GUARANTEE( is_vfp_register(sd), "VFP register expected" );
-    emit( short(sd - s0) );
+    check_imm( abs(offset), 10 );
+    emit_w( (int(offset & 0x7FF) << 16) | int(sd - s0) );
   }
 #endif
 
@@ -1325,7 +1323,7 @@ protected:
 
   // IT cond, mask
   void it(const Condition condition, const ConditionMask mask = SINGLE) {
-    if( condition == always ) {
+    if( condition != always ) {
       check_imm(mask, 8);
       int it_scope_size = 1;
       if ((condition & 1) == 1) {

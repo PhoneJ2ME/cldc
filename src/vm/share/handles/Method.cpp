@@ -53,6 +53,29 @@ int Method::vtable_index() const {
   return -1;
 }
 
+#if ENABLE_JNI
+
+int Method::method_table_index() const {
+  // Retrieve the vtbale index from the vtable by searching
+  InstanceClass::Raw klass = holder();
+  ObjArray::Raw methods = klass().methods();
+
+  OopDesc *this_obj = obj();
+  OopDesc **base = (OopDesc **)methods().base_address();
+  const int len = methods().length();
+  for (int index = 0; index < len; index++) {
+    if (this_obj != *base) {
+      base ++;
+    } else {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+#endif
+
 #if ENABLE_COMPILER
 
 inline bool Method::resume_compilation(JVM_SINGLE_ARG_TRAPS) {
@@ -1016,6 +1039,9 @@ void Method::check_bytecodes(JVM_SINGLE_ARG_TRAPS) {
         goto error;
       }
       else if (code == Bytecodes::_wide) {  // 0xc4
+        if (bci + 1 >= codesize) {
+          goto error;
+        }
         code = bytecode_at(bci + 1);
         if (!Bytecodes::is_defined(code)) {
           goto error;
@@ -1041,6 +1067,11 @@ void Method::check_bytecodes(JVM_SINGLE_ARG_TRAPS) {
         case Bytecodes::_tableswitch:      // 0xaa
           {
             int a_bci = align_size_up(bci + 1, wordSize);
+            // Bounds check: should be able to read at least 2 words 
+            // starting with a_bci
+            if (a_bci + 2 * wordSize > codesize) {
+              goto error;
+            }
             //CR6538939: only zero-byte padding is allowed
             for (int offset = bci; ++offset < a_bci; ) {
               if ((jubyte)bytecode_at_raw(offset) != 0) {
@@ -1049,17 +1080,30 @@ void Method::check_bytecodes(JVM_SINGLE_ARG_TRAPS) {
             }
             int fields;
             if (code == Bytecodes::_tableswitch) {
+              // Bounds check: should be able to read at least 3 words 
+              // starting with a_bci
+              if (a_bci + 3 * wordSize > codesize) {
+                goto error;
+              }
               int raw_lo = get_native_aligned_int(a_bci + wordSize);
               int raw_hi = get_native_aligned_int(a_bci + 2 * wordSize);
               if (Bytes::is_Java_byte_ordering_different()) {
                 raw_hi = Bytes::swap_u4(raw_hi);
                 raw_lo = Bytes::swap_u4(raw_lo);
               }
+              // Note: need both comparisons to handle overflow
+              if (raw_lo > raw_hi || raw_hi - raw_lo < 0) {
+                goto error;
+              }
               fields = 3 + raw_hi - raw_lo + 1;
             } else {
               int raw_npairs = get_native_aligned_int(a_bci + wordSize);
               if (Bytes::is_Java_byte_ordering_different()) {
                 raw_npairs = Bytes::swap_u4(raw_npairs);
+              }
+              // Note: need both comparisons to handle overflow
+              if (raw_npairs < 0 || 2 * raw_npairs < 0) {
+                goto error;
               }
               fields = 2 + 2 * raw_npairs;
             }

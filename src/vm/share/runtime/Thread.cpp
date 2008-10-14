@@ -294,8 +294,9 @@ ReturnOop Thread::allocate(JVM_SINGLE_ARG_TRAPS) {
 }
 
 void Thread::set_current(Thread* value) {
-  GUARANTEE(_last_handle == NULL, "No handles when switching threads");
-  GUARANTEE(last_kni_handle_info == NULL,
+  GUARANTEE(ENABLE_JNI || _last_handle == NULL, 
+                                 "No handles when switching threads");
+  GUARANTEE(ENABLE_JNI || last_kni_handle_info == NULL,
                                  "No KNI handles when switching threads");
   GUARANTEE(!_jvm_in_quick_native_method,
             "cannot switch thread in quick native methods");
