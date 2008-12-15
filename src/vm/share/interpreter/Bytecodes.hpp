@@ -1,7 +1,7 @@
 /*
  *   
  *
- * Portions Copyright  2000-2007 Sun Microsystems, Inc. All Rights
+ * Portions Copyright  2000-2008 Sun Microsystems, Inc. All Rights
  * Reserved.  Use is subject to license terms.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
@@ -467,12 +467,15 @@ class Bytecodes: public AllStatic {
 //since when we omit a common sequence,
 //we just push a result on top of stack.
   static bool can_decrease_stack(const Code code) {
-    return code <= _aload_3 ||
-           code == _aload_0_fast_agetfield_1 ||
-           code == _aload_0_fast_igetfield_1 
+    return code > _aload_3 &&
+           code != _getstatic &&
+           code != _fast_1_getstatic &&
+           code != _fast_2_getstatic &&
+           code != _aload_0_fast_agetfield_1 &&
+           code != _aload_0_fast_igetfield_1
 #if !ENABLE_CPU_VARIANT
-           || (code >=_aload_0_fast_agetfield_4 && 
-           code < _fast_init_1_putstatic)
+           && (code <_aload_0_fast_agetfield_4 ||
+           code >= _fast_init_1_putstatic)
 #endif
            ;
   }
