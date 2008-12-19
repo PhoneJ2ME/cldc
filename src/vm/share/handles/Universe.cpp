@@ -1,7 +1,7 @@
 /*
  *   
  *
- * Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
+ * Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
  * This program is free software; you can redistribute it and/or
@@ -790,6 +790,10 @@ bool Universe::bootstrap_without_rom(const JvmPathChar* classpath) {
 
   // Meta hierarchy is now in place, initialize Thread::current()->klass().
   Thread::current()->initialize_main(JVM_SINGLE_ARG_NO_CHECK);
+
+#if ENABLE_MEMORY_PROFILER
+  *mp_stack_list() = Universe::new_obj_array(16 JVM_CHECK_0);
+#endif
 
   // lock table for interned Strings
   *lock_obj_table() = Universe::new_obj_array(4 JVM_CHECK_0);

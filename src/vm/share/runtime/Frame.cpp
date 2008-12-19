@@ -1,7 +1,7 @@
 /*
  *
  *
- * Copyright  1990-2007 Sun Microsystems, Inc. All Rights Reserved.
+ * Copyright  1990-2008 Sun Microsystems, Inc. All Rights Reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  * 
  * This program is free software; you can redistribute it and/or
@@ -653,8 +653,7 @@ jint JavaFrame::bci_with_flags() const {
 }
 
 void JavaFrame::oops_do(void do_oop(OopDesc**)) {
-  GUARANTEE(in_gc_state() || (ENABLE_MEMORY_PROFILER && _debugger_active), 
-	    "We can only execute oops_do in gc state or in memory profiler");
+  GUARANTEE(in_gc_state(), "We can only execute oops_do in gc state");
 
   // Compute length info before visiting method
   jint llength = local_length();

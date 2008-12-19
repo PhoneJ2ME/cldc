@@ -1,7 +1,7 @@
 /*
  *
  *
- * Portions Copyright  2000-2007 Sun Microsystems, Inc. All Rights
+ * Portions Copyright  2000-2008 Sun Microsystems, Inc. All Rights
  * Reserved.  Use is subject to license terms.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER
  *
@@ -519,8 +519,6 @@
 //                                           optimization
 //
 // ENABLE_JNI                           0,0 Enable (partial) JNI support.
-//
-// ENABLE_ACCURATE_MILLISECOND_TIMER    1,1 Improve accuracy of millisecond timer.
 //
 //============================================================================
 // ENABLE_FLAGS_END }}
@@ -1197,7 +1195,7 @@
 //
 #define USE_HIGH_RESOLUTION_TIMER (ENABLE_PERFORMANCE_COUNTERS ||\
   ENABLE_PROFILER || ENABLE_WTK_PROFILER || ENABLE_TTY_TRACE ||\
-  USE_EVENT_LOGGER || ENABLE_ACCURATE_MILLISECOND_TIMER)
+  USE_EVENT_LOGGER)
 
 //
 // USE_REFLECTION                  Enable Reflection support
