@@ -42,11 +42,11 @@ extern "C" {
  * on the ADS.
  */
 
-extern "C" void JVMSPI_PrintRaw(const char* s, int length) {
+extern "C" void JVMSPI_PrintRaw(const char* s) {
 #if ENABLE_PCSL && 0
-  pcsl_print_chars(s, length);
+  pcsl_print(s);
 #else
-  fwrite(s, length, 1, stdout);
+  printf("%s", s);
 #endif
 }
 

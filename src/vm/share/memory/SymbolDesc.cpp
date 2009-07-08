@@ -27,7 +27,7 @@
 # include "incls/_precompiled.incl"
 # include "incls/_SymbolDesc.cpp.incl"
 
-bool SymbolDesc::matches(const SymbolDesc* other_symbol) const {
+bool SymbolDesc::matches(SymbolDesc* other_symbol) {
   if (_length != other_symbol->_length) {
     return false;
   }

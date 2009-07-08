@@ -347,12 +347,7 @@ void bc_fconst::generate(jfloat arg) {
 }
 
 void bc_dconst::generate(jdouble arg) {
-  union __casts {
-    jdouble d;
-    jlong l;
-  } c;
-  c.d = arg;
-  const jlong  l = c.l;
+  const jlong  l = *(jlong *)&arg;
   pop_arguments(0);
   prefetch(1);
   GUARANTEE(lsw(l) == 0 || msw(l) == 0, "small floating point number");
@@ -1494,14 +1489,7 @@ void bc_athrow::generate() {
 
 void bc_new::generate() {
   set_stack_state_to(tos_on_stack);
-
-  Label redo;
-bind(redo);
-
   interpreter_call_vm("newobject", T_OBJECT);
-
-  redo_if_needed(redo);
-
   prefetch(3);
   set_tag(obj_tag);
   dispatch(tos_in_regs);
@@ -1509,14 +1497,7 @@ bind(redo);
 
 void bc_anewarray::generate() {
   set_stack_state_to(tos_on_stack);
-
-  Label redo;
-bind(redo);
-
   interpreter_call_vm("anewarray", T_ARRAY);
-
-  redo_if_needed(redo);
-
   prefetch(3);
   sub_imm(jsp, jsp, JavaStackDirection * BytesPerStackElement);
   set_tag(obj_tag);
@@ -1525,14 +1506,7 @@ bind(redo);
 
 void bc_multianewarray::generate() {
   set_stack_state_to(tos_on_stack);
-
-  Label redo;
-bind(redo);
-
   interpreter_call_vm("multianewarray", T_ARRAY);
-
-  redo_if_needed(redo);
-
   ldrb_at_bcp(tmp0, 3); // get dimensions
   // remove parameters
   prefetch(4);
@@ -2343,27 +2317,10 @@ bind(slow_case);
   if (!ENABLE_FULL_STACK) {  
     sub_imm(jsp, jsp, JavaStackDirection* BytesPerWord);
   }
-
-  comment("get array length");
+  GUARANTEE(length != r1, "Register clash");
+  mov_reg(r1, tag);
   mov_reg(r2, length);
-
-#if ENABLE_ALLOCATION_REDO
-  Label redo;
-bind(redo);
-  const StackTypeMode mode = ENABLE_FULL_STACK ? full : empty;
-  push(r2, al, mode);
-#endif
-
-  comment("get array type");
-  ldrb(r1, imm_index(bcp, 1));
-
   interpreter_call_vm("_newarray", T_ARRAY);
-
-#if ENABLE_ALLOCATION_REDO
-  pop(r2, al, mode);
-  redo_if_needed(redo);
-#endif
-
   if (!ENABLE_FULL_STACK) {  
     add_imm(jsp, jsp, JavaStackDirection* BytesPerWord);
   }

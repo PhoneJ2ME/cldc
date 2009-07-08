@@ -268,8 +268,6 @@
 //
 // ENABLE_MEMORY_MONITOR         0,0  Add Memory Monitor support.
 //
-// ENABLE_METHOD_EXECUTION_TRACE 0,0  Add method execution trace support.
-//
 // ENABLE_ROM_JAVA_DEBUGGER      0,0  Add Java debugger support for ROMized.
 //                                    classes
 //
@@ -521,10 +519,6 @@
 //                                           optimization
 //
 // ENABLE_JNI                           0,0 Enable (partial) JNI support.
-//
-// ENABLE_ALLOCATION_REDO               1,1 Enable support for memory 
-//                                          allocation redo, see 
-//                                          JVMSPI_HandleOutOfMemory().
 //
 //============================================================================
 // ENABLE_FLAGS_END }}
@@ -919,7 +913,7 @@
 #define NOT_CURRENTLY_USED 0
 
 /*
- * The SUPPORTS_ flags are defined in BuildFlags_<os_family>.hpp to
+ * The SUPPORTS_ flags are defined in Globals_<os_family>.hpp to
  * declare whether a feature is supported on the given platform.
  */
 
@@ -936,11 +930,6 @@
 // SUPPORTS_MEMORY_MAPPED_FILES       Does this OS port
 //                                    allow mapping files into a fixed
 //                                    memory space?
-//
-// SUPPORTS_MONOTONIC_CLOCK           Does this OS provide access to a 
-//                                    monotonic clock that have resolution
-//                                    and read time better than the user 
-//                                    clock?
 //
 // SUPPORTS_TIMER_THREAD              Does this OS port support clock ticks
 //                                    implemented by a timer thread?
@@ -970,9 +959,6 @@
 #define SUPPORTS_MEMORY_MAPPED_FILES 0
 #endif
 
-#ifndef SUPPORTS_MONOTONIC_CLOCK
-#define SUPPORTS_MONOTONIC_CLOCK 0
-#endif
 
 #ifndef HOST_LITTLE_ENDIAN
 // This should have be set in makefiles, but need to set a default value
@@ -1066,27 +1052,21 @@
 
 #if ENABLE_INTERPRETER_GENERATOR || USE_SOURCE_IMAGE_GENERATOR
 // The loopgen and source romgen always need the debug printing code.
+#  define USE_DEBUG_PRINTING        1
 #  define USE_COMPILER_COMMENTS     ENABLE_COMPILER
 #  define USE_COMPILER_DISASSEMBLER ENABLE_COMPILER
 #  define USE_OOP_VISITOR           1
 #else
+#  define USE_DEBUG_PRINTING        (ENABLE_TTY_TRACE && !defined(PRODUCT))
 #  define USE_COMPILER_COMMENTS     (ENABLE_COMPILER && ENABLE_TTY_TRACE)
 #  define USE_COMPILER_DISASSEMBLER (ENABLE_COMPILER && ENABLE_TTY_TRACE)
-#  define USE_OOP_VISITOR           (ENABLE_TTY_TRACE && !defined(PRODUCT))
+#  define USE_OOP_VISITOR           USE_DEBUG_PRINTING
 #endif
 
-#if (ENABLE_TTY_TRACE && !defined(PRODUCT)) || USE_SOURCE_IMAGE_GENERATOR ||\
-    ENABLE_INTERPRETER_GENERATOR || ENABLE_MEMORY_MONITOR ||\
-    ENABLE_METHOD_EXECUTION_TRACE    
-#  define USE_DEBUG_PRINTING        1
-#else
-#  define USE_DEBUG_PRINTING        0
+#if !USE_DEBUG_PRINTING && ENABLE_MEMORY_MONITOR
+#  undef USE_DEBUG_PRINTING
+#  define USE_DEBUG_PRINTING 1
 #endif
-
-#if ENABLE_METHOD_EXECUTION_TRACE && !ENABLE_INTERPRETATION_LOG
-#  error ENABLE_METHOD_EXECUTION_TRACE requires ENABLE_INTERPRETATION_LOG
-#endif
-
 
 #if defined(PRODUCT) || (!ENABLE_TTY_TRACE)
 #  define USE_VERBOSE_ERROR_MSG 0
@@ -1215,7 +1195,7 @@
 //
 #define USE_HIGH_RESOLUTION_TIMER (ENABLE_PERFORMANCE_COUNTERS ||\
   ENABLE_PROFILER || ENABLE_WTK_PROFILER || ENABLE_TTY_TRACE ||\
-  USE_EVENT_LOGGER || ENABLE_ACCURATE_MILLISECOND_TIMER)
+  USE_EVENT_LOGGER)
 
 //
 // USE_REFLECTION                  Enable Reflection support

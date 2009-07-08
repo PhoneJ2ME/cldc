@@ -397,7 +397,6 @@ class Bytecodes: public AllStatic {
     NoFallThru      = 0x080,
     NoPatching      = 0x100,
     NoInlining      = 0x200,
-    CanRedo         = 0x400,
 
     // Some bytecodes require the method frame, since on all ports except ARM
     // the shared stubs called from the generated code use the frame 
@@ -460,14 +459,6 @@ class Bytecodes: public AllStatic {
            code == _fconst_0    || code == _dconst_0; 
   }
 
-  static bool can_redo_flags(const jushort flags) {
-    return flags & CanRedo;
-  }
-
-  static bool can_redo(const Code code) {
-    return can_redo_flags(get_flags(code));
-  }
-
   static void verify() PRODUCT_RETURN;
 
 #if ENABLE_CSE
@@ -476,15 +467,12 @@ class Bytecodes: public AllStatic {
 //since when we omit a common sequence,
 //we just push a result on top of stack.
   static bool can_decrease_stack(const Code code) {
-    return code > _aload_3 &&
-           code != _getstatic &&
-           code != _fast_1_getstatic &&
-           code != _fast_2_getstatic &&
-           code != _aload_0_fast_agetfield_1 &&
-           code != _aload_0_fast_igetfield_1
+    return code <= _aload_3 ||
+           code == _aload_0_fast_agetfield_1 ||
+           code == _aload_0_fast_igetfield_1 
 #if !ENABLE_CPU_VARIANT
-           && (code <_aload_0_fast_agetfield_4 ||
-           code >= _fast_init_1_putstatic)
+           || (code >=_aload_0_fast_agetfield_4 && 
+           code < _fast_init_1_putstatic)
 #endif
            ;
   }

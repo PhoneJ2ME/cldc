@@ -375,7 +375,10 @@ private:
                                                                             \
   product(int, InterpretationLogSize, INTERP_LOG_SIZE,                      \
           "How many elements of _interpretation_log[] to examine during "   \
-          "timer tick -- set to 0 to disable interpretation log")
+          "timer tick -- set to 0 to disable interpretation log")           \
+                                                                            \
+  product(int, InitialStreamBufferSize, 16 * 1024,                          \
+          "Initial size of the input/output packet streams buffers")        \
 
 
 #if !ENABLE_SYSTEM_ROM_OVERRIDE && defined(ROMIZING)
@@ -406,22 +409,6 @@ private:
          "when the VM is restarted inside the same process")
 #else
 #define WTK_PROFILER_RUNTIME_FLAGS(develop, product)
-#endif
-
-#if ENABLE_MEMORY_MONITOR
-#define MEMORY_MONITOR_RUNTIME_FLAGS(develop, product)                      \
-  product(bool, UseMemoryMonitor, false,                                    \
-          "Use memory monitor")
-#else
-#define MEMORY_MONITOR_RUNTIME_FLAGS(develop, product)
-#endif
-
-#if ENABLE_METHOD_EXECUTION_TRACE
-#define METHOD_EXECUTION_TRACE_RUNTIME_FLAGS(develop, product)              \
-  product(bool, UseMethodExecutionTrace, false,                             \
-          "Use method execution trace")
-#else
-#define METHOD_EXECUTION_TRACE_RUNTIME_FLAGS(develop, product)
 #endif
 
 // If enable ENABLE_JVMPI_PROFILE, support +UseJvmpiProfiler parameter
@@ -972,25 +959,23 @@ private:
 #define VFP_RUNTIME_FLAGS(develop, product)
 #endif
 
-#define RUNTIME_FLAGS(develop, product, always)             \
-      GENERIC_RUNTIME_FLAGS(develop, product)               \
-      USE_ROM_RUNTIME_FLAGS(develop, product, always)       \
-      PROFILER_RUNTIME_FLAGS(develop, product)              \
-      EVENT_LOGGER_RUNTIME_FLAGS(develop, product)          \
-      MEMORY_MONITOR_RUNTIME_FLAGS(develop, product)        \
-      METHOD_EXECUTION_TRACE_RUNTIME_FLAGS(develop, product)\
-      ROM_GENERATOR_FLAGS(develop, product)                 \
-      PERFORMANCE_COUNTERS_RUNTIME_FLAGS(develop, product)  \
-      PLATFORM_RUNTIME_FLAGS(develop, product)              \
-      REMOTE_TRACER_RUNTIME_FLAGS(develop, product)         \
-      DEBUGGER_RUNTIME_FLAGS(develop, product)              \
-      ISOLATES_RUNTIME_FLAGS(develop,product)               \
-      CODE_OPTIMIZER_RUNTIME_FLAGS(develop, product)        \
-      WTK_PROFILER_RUNTIME_FLAGS(develop, product)          \
-      JVMPI_PROFILE_RUNTIME_FLAGS(develop, product)         \
-      JVMPI_PROFILE_VERIFY_RUNTIME_FLAGS(develop, product)  \
-      CPU_VARIANT_RUNTIME_FLAGS(develop, product)           \
-      VFP_RUNTIME_FLAGS(develop, product)                   \
+#define RUNTIME_FLAGS(develop, product, always)            \
+      GENERIC_RUNTIME_FLAGS(develop, product)              \
+      USE_ROM_RUNTIME_FLAGS(develop, product, always)      \
+      PROFILER_RUNTIME_FLAGS(develop, product)             \
+      EVENT_LOGGER_RUNTIME_FLAGS(develop, product)         \
+      ROM_GENERATOR_FLAGS(develop, product)                \
+      PERFORMANCE_COUNTERS_RUNTIME_FLAGS(develop, product) \
+      PLATFORM_RUNTIME_FLAGS(develop, product)             \
+      REMOTE_TRACER_RUNTIME_FLAGS(develop, product)        \
+      DEBUGGER_RUNTIME_FLAGS(develop, product)             \
+      ISOLATES_RUNTIME_FLAGS(develop,product)              \
+      CODE_OPTIMIZER_RUNTIME_FLAGS(develop, product)       \
+      WTK_PROFILER_RUNTIME_FLAGS(develop, product)         \
+      JVMPI_PROFILE_RUNTIME_FLAGS(develop, product)        \
+      JVMPI_PROFILE_VERIFY_RUNTIME_FLAGS(develop, product) \
+      CPU_VARIANT_RUNTIME_FLAGS(develop, product)          \
+      VFP_RUNTIME_FLAGS(develop, product)                  \
       TTY_TRACE_RUNTIME_FLAGS(always, develop, product)
 
 /*

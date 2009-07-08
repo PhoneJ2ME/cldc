@@ -451,7 +451,7 @@ void SourceROMWriter::write_text_klass_table(JVM_SINGLE_ARG_TRAPS) {
 
   // Print the table, which points to all the buckets.
   main_stream()->print_cr("const int  _rom_text_klass_table_size = %d;", num_buckets);
-  main_stream()->print_cr("const int* const _rom_text_klass_table[] = {");
+  main_stream()->print_cr("const int* _rom_text_klass_table[] = {");
   for (i=0; i<num_buckets; i++) {
     main_stream()->print_cr("\t(const int*)klass_table_%d, ", i);
   }
@@ -1137,8 +1137,8 @@ SourceROMWriter::print_rom_hashtable_content(const char *element_name,
     }
     main_stream()->print("\n/* %d [%d] */\n\t", b, bytes_written/4);
 
-    const int bucket_size = bucket().length();
-    for (int index = 0; index < bucket_size; index++) {
+    int bucket_size = bucket().length();
+    for (int index=0; index<bucket_size; index++) {
       oop = bucket().obj_at(index);
       GUARANTEE(!oop.is_null(), "sanity");
       write_reference(&oop, TEXT_BLOCK, main_stream() JVM_CHECK_0);
@@ -1251,7 +1251,7 @@ void SourceROMWriter::write_original_class_info_table(JVM_SINGLE_ARG_TRAPS) {
   write_original_info_strings(JVM_SINGLE_ARG_CHECK);
 
   // (1) Print ROM::_alternate_constant_pool
-  main_stream()->print_cr("const char* const _rom_alternate_constant_pool_src[] = {");
+  main_stream()->print_cr("const char * _rom_alternate_constant_pool_src[] = {");
   int total_written = 0;
   Symbol::Fast symbol;
   for (i=0; ; i++) {
@@ -1494,16 +1494,15 @@ void SourceROMWriter::write_restricted_packages(JVM_SINGLE_ARG_TRAPS) {
 }
 
 #if ENABLE_MULTIPLE_PROFILES_SUPPORT
-void SourceROMWriter::print_profile_name( const int profile_id ) {
-  ROMProfile::Raw rom_profile = _optimizer.profiles_vector()->element_at(profile_id);
-  Symbol::Raw profile_name = rom_profile().profile_name();
-  profile_name().print_symbol_on(main_stream());
-}
 
 /**
  * Returns the number of printed items.
  */
 void SourceROMWriter::print_packages_list(ROMVector* patterns) {
+  UsingFastOops usingFastOops;
+
+  Symbol::Fast restricted_package;
+
   GUARANTEE(patterns != NULL, "Sanity");  
   if (patterns->is_null()) {
     return;
@@ -1511,36 +1510,41 @@ void SourceROMWriter::print_packages_list(ROMVector* patterns) {
   GUARANTEE(patterns->not_null(), "Sanity");  
 
   const int patterns_count = patterns->size();  
-  for (int pat = 0; pat < patterns_count; pat++) {  
+  for (int pat = 0; pat < patterns_count; pat++) {
+    restricted_package = patterns->element_at(pat);
+    
     main_stream()->print("  \"");
-    Symbol::Raw package( patterns->element_at(pat) );
-    package().print_symbol_on(main_stream());
+    restricted_package().print_symbol_on(main_stream());
     main_stream()->print_cr("\",");
   } 
 }
 
 void SourceROMWriter::write_restricted_in_profiles() {
-  ROMVector* const rom_profiles_table = _optimizer.profiles_vector();
+  UsingFastOops usingFastOops;
+  ROMProfile::Fast rom_profile;
+  ROMVector::Fast patterns;
+  Symbol::Fast profile_name;  
+
+  ROMVector* rom_profiles_table = _optimizer.profiles_vector();
   GUARANTEE(rom_profiles_table != NULL, "Sanity");
   const int profiles_count = rom_profiles_table->size();
   int p;
 
   for (p = 0; p < profiles_count; p++ ) {
-    ROMProfile::Raw profile = rom_profiles_table->element_at(p);
-    Symbol::Raw profile_name = profile().profile_name();
+    rom_profile = rom_profiles_table->element_at(p);    
+    profile_name = rom_profile().profile_name();
     GUARANTEE(profile_name.not_null(), "Sanity");
 
     main_stream()->print(
-      "const char* const _rom_restricted_packages_%d[] = { // ", p);
+      "const char *_rom_restricted_packages_");    
+    main_stream()->print("%d[] = { // ", p);
     profile_name().print_symbol_on(main_stream());
     main_stream()->cr();
 
     // Writing restricted packages list.
-    {
-      ROMVector::Raw patterns = profile().restricted_packages();
-      GUARANTEE(profile_name.not_null(), "Sanity");
-      print_packages_list(&patterns);
-    }
+    patterns = rom_profile().restricted_packages();
+    GUARANTEE(profile_name.not_null(), "Sanity");
+    print_packages_list(&patterns);
 
     main_stream()->print("  0\n}; // ");
     profile_name().print_symbol_on(main_stream());
@@ -1548,85 +1552,79 @@ void SourceROMWriter::write_restricted_in_profiles() {
     main_stream()->cr();
   }
 
-  main_stream()->print_cr("const char* const* const _rom_profiles_restricted_packages[] = {");
-  for (p = 0; p < profiles_count; p++ ) {
-    main_stream()->print_cr("  _rom_restricted_packages_%d,", p);    
+  main_stream()->print_cr("const char **_rom_profiles_restricted_packages[] = {");
+  for (p = 0; p < profiles_count; p++) {    
+    rom_profile = rom_profiles_table->element_at(p);
+    profile_name = rom_profile().profile_name();
+    main_stream()->print_cr(
+      "  _rom_restricted_packages_%d,", p);    
+  }
+
+  if (profiles_count == 0) {
+    main_stream()->print_cr("  0");
   }
   main_stream()->print_cr("}; // _rom_restricted_packages");
-
   main_stream()->cr();
 }
 
 // Writes hidden classes for specified profiles information.
 void SourceROMWriter::write_hidden_classes(JVM_SINGLE_ARG_TRAPS) {
+  UsingFastOops usingFastOops;
+
   ROMVector *rom_profiles_table = _optimizer.profiles_vector();
   GUARANTEE(rom_profiles_table != NULL, "Sanity");
 
+  int p, byte;
   const int profiles_count = rom_profiles_table->size();
-  const int bitmap_row_size = ROMProfile::calc_bitmap_raw_size();
+
+  const int class_count = number_of_romized_java_classes();
+  const int bitmap_row_size = (class_count - 1) / BitsPerByte + 1;
 
   // Writing _profile_bitmap_row_size
   main_stream()->print_cr(
-    "const int _rom_profile_bitmap_row_size = %d;\n", bitmap_row_size);
+    "const int _rom_profile_bitmap_row_size = %d;", bitmap_row_size);
+  main_stream()->cr();
 
   // Writing profiles count...  
-  main_stream()->print_cr("const int _rom_profiles_count = %d;\n", profiles_count);
+  main_stream()->print_cr("const int _rom_profiles_count = %d;", profiles_count);
+  main_stream()->cr();
+
+  ROMProfile::Fast rom_profile;
 
   // Writing profiles names...
-  {
-    main_stream()->print_cr("const char* const _rom_profiles_names[] = {");
-    for (int p = 0; p < profiles_count; p++) {
-      main_stream()->print("  \"");
-      print_profile_name(p);
-      main_stream()->print_cr("\",");
-    }
-    main_stream()->print_cr("  0\n}; // _rom_profiles_names\n");
+  Symbol::Fast profile_name;
+  main_stream()->print_cr("const char *_rom_profiles_names[] = {");  
+  for (p = 0; p < profiles_count; p++) {
+    rom_profile = rom_profiles_table->element_at(p);
+    profile_name = rom_profile().profile_name();
+    main_stream()->print("  \"");
+    profile_name().print_symbol_on(main_stream());
+    main_stream()->print_cr("\",");
   }
+  if (profiles_count == 0) {
+    main_stream()->print_cr("  0");    
+  }
+  main_stream()->print_cr("}; // _rom_profiles_names\n");
 
   // Writing profiles bitmaps  
-  {
-    main_stream()->print_cr(
-      "const unsigned char _rom_hidden_classes_bitmaps[] = {");
-    for (int p = 0;; main_stream()->cr()) {
-      main_stream()->print( "  // Profile " );
-      print_profile_name(p);
-      main_stream()->cr();
-
-      const int base = bitmap_row_size * p;
-      {
-        for (SystemClassStream st(false); st.has_next();) {
-          InstanceClass::Raw klass = st.next();
-          GUARANTEE(klass.not_null(), "Sanity");
-
-          if (klass().is_instance_class()) {
-            const int class_id = klass().class_id();
-            const int byte = class_id / BitsPerByte;
-            const int bit  = class_id % BitsPerByte;
-            const jubyte c =
-              _optimizer.profile_hidden_bitmap()->ubyte_at(base + byte);
-
-            if ((c >> bit) & 1) {
-              main_stream()->print("  // Hidden ");
-              klass().print_name_on( main_stream() );
-              main_stream()->cr();
-            }
-          }
-        }
-      }
-
-      main_stream()->print("  ");
-      for (int byte = 0; byte < bitmap_row_size; byte++) {
-        const jubyte c =
-          _optimizer.profile_hidden_bitmap()->ubyte_at(base + byte);
-        main_stream()->print("0x%x, ", c);
-      }
-      main_stream()->cr();
-      if( ++p >= profiles_count ) {
-        break;
-      }
-    } 
-    main_stream()->print_cr("}; // _rom_hidden_classes_bitmaps\n");  
+  ROMVector::Fast patterns;
+  ObjArray::Fast array;
+  main_stream()->print_cr(
+    "const unsigned char _rom_hidden_classes_bitmaps[] = {");
+  for (p = 0; p < profiles_count; p++) {
+    main_stream()->print("  ");
+    for (byte = 0; byte < bitmap_row_size; byte++) {
+      const int ind = bitmap_row_size * p + byte;
+      jubyte c = _optimizer.profile_hidden_bitmap()->ubyte_at(ind);
+      main_stream()->print("0x%x, ", c);
+    }
+    main_stream()->cr();
   }
+  if (profiles_count == 0) {
+    main_stream()->print_cr("  0");    
+  }
+  main_stream()->print_cr("}; // _rom_hidden_classes_bitmaps");  
+  main_stream()->cr();
 }
 #endif // ENABLE_MULTIPLE_PROFILES_SUPPORT
 
@@ -1687,7 +1685,7 @@ void SourceROMWriter::combine_output_files() {
   OsFile_remove(FilePath::rom_optimizer_file);
 }
 
-void SourceROMWriter::handle_jar_entry(const char* name, int length, 
+void SourceROMWriter::handle_jar_entry(char* name, int length, 
                                        JarFileParser * /*jf*/
                                        JVM_TRAPS) {
   TypeArray byte_array = Universe::new_byte_array(length JVM_CHECK);
@@ -1697,14 +1695,24 @@ void SourceROMWriter::handle_jar_entry(const char* name, int length,
                 _sorted_class_names->add_element(&byte_array JVM_CHECK);
 }
 
-void SourceROMWriter::get_all_names_in_classpath(ObjArray* classpath,
-                                                 const bool classes JVM_TRAPS) {
-  const int length = classpath->length();
-  for(int index = 0; index < length; index++) {
-    FilePath::Raw path = classpath->obj_at(index);
-    JarFileParser::do_next_class_entries(&path, classes, 
-                        (JarFileParser::do_entry_proc)&handle_jar_entry,
-                        0, max_jint JVM_CHECK);
+void SourceROMWriter::get_all_names_in_jar(FilePath* path, 
+                                           int classpath_index, 
+                                           bool classes JVM_TRAPS) {
+  const int buffer_size = 512;
+  DECLARE_STATIC_BUFFER(JvmPathChar, file_name, buffer_size);
+  const char suffix[] = {'.','c','l','a','s','s','\0'};
+
+  path->string_copy(file_name, buffer_size);
+
+  if (OsFile_exists(file_name)) {
+    JarFileParser::do_entries(file_name, suffix, classes, 
+                        (JarFileParser::do_entry_proc)&handle_jar_entry
+                        JVM_CHECK);
+  } else {
+    // Either the jarfile does not exist or the openJarFile() failed
+    // due to corruption or other problem.  Loading non-JarFile is
+    // UNIMPLEMENTED, but is treated as an error here.
+    Throw::error(jarfile_error JVM_THROW);
   }
 }
 
@@ -1727,8 +1735,12 @@ void SourceROMWriter::sort_and_load_all_in_classpath(JVM_SINGLE_ARG_TRAPS) {
   _sorted_class_names = &sorted_names;
 
   //loading classes
+  FilePath::Fast path;
   ObjArray::Fast classpath = Task::current()->app_classpath();
-  get_all_names_in_classpath(&classpath, true JVM_CHECK);
+  for (index = 0; index < classpath().length(); index++) {
+    path = classpath().obj_at(index);
+    get_all_names_in_jar(&path, index, true JVM_CHECK);
+  }
 
   sorted_names().sort();
 
@@ -1742,13 +1754,7 @@ void SourceROMWriter::sort_and_load_all_in_classpath(JVM_SINGLE_ARG_TRAPS) {
                                 (utf8)(byte_array().base_address()),
                                 len JVM_CHECK);
     instance_class =
-      SystemDictionary::resolve(&class_name, ErrorOnFailure JVM_NO_CHECK);
-    if( instance_class.is_null() ) {
-      tty->print( "Error romizing " );
-      class_name().print_value_on(tty);
-      tty->cr();
-      return;
-    }
+      SystemDictionary::resolve(&class_name, ErrorOnFailure JVM_CHECK);
     instance_class().verify(JVM_SINGLE_ARG_CHECK);
   }
 
@@ -1757,7 +1763,10 @@ void SourceROMWriter::sort_and_load_all_in_classpath(JVM_SINGLE_ARG_TRAPS) {
   sorted_names().initialize(JVM_SINGLE_ARG_CHECK);
   _sorted_class_names = &sorted_names;
 
-  get_all_names_in_classpath(&classpath, false JVM_CHECK);
+  for (index = 0; index < classpath().length(); index++) {
+    path = classpath().obj_at(index);
+    get_all_names_in_jar(&path, index, false JVM_CHECK);
+  }
 
   sorted_names().sort();
   const int size = sorted_names().size();

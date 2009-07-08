@@ -298,7 +298,7 @@ private:
 
 #if ENABLE_MULTIPLE_PROFILES_SUPPORT
   static void set_profile_id(const int id); 
-  static int profile_id_by_name(const char* profile);
+  static int profile_id_by_name(const char * profile);
 
   static int current_profile_id();
 
@@ -470,8 +470,7 @@ private:
 
 #if ENABLE_MULTIPLE_PROFILES_SUPPORT
   enum {
-    UNKNOWN_PROFILE_ID = -1,
-    DEFAULT_PROFILE_ID = 0
+    DEFAULT_PROFILE_ID = -1
   };
 #endif // ENABLE_MULTIPLE_PROFILES_SUPPORT
 
@@ -609,7 +608,7 @@ private:
 
 private:
 #if USE_JAR_ENTRY_ENUMERATOR
-  static void load_jar_entry(const char* name, int length, 
+  static void load_jar_entry(char* name, int length, 
                              JarFileParser* jf_parser JVM_TRAPS);
 #endif
   static void create_meta(JVM_SINGLE_ARG_TRAPS);

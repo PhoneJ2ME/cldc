@@ -304,6 +304,10 @@ public:
   static void notify_objects_created    ( void );
   static void notify_objects_disposed   ( void );
   static void notify_bootstrap_complete ( void );
+#else // ENABLE_MEMORY_MONITOR
+  static void notify_objects_created    ( void ) {}
+  static void notify_objects_disposed   ( void ) {}
+  static void notify_bootstrap_complete ( void ) {}
 #endif // ENABLE_MEMORY_MONITOR
 
   static int compiler_area_soft_collect(size_t min_free_after_collection);
@@ -832,8 +836,6 @@ private:
   enum { OverReservation = 1, OverLimit = 2 };
   static unsigned detect_out_of_memory_tasks( const size_t /*alloc_size*/ );
 #endif
-  static void handle_out_of_memory( const size_t alloc_size,
-                                    const unsigned violations_mask JVM_TRAPS );
 
   static inline void set_task_allocation_start( OopDesc** p );
   static inline void set_inline_allocation_end( OopDesc** p ) {

@@ -39,7 +39,6 @@ public class ViewRootPathDialog extends JDialog implements ActionListener {
         Frame frame = JOptionPane.getFrameForComponent(frameComp);
         ViewRootPathDialog dialog = new ViewRootPathDialog(frame,
                                 title, true, objects, provider);
-        dialog.setResizable(false);
         dialog.setVisible(true);
   }
   

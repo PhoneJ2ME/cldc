@@ -31,7 +31,7 @@
 #include "incls/_precompiled.incl"
 #include "incls/_MemoryMonitorMd_linux.cpp.incl"
 
-#if 0 && ENABLE_MEMORY_MONITOR
+#if ENABLE_MEMORY_MONITOR
 
 #ifdef __cplusplus
 extern "C" {

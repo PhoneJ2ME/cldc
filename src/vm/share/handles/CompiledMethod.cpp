@@ -114,6 +114,13 @@ void CompiledMethod::print_comment_for(int code_offset, Stream* st) {
 #endif
 }
 
+void CompiledMethod::print_name_on(Stream* st) {
+#if USE_DEBUG_PRINTING
+  print_value_on(st);
+  st->cr();
+#endif
+}
+
 void CompiledMethod::print_relocation_on(Stream* st) {
 #if USE_DEBUG_PRINTING
   st->print_cr("Relocation information");
@@ -124,18 +131,9 @@ void CompiledMethod::print_relocation_on(Stream* st) {
 
 #endif // !PRODUCT
 
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE || USE_DEBUG_PRINTING
-void CompiledMethod::print_name_on(Stream* st) {
-#if USE_DEBUG_PRINTING
-  print_value_on(st);
-  st->cr();
-#endif
-}
-#endif
-
 #endif // ENABLE_COMPILER
 
-#if !defined(PRODUCT) || ENABLE_TTY_TRACE || USE_DEBUG_PRINTING
+#if !defined(PRODUCT) || USE_DEBUG_PRINTING
 
 void CompiledMethod::iterate(OopVisitor* visitor) {
 #if USE_OOP_VISITOR

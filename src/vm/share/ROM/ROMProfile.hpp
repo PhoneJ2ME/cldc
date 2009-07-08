@@ -26,25 +26,35 @@
 
 #if ENABLE_MULTIPLE_PROFILES_SUPPORT && USE_SOURCE_IMAGE_GENERATOR
 
+class ROMProfile;
+
 class ROMProfileDesc : public MixedOopDesc {
 private:
-  // Specified profile name.
-  OopDesc* _profile_name;
+  /**
+   * The list of hidden classes for the specified profile.
+   */
+  OopDesc * _hidden_classes;
 
-  // The list of hidden classes for the specified profile.
-  OopDesc* _hidden_classes;
+  /**
+   * Specified profile name.
+   */
+  OopDesc * _profile_name;
 
-  // The list of hidden packages.
-  OopDesc* _hidden_packages;
+  /**
+   * The list of hidden packages.
+   */
+  OopDesc * _hidden_packages;
 
-  // The list of restricted packages.
-  OopDesc* _restricted_packages;
+  /**
+   * The list of restricted packages.
+   */
+  OopDesc * _restricted_packages;
 
-  static size_t allocation_size( void ) { 
-    return align_allocation_size( sizeof(ROMProfileDesc) );
+  static size_t allocation_size() { 
+    return align_allocation_size(sizeof(ROMProfileDesc));
   }
 
-  static int pointer_count( void ) {
+  static int pointer_count() {
     return 4; // return the number of Handles aggrigated by the object.
   }
 
@@ -59,14 +69,13 @@ public:
   // assingment operators.
   HANDLE_DEFINITION(ROMProfile, MixedOop);
 
-  DEFINE_ACCESSOR_OBJ(ROMProfile, Symbol,    profile_name       )  
-  DEFINE_ACCESSOR_OBJ(ROMProfile, ROMVector, hidden_classes     )
-  DEFINE_ACCESSOR_OBJ(ROMProfile, ROMVector, hidden_packages    )
+  DEFINE_ACCESSOR_OBJ(ROMProfile, ROMVector, hidden_classes)
+  DEFINE_ACCESSOR_OBJ(ROMProfile, Symbol, profile_name)  
+  DEFINE_ACCESSOR_OBJ(ROMProfile, ROMVector, hidden_packages)
   DEFINE_ACCESSOR_OBJ(ROMProfile, ROMVector, restricted_packages)  
 
 public:
-  static ReturnOop create(JVM_SINGLE_ARG_TRAPS);
-  static ReturnOop create(const char name[] JVM_TRAPS);
+  void initialize(const char name[] JVM_TRAPS);
   static int calc_bitmap_raw_size();
 };
 

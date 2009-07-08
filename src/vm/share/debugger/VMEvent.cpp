@@ -727,8 +727,7 @@ void VMEvent::create_event_request(PacketInputStream *in,
   ep().set_transport(transport);
 #if ENABLE_ISOLATES
   ep().set_task_id(transport->task_id());
-  GUARANTEE(TaskContext::current_task_id() == in->transport()->task_id(),
-	    "Must switch to the context of the transport task");
+  TaskGCContext tmp(transport->task_id());
 #endif
   for (i=0; i < ep().num_modifiers(); i++) {
 
@@ -1082,41 +1081,14 @@ void VMEvent::vminit(Transport *t)
 {
   int reqID = PacketStream::unique_id() /* side-effects*/;
   (void)reqID;
-  UsingFastOops fast_oops;
-  Thread::Fast initial_thread = Thread::current()->obj();
-#if ENABLE_ISOLATES
-  const int task_id = t->task_id();
-  // NOTE: in suspend mode for MVM, the debugged task is suspended and 
-  // sync is done in another task. 
-  // Still the initial thread should be from the debugged task.
-  if (initial_thread().task_id() != task_id) {
-    GUARANTEE(JavaDebugger::is_suspend(t), "Cannot happen in no-suspend mode");
-
-    Thread::Raw thread = Universe::global_threadlist();
-
-    while (thread.not_null() && thread().task_id() != task_id) {
-      thread = thread().global_next();
-    }
-
-    if (thread.is_null()) {
-      if (TraceDebugger) {
-        tty->print_cr("No threads in task %d", task_id);
-      }
-      JavaDebugger::close_java_debugger(t);
-      return;
-    }
-
-    initial_thread = thread.obj();
-  }
-#endif
-  int threadID = JavaDebugger::get_thread_id_by_ref(&initial_thread);
+  int threadID = JavaDebugger::get_thread_id_by_ref(Thread::current());
   bool is_suspend = true;
 
   PacketOutputStream out(t, JDWP_EVENT_VMINIT_LEN,
                          JDWP_COMMAND_SET(Event),
                          JDWP_COMMAND(Event, Composite));
 
-  if ((is_suspend = JavaDebugger::is_suspend(t)) != false) {
+  if ((is_suspend = JavaDebugger::is_suspend()) != false) {
     // Suspend all threads by default
     DEBUGGER_EVENT(("VM Suspend All"));
     out.write_byte(JDWP_SuspendPolicy_ALL);
@@ -1138,10 +1110,9 @@ void VMEvent::vminit(Transport *t)
     task_id = Task::current_id();
 #endif
     // Use suspend policy which suspends all threads by default
-    // do not force waiting in MVM mode to let other tasks run
     JavaDebugger::process_suspend_policy(JDWP_SuspendPolicy_ALL,
                                          task_id,
-                                         !ENABLE_ISOLATES);
+                                         true);
   } else {
     // Use suspend policy which suspends no threads
     DEBUGGER_EVENT(("VM SuspendPolicy not specified"));

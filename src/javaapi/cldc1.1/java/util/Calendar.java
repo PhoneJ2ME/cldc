@@ -343,7 +343,7 @@ public abstract class Calendar {
 /* #endif */
             );
         }
-        setTimeInMillis(System.currentTimeMillis());
+        setTimeInMillis(0);
     }
 
     /**

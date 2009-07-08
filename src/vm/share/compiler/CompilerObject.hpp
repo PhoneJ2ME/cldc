@@ -53,6 +53,8 @@ public:
     number_of_compiler_object_types,
   };
 private:
+  PRODUCT_ONLY( CompilerObject( void ) {} )
+
   enum {
     align_bits = 2,
     align_mask = (1 << align_bits) - 1,
@@ -137,15 +139,6 @@ public:
   void check_type( const Type t ) const {
     GUARANTEE( is( t ), "Wrong type" );
   }
-
-#if !defined(PRODUCT) || (ARM && USE_COMPILER_COMMENTS)
-// For virtual functions of Assembler
-protected:
-  static void* operator new ( size_t size ) {
-    SETUP_ERROR_CHECKER_ARG;
-    return ObjectHeap::allocate_temp( align_size(size) JVM_NO_CHECK );
-  }
-#endif
 };
 
 #define COMPILER_OBJECT_ALLOCATE(type)\

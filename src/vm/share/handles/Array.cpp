@@ -48,25 +48,31 @@ ReturnOop Array::shrink(int new_length) {
 #if ENABLE_ROM_GENERATOR
 // generate a map of all the field types in this object
 int Array::generate_fieldmap(TypeArray* field_map) {
-  int map_index = Near::generate_fieldmap(field_map);
+  int map_index = 0;
+
+  // near
+  map_index = Near::generate_fieldmap(field_map);
 
   //_length
   field_map->byte_at_put(map_index++, T_INT);
 
   // map size for the elements
-  const jint elements_map_size = map_index + length();
-  if (elements_map_size > field_map->length()) {    
-    return elements_map_size; // need more space
+  jint elements_map_size = length();
+  if (map_index + elements_map_size > field_map->length()) {
+    // need more space
+    return map_index + elements_map_size;
   }
 
-  int type = T_OBJECT;
-  if (!is_obj_array()) {
+  int type;
+  if (is_obj_array()) {
+    type = T_OBJECT;
+  } else {
     TypeArrayClass::Raw cls = blueprint();
     type = cls().type();
   }
 
-  for (; map_index < elements_map_size; map_index++) {
-    field_map->byte_at_put(map_index, type);
+  for (int i = 0; i < elements_map_size; i++) {
+    field_map->byte_at_put(map_index++, type);
   }
 
   return map_index;

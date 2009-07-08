@@ -56,11 +56,6 @@ jchar     ** JVM::_u_argv;
 const JvmPathChar* JVM::_classpath;
 int          JVM::_startup_phase_count;
 
-#if ENABLE_METHOD_EXECUTION_TRACE
-jlong        JVM::_sampling_interval_base;
-jlong        JVM::_sampling_interval_start;
-#endif
-
 // For release and product builds we make sure that we have
 // the optimized interpreter.
 #ifdef AZZERT
@@ -308,11 +303,6 @@ inline bool JVM::initialize( void ) {
   _startup_phase_count = 0;
   Os::initialize();
   EventLogger::initialize();
-
-#if ENABLE_METHOD_EXECUTION_TRACE
-  _sampling_interval_base = sampling_timer();
-  JVM::start_sampling_interval();
-#endif
 
 #if ENABLE_PERFORMANCE_COUNTERS
   JVM::calibrate_cpu();
@@ -1080,14 +1070,12 @@ extern "C" int JVM_SetProfile(char *profile_name) {
   if (JVM::is_started()) {
     TTY_TRACE_CR(("JVM_SetProfile must be called when the VM is "
                   "not executing"));
-    return Universe::UNKNOWN_PROFILE_ID;
+    return -1;
   }
 
   const int profile_id = Universe::profile_id_by_name(profile_name);
-  if (profile_id != Universe::UNKNOWN_PROFILE_ID) {
-    Universe::set_profile_id(profile_id);
-  }
-  return profile_id;
+  Universe::set_profile_id(profile_id);
+  return -1;
 }
 #endif // ENABLE_MULTIPLE_PROFILES_SUPPORT
 
@@ -1183,9 +1171,9 @@ void JVM::calibrate_cpu() {
       // run of the VM).
       OsMisc_flush_icache((address)p[0], num_instructions * 4);
 
-      jlong started = Os::monotonic_time_millis();
+      jlong started = Os::java_time_millis();
       p[0](num_loops);
-      jlong elapsed = Os::monotonic_time_millis() - started;
+      jlong elapsed = Os::java_time_millis() - started;
       if (elapsed < 1) {
         elapsed = 1;
       }
@@ -1203,7 +1191,7 @@ void JVM::calibrate_cpu() {
 #endif
 }
 
-inline void JVM::calibrate_hrticks( void ) {
+void JVM::calibrate_hrticks() {
   jlong saved = jvm_perf_count.hrtick_read_count;
   jlong started = Os::elapsed_counter();
   for (int i=1000; i>0; i--) {
@@ -1272,8 +1260,8 @@ void JVM::print_performance_counters() {
     return;
   }
 
-  const JVM_PerformanceCounters* const pc = JVM_GetPerformanceCounters();
-  const jlong elapsed = pc->vm_current_hrtick - pc->vm_start_hrtick;
+  JVM_PerformanceCounters *pc = JVM_GetPerformanceCounters();
+  jlong elapsed = (pc->vm_current_hrtick - pc->vm_start_hrtick);
 
   julong avg_compile_hrticks_xmax = 0;
   julong avg_compiled_method_xmax = 0;
@@ -1461,3 +1449,17 @@ void JVM::measure_native_stack(bool measure) {
 }
 
 #endif // ENABLE_MEASURE_NATIVE_STACK
+
+#if ENABLE_MEMORY_MONITOR
+extern "C" void javanotify_run_GC() {
+  if(Arguments::_monitor_memory) {
+    JVM_GarbageCollect(0, 0);
+  }
+}
+
+extern "C" void javanotify_stop_memmon() {
+  if(Arguments::_monitor_memory) {
+    MemoryMonitor::notify_heap_disposed();
+  }
+}
+#endif

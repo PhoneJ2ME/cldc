@@ -40,9 +40,10 @@ jint Universe::_number_of_java_methods;
 #endif
 
 #if ENABLE_MULTIPLE_PROFILES_SUPPORT
-int  Universe::_profile_id;
+int  Universe::_profile_id = DEFAULT_PROFILE_ID; 
 
-int Universe::current_profile_id( void ) {
+
+int Universe::current_profile_id() {
 #if ENABLE_ISOLATES
   Task::Raw task = Task::current();
   GUARANTEE(task.not_null(), "Sanity");
@@ -53,18 +54,18 @@ int Universe::current_profile_id( void ) {
 } 
 
 void Universe::set_profile_id(const int id) { 
-  GUARANTEE( unsigned(id) < unsigned(ROM::profiles_count()), "Sanity" );
+  GUARANTEE((id >= 0) && (id < ROM::profiles_count()), "Sanity");  
   _profile_id = id; 
 } 
 
-int Universe::profile_id_by_name(const char* profile) {
-  const char* const* const profiles_names = ROM::profiles_names();
+int Universe::profile_id_by_name(const char * profile) {
+  const char ** profiles_names = ROM::profiles_names();
   for (int i = 0; i < ROM::profiles_count(); i++) {
     if (jvm_strcmp(profile, profiles_names[i]) == 0) {            
       return i;
     }
   }  
-  return UNKNOWN_PROFILE_ID;
+  return DEFAULT_PROFILE_ID;
 }
 
 #if USE_SOURCE_IMAGE_GENERATOR
@@ -565,10 +566,6 @@ bool Universe::bootstrap(const JvmPathChar* classpath) {
     }
   }
 
-#if ENABLE_MULTIPLE_PROFILES_SUPPORT
-  set_profile_id( DEFAULT_PROFILE_ID );
-#endif
-
   SETUP_ERROR_CHECKER_ARG;
 
 #if USE_BINARY_IMAGE_LOADER
@@ -713,12 +710,7 @@ bool Universe::bootstrap_with_rom(const JvmPathChar* classpath) {
 
   _is_bootstrapping = false;
   _before_main = false;
-
-#if ENABLE_MEMORY_MONITOR
-  if( UseMemoryMonitor ) {
-    ObjectHeap::notify_bootstrap_complete();
-  }
-#endif
+  ObjectHeap::notify_bootstrap_complete();
 
   if (VerboseGC || TraceGC || TraceHeapSize) {
     TTY_TRACE_CR(("young gen min (actual)   = %dK",
@@ -798,6 +790,10 @@ bool Universe::bootstrap_without_rom(const JvmPathChar* classpath) {
 
   // Meta hierarchy is now in place, initialize Thread::current()->klass().
   Thread::current()->initialize_main(JVM_SINGLE_ARG_NO_CHECK);
+
+#if ENABLE_MEMORY_PROFILER
+  *mp_stack_list() = Universe::new_obj_array(16 JVM_CHECK_0);
+#endif
 
   // lock table for interned Strings
   *lock_obj_table() = Universe::new_obj_array(4 JVM_CHECK_0);
@@ -1016,12 +1012,7 @@ bool Universe::bootstrap_without_rom(const JvmPathChar* classpath) {
   }
 
   _before_main = false;
-
-#if ENABLE_MEMORY_MONITOR
-  if( UseMemoryMonitor ) {
-    ObjectHeap::notify_bootstrap_complete();
-  }
-#endif
+  ObjectHeap::notify_bootstrap_complete();
 
   *inlined_stackmaps() = new_stackmap_list(1 JVM_CHECK_0);
   inlined_stackmaps()->set_short_map(0, 0);
@@ -1082,15 +1073,15 @@ void Universe::create_main_thread_mirror(JVM_SINGLE_ARG_TRAPS) {
 }
 
 #if USE_JAR_ENTRY_ENUMERATOR
-void Universe::load_jar_entry(const char* name, int length,
-                              JarFileParser* jf_parser JVM_TRAPS) {
+void Universe::load_jar_entry(char* name, int length, JarFileParser* jf_parser
+                              JVM_TRAPS) {
   const int post_length = STATIC_STRLEN(".class");
   FileDecoder fd = jf_parser->open_entry(0 JVM_CHECK);
   if (fd.not_null()) {
     Buffer b = fd.read_completely(JVM_SINGLE_ARG_CHECK);
     if (b.not_null()) {
-      Symbol class_name =
-        SymbolTable::symbol_for(utf8(name), length - post_length JVM_CHECK);
+      Symbol class_name = SymbolTable::symbol_for(name, length - post_length
+                                                  JVM_CHECK);
       InstanceClass instance_class =
         SystemDictionary::resolve(&class_name, ErrorOnFailure, &b JVM_NO_CHECK);
       if (CURRENT_HAS_PENDING_EXCEPTION) {
@@ -1136,9 +1127,22 @@ int Universe::load_next_in_classpath_segment(FilePath* path,
                                               int entry_id, 
                                               int chunk_size JVM_TRAPS) {
   GUARANTEE(entry_id >= 0 && chunk_size > 0, "Sanity");
-  return JarFileParser::do_next_class_entries(path, true, 
+  const int buffer_size = 512;
+  DECLARE_STATIC_BUFFER(PathChar, file_name, buffer_size);
+  const char suffix[] = {'.','c','l','a','s','s','\0'};
+
+  path->string_copy(file_name, buffer_size);
+  // check to see if this path is a jar file
+  if (OsFile_exists(file_name)) {
+    return JarFileParser::do_next_entries(file_name, suffix, true, 
                (JarFileParser::do_entry_proc)load_jar_entry, entry_id, 
-               chunk_size JVM_NO_CHECK_AT_BOTTOM);
+               chunk_size JVM_NO_CHECK_AT_BOTTOM_0);
+  } else {
+    // Either the jarfile does not exist or the openJarFile() failed
+    // due to corruption or other problem.  Loading non-JarFile is
+    // UNIMPLEMENTED, but is treated as an error here.
+    Throw::error(jarfile_error JVM_THROW_(-1));
+  }
 }
 
 // Used by the romizer
@@ -2090,7 +2094,7 @@ ReturnOop Universe::new_obj_array_class(JavaClass* element_class JVM_TRAPS) {
 }
 
 void Universe::fill_heap_gap(address ptr, size_t size_to_fill) {
-  GUARANTEE(int(size_to_fill) >= 0, "sanity");
+  GUARANTEE(size_to_fill >= 0, "sanity");
   GUARANTEE(!(size_to_fill & 0x3), "alignment");
   OopDesc* filler = (OopDesc*)ptr;
   if (size_to_fill == sizeof(OopDesc*)) {

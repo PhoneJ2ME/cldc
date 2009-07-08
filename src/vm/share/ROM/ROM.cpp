@@ -981,14 +981,13 @@ ReturnOop ROM::string_from_table(String *string, juint hash_value) {
   return NULL;
 }
 
-ReturnOop ROM::symbol_for(const utf8 s, juint hash_value, int len) {
+ReturnOop ROM::symbol_for(utf8 s, juint hash_value, int len) {
   ROM_DETAILED_PERFORMANCE_COUNTER_START();
   if (_rom_symbol_table_num_buckets > 0) {
-    const juint i = hash_value % _rom_symbol_table_num_buckets;
-    const SymbolDesc* const** const rom_table =
-      (const SymbolDesc* const**)_rom_symbol_table;
-    const SymbolDesc* const* p = rom_table[i];     // start of the bucket
-    const SymbolDesc* const* end = rom_table[i+1]; // end of the bucket (excl)
+    juint i = hash_value % _rom_symbol_table_num_buckets;
+    SymbolDesc*** rom_table = (SymbolDesc ***)_rom_symbol_table;
+    SymbolDesc** p = rom_table[i];     // start of the bucket
+    SymbolDesc** end = rom_table[i+1]; // end of the bucket (exclusive)
     while (p != end) {
       if ((*p)->matches(s, len)) {
         ROM_DETAILED_PERFORMANCE_COUNTER_END(symbol_for_hrticks);
@@ -1005,11 +1004,11 @@ ReturnOop ROM::symbol_for(const utf8 s, juint hash_value, int len) {
     for (int i = 0; i < bundles().length(); i++) {
       ROMBundle* bundle = (ROMBundle*)bundles().obj_at(i);
       if (bundle->symbol_table_num_buckets() != 0) {
-        const juint i = hash_value % bundle->symbol_table_num_buckets();
-        const SymbolDesc* const** const rom_table = (const SymbolDesc* const**)
+        juint i = hash_value % bundle->symbol_table_num_buckets();
+        SymbolDesc*** rom_table = (SymbolDesc ***)
           bundle->ptr_at( ROMBundle::SYMBOL_TABLE );
-        const SymbolDesc* const* p   = rom_table[i];   // start of the bucket
-        const SymbolDesc* const* end = rom_table[i+1]; // end of the bucket
+        SymbolDesc** p   = rom_table[i];   // start of the bucket
+        SymbolDesc** end = rom_table[i+1]; // end of the bucket (exclusive)
         while (p != end) {
           if ((*p)->matches(s, len)) {
             ROM_DETAILED_PERFORMANCE_COUNTER_END(symbol_for_hrticks);
@@ -1023,12 +1022,11 @@ ReturnOop ROM::symbol_for(const utf8 s, juint hash_value, int len) {
 #else
   if( ROMBundle::current() != NULL &&
       ROMBundle::current()->symbol_table_num_buckets() != 0) {
-    const juint i =
-      hash_value % ROMBundle::current()->symbol_table_num_buckets();
-    const SymbolDesc* const** const rom_table = (const SymbolDesc* const**)
+    juint i = hash_value % ROMBundle::current()->symbol_table_num_buckets();
+    SymbolDesc*** rom_table = (SymbolDesc ***)
       ROMBundle::current()->ptr_at( ROMBundle::current()->SYMBOL_TABLE );
-    const SymbolDesc* const* p   = rom_table[i];   // start of the bucket
-    const SymbolDesc* const* end = rom_table[i+1]; // end of the bucket
+    SymbolDesc** p   = rom_table[i];   // start of the bucket
+    SymbolDesc** end = rom_table[i+1]; // end of the bucket (exclusive)
     while (p != end) {
       if ((*p)->matches(s, len)) {
         ROM_DETAILED_PERFORMANCE_COUNTER_END(symbol_for_hrticks);
@@ -1233,39 +1231,57 @@ void ROM::ROM_print_hrticks(void print_hrticks(const char *name,
 #endif
 
 #if ENABLE_MULTIPLE_PROFILES_SUPPORT
-bool ROM::is_restricted_package_in_profile(const char* name, int name_len) {
-  const int current_profile_id = Universe::current_profile_id();
-  GUARANTEE(unsigned(current_profile_id) < unsigned(_rom_profiles_count),
-            "Sanity");
+bool ROM::is_restricted_package_in_profile(const char *name, int name_len) {
+  const int current_profile_id = Universe::current_profile_id();  
+  if (current_profile_id == Universe::DEFAULT_PROFILE_ID) {
+    return false;
+  }
 
-  const char* const* profile_wildcards = 
+  GUARANTEE(current_profile_id >= 0 && 
+            current_profile_id < _rom_profiles_count, "Sanity");
+
+  const char** profile_wildcards = 
     _rom_profiles_restricted_packages[current_profile_id];  
   GUARANTEE(profile_wildcards != NULL, "Sanity");
 
-  for( const char* wildcard; (wildcard = *profile_wildcards++) != NULL; ) {
-    const int wildcard_len = jvm_strlen(wildcard);
+  int ind = 0;
+  const char* wildcard = profile_wildcards[ind++];
+  while (wildcard != NULL) {
+    int wildcard_len = jvm_strlen(wildcard);
     const bool name_matches_pattern = 
-      Universe::name_matches_pattern(name, name_len, wildcard, wildcard_len);
+      Universe::name_matches_pattern(name, name_len,
+        wildcard, wildcard_len);
     if (name_matches_pattern) {
       return true;
     }
+    wildcard = profile_wildcards[ind++];
   }
   return false;  
 }
 
-bool ROM::is_hidden_class_in_profile(const jushort class_id) {  
-  const int index = class_id / BitsPerByte;
-  const int shift = class_id % BitsPerByte;
-
-  if (index >= _rom_profile_bitmap_row_size) {
+bool ROM::class_is_hidden_in_profile(const JavaClass* const jc) {  
+  GUARANTEE((jc != NULL) && jc->not_null(), "Sanity");
+  const int profile_id = Universe::current_profile_id();
+  
+  if (profile_id == Universe::DEFAULT_PROFILE_ID) {
     return false;
   }
-
-  const int profile_id = Universe::current_profile_id();  
-  GUARANTEE(unsigned(profile_id) < unsigned(_rom_profiles_count), "Sanity");  
+  GUARANTEE(profile_id >= 0 && 
+            profile_id < _rom_profiles_count, "Sanity");
   
-  const int i = profile_id * _rom_profile_bitmap_row_size + index;
-  return (_rom_hidden_classes_bitmaps[i] >> shift) & 1;
+  const jushort class_id = jc->class_id();
+  if (class_id >= _rom_profile_bitmap_row_size * BitsPerByte) {
+    return false;
+  }
+  
+  const int ind = 
+    profile_id * _rom_profile_bitmap_row_size + class_id / BitsPerByte;
+  
+  const int shift = (class_id % BitsPerByte);
+  if (((_rom_hidden_classes_bitmaps[ind] >> shift) & 1) == 1) {    
+    return true;        
+  }
+  return false;
 }
 #endif // ENABLE_MULTIPLE_PROFILES_SUPPORT
 

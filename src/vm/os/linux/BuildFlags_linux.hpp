@@ -60,8 +60,3 @@
 #ifndef SUPPORTS_MEMORY_MAPPED_FILES
 #define SUPPORTS_MEMORY_MAPPED_FILES 1
 #endif
-
-// The default Linux port supports monotonic clock
-#ifndef SUPPORTS_MONOTONIC_CLOCK
-#error "SUPPORTS_MONOTONIC_CLOCK must be defined in jvm.make"
-#endif

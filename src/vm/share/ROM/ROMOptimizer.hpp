@@ -103,29 +103,17 @@ private:
   int _embedded_strings_offset;
 };
 
-class ROMOptimizer {
-#if USE_SOURCE_IMAGE_GENERATOR
-  #if ENABLE_MULTIPLE_PROFILES_SUPPORT
-    #define MPS_ROMOPTIMIZER_OOP_FIELDS_DO(template)  \
-      template(ROMProfile, global_profile,  "")       \
-      template(ROMProfile, current_profile, "")       \
-      template(ROMVector,  profiles_vector, "")       \
-      template(TypeArray,  profile_hidden_bitmap, "")
-  #else 
-    #define MPS_ROMOPTIMIZER_OOP_FIELDS_DO(template)
-  #endif // ENABLE_MULTIPLE_PROFILES_SUPPORT
-
-  #define SOURCE_ROMOPTIMIZER_OOP_FIELDS_DO(template) \
-    MPS_ROMOPTIMIZER_OOP_FIELDS_DO(template)          \
-    template(ROMVector, hidden_classes, "")           \
-    template(ROMVector, hidden_packages, "")          \
-    template(ROMVector, restricted_packages, "")
+#if ENABLE_MULTIPLE_PROFILES_SUPPORT && USE_SOURCE_IMAGE_GENERATOR
+#define MPS_ROMOPTIMIZER_OOP_FIELDS_DO(template) \
+  template(ROMVector,profiles_vector, "") \
+  template(ROMProfile,current_profile, "") \
+  template(TypeArray,profile_hidden_bitmap, "")
 #else 
-  #define SOURCE_ROMOPTIMIZER_OOP_FIELDS_DO(template)
-#endif // USE_SOURCE_IMAGE_GENERATOR
+#define MPS_ROMOPTIMIZER_OOP_FIELDS_DO(template)
+#endif
 
 #define ROMOPTIMIZER_OOP_FIELDS_DO(template) \
-  SOURCE_ROMOPTIMIZER_OOP_FIELDS_DO(template) \
+  MPS_ROMOPTIMIZER_OOP_FIELDS_DO(template) \
   template(TypeArray,empty_short_array, "") \
   template(ObjArray, empty_obj_array, "") \
   template(ObjArray, init_at_build_classes, "Classes that should be " \
@@ -139,6 +127,8 @@ class ROMOptimizer {
   template(ObjArray, dont_rename_classes,   "Don't rename these classes," \
                                             "even if they belong to a hidden" \
                                             "package") \
+  template(ROMVector, hidden_packages, "") \
+  template(ROMVector, restricted_packages, "") \
   template(ObjArray ,romizer_original_class_name_list, "Original names of" \
                                             "classes we've renamed.") \
   template(ObjArray, romizer_original_method_info, "Original names/signatures"\
@@ -166,14 +156,22 @@ class ROMOptimizer {
                                       multiple classes")
 
 #if USE_SOURCE_IMAGE_GENERATOR
+
+#if ENABLE_MULTIPLE_PROFILES_SUPPORT && USE_SOURCE_IMAGE_GENERATOR
+#define MPS_SOURCE_ROMOPTIMIZER_INT_FIELDS_DO(template) \
+  template(bool,         config_parsing_in_profile, "")
+#else
+#define MPS_SOURCE_ROMOPTIMIZER_INT_FIELDS_DO(template)
+#endif
+
 #define SOURCE_ROMOPTIMIZER_INT_FIELDS_DO(template) \
-  template(int,                 if_level, "") \
-  template(int,                 false_if_level, "") \
-  template(int,                 profile_if_level, "") \
+  MPS_SOURCE_ROMOPTIMIZER_INT_FIELDS_DO(template) \
+  template(bool,                config_parsing_active, "") \
   template(int,                 config_parsing_line_number, "") \
   template(const JvmPathChar *, config_parsing_file, "")  
 #else
 #define SOURCE_ROMOPTIMIZER_INT_FIELDS_DO(template)
+
 #endif
 
 #define ROMOPTIMIZER_INT_FIELDS_DO(template) \
@@ -199,9 +197,6 @@ class ROMOptimizer {
 #define ROMOPTIMIZER_DECLARE_OOP_SETTER(type, name, comment) \
   static void set_ ## name(type* value) { \
     _romoptimizer_oops[name ## _index] = value->obj(); \
-  } \
-  static void set_ ## name(OopDesc* value) { \
-    _romoptimizer_oops[name ## _index] = value; \
   }
 
 #define ROMOPTIMIZER_DECLARE_INT(type, name, comment) \
@@ -223,6 +218,7 @@ class ROMOptimizer {
 #define ROMOPTIMIZER_COUNT_FIELDS(type, name, comment) \
   name ## _index,
 
+class ROMOptimizer {
   // Count the number of integer and oop fields in the ROMOptimizer class
   enum {
     ROMOPTIMIZER_OOP_FIELDS_DO(ROMOPTIMIZER_COUNT_FIELDS)
@@ -361,55 +357,17 @@ private:
   int  get_max_alternate_constant_pool_count();
 
 #if ENABLE_MULTIPLE_PROFILES_SUPPORT && USE_SOURCE_IMAGE_GENERATOR
-  void set_profile( OopDesc* profile ) {
-    set_current_profile( profile );
-    set_hidden_classes( current_profile()->hidden_classes()  );
-    set_hidden_packages( current_profile()->hidden_packages() );
-    set_restricted_packages( current_profile()->restricted_packages() );
-  }
-
   void create_profiles_hidden_bitmap(JVM_SINGLE_ARG_TRAPS);
   int find_profile(const char name[]);
 #endif
 
 #if USE_SOURCE_IMAGE_GENERATOR
-  void set_global_profile( void ) {
-#if ENABLE_MULTIPLE_PROFILES_SUPPORT
-    set_profile( global_profile()->obj() );
-#endif
-  }
-
-  bool is_in_profile( void ) const {
-#if ENABLE_MULTIPLE_PROFILES_SUPPORT
-    return current_profile()->obj() != global_profile()->obj();
-#else
-    return false;
-#endif
-  }
-
-  void reset_false_if_level( void ) {
-    set_false_if_level(max_jint);
-  }
-  int if_level_save( void ) {
-    const int old_level = if_level();
-    set_if_level(0);
-    return old_level;
-  }
-  void if_level_restore( const int old_level ) {
-    if( if_level() != 0 ) {
-      config_error( "EndIf expected" );
-    }
-    set_if_level(old_level);
-  }
-
   void read_config_file(JVM_SINGLE_ARG_TRAPS);
   void read_config_file(const JvmPathChar* config_file JVM_TRAPS);
   void read_hardcoded_config(JVM_SINGLE_ARG_TRAPS);
-  static void abort( void );
-  void config_error( const char msg[] ) const;
-  void process_config_line(char* config_line JVM_TRAPS);
+  void process_config_line(char * config_line JVM_TRAPS);
   void include_config_file(const char* config_file JVM_TRAPS);
-  static char parse_config(char* line, const char*& name, const char*& value);
+  bool parse_config(char *line, const char**name, const char **value);
   void add_class_to_list(ObjArray *list, const char *flag, const char *classname
                          JVM_TRAPS);
   void add_package_to_list(ROMVector *vector, const char *pkgname JVM_TRAPS);
@@ -583,19 +541,8 @@ private:
   ReturnOop get_subclass_list(jushort klass_id);
   //ENDOF SUBCLASS CACHE ZONE
 
-  enum {
-    UNRESTRICTED_PACKAGE = 0,
-    RESTRICTED_PACKAGE   = 1,
-    HIDDEN_PACKAGE       = 2
-  };
-
-  // used by ROMOptimizer::remove_unused_static_fields
-  enum {
-    DEAD_FIELD = 0x10000
-  };
-
   jint get_package_flags(InstanceClass *ic JVM_TRAPS) {
-    const bool hidden = is_in_hidden_package(ic JVM_CHECK_0);
+    bool hidden = is_in_hidden_package(ic JVM_CHECK_0);
     if (hidden) {
       return HIDDEN_PACKAGE;
     } else if (is_in_restricted_package(ic)) {
@@ -605,6 +552,15 @@ private:
     }
   }
 
+  enum {
+    UNRESTRICTED_PACKAGE = 0,
+    RESTRICTED_PACKAGE   = 1,
+    HIDDEN_PACKAGE       = 2
+  };
+  // used by ROMOptimizer::remove_unused_static_fields
+  enum {
+    DEAD_FIELD = 0x10000
+  };
 
   class MethodIterator : public ObjectHeapVisitor
   {

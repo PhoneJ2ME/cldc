@@ -83,11 +83,6 @@ public abstract class TimerTask implements Runnable {
     long period = 0;
 
     /**
-     * Indicates if the user clock should be used to schedule this task.
-     */
-    boolean isUserClock;
-
-    /**
      * Creates a new timer task.
      */
     protected TimerTask() {
@@ -157,21 +152,9 @@ public abstract class TimerTask implements Runnable {
      * @see Date#getTime()
      */
     public long scheduledExecutionTime() {
-      long nextExecutionTimeLocal;
-      long periodLocal;
-
-      synchronized (lock) {
-        nextExecutionTimeLocal = this.nextExecutionTime;
-        periodLocal = this.period;
-      }
-       
-      // The task's next execution time is stored in milliseconds from 
-      // the Timer class loading. We should translate it back to 
-      // the user clock 
-      nextExecutionTimeLocal = 
-        Timer.relativeTimeToUserTime(nextExecutionTimeLocal);
-
-      return (periodLocal < 0 ? nextExecutionTimeLocal + periodLocal
-                              : nextExecutionTimeLocal - periodLocal);
+        synchronized (lock) {
+            return (period < 0 ? nextExecutionTime + period
+                               : nextExecutionTime - period);
+        }
     }
 }

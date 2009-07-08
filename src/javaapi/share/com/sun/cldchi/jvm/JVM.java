@@ -291,12 +291,4 @@ public class JVM {
      * Flushes all JAR file caches.
      */
     public static native void flushJarCaches();
-
-    /**
-     * Returns monotonic time in milliseconds from some unspecified starting
-     * point.
-     *
-     * @return  monotonic time in milliseconds
-     */
-    public static native long monotonicTimeMillis();
 }

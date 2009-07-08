@@ -278,24 +278,24 @@ void BytecodeCompileClosure::branch_if_flags(JVM_SINGLE_ARG_TRAPS) {
     const Bytecodes::Code code = bytecode_at(bci);
     const unsigned offset = unsigned(code) - Bytecodes::_ifeq;
     if( offset <= unsigned(Bytecodes::_ifle - Bytecodes::_ifeq) ) {
+      const cond_op cond = cond_op(offset + BytecodeClosure::eq);
       const int dest = branch_destination(bci);
+      set_bytecode(bci);
+      set_default_next_bytecode_index(bci);
+      compiler()->set_bci(bci); // Is it really necessary?
 
-      // This optimization is incompatible with OSR, 
-      // so apply it only if OSR entry is not needed at this point
-      if( dest > bci && !is_active_bci() ) {
-        const cond_op cond = cond_op(offset + BytecodeClosure::eq);
-        set_bytecode(bci);
-        set_default_next_bytecode_index(bci);
-        compiler()->set_bci(bci); // Is it really necessary?
-
-        // Pop argument
-        PoppedValue op1(T_INT);
-        Value op2(T_INT);
-        op2.set_int(0);
-
-        __ branch_if(cond, dest, op1, op2, true JVM_NO_CHECK_AT_BOTTOM);
-        set_jump_from_current_bci( dest );
+      // Insert OSR entries for backward branches.
+      if( dest < bci || is_active_bci() ) {
+        osr_entry(JVM_SINGLE_ARG_CHECK);
       }
+
+      // Pop argument
+      PoppedValue op1(T_INT);
+      Value op2(T_INT);
+      op2.set_int(0);
+
+      __ branch_if(cond, dest, op1, op2, true JVM_NO_CHECK_AT_BOTTOM);
+      set_jump_from_current_bci( dest );
     }
   }
 }
@@ -2311,19 +2311,15 @@ bool BytecodeCompileClosure::code_eliminate_prologue(Bytecodes::Code code) {
     //consume the items of the operation stack
     //since we only target the byte code related to
     //memory acces and arithmetic
-    if (!Bytecodes::can_decrease_stack(code)) {
-      // If the bytecode does not consume stack items, we should start a new snippet
-      // to guarantee that each calculates only one value
-      VirtualStackFrame::abort_tracking_of_current_snippet();
-      if (is_following_codes_can_be_eliminated(bci_after_elimination)) {
+    if (Bytecodes::can_decrease_stack(code) && 
+        is_following_codes_can_be_eliminated(bci_after_elimination)) {
   
-	GUARANTEE(bci_after_elimination != not_found, "cse match error")
-	  //next bci to be compiled, cse will skip some byte code here.
-	  set_default_next_bytecode_index(bci_after_elimination);
-	compiler()->set_bci(next_bytecode_index());
-	//skip the compilation of current bci
-	return true;
-      }
+      GUARANTEE(bci_after_elimination != not_found, "cse match error")
+      //next bci to be compiled, cse will skip some byte code here.
+      set_default_next_bytecode_index(bci_after_elimination);
+      compiler()->set_bci(next_bytecode_index());
+      //skip the compilation of current bci
+      return true;
     }
     
     method()->wipe_out_dirty_recorded_snippet(compiler()->bci(), code);

@@ -951,8 +951,6 @@ void CodeGenerator::new_object(Value& result, JavaClass* klass JVM_TRAPS) {
     call_from_compiled_code((address)compiler_new_object JVM_CHECK);
   }
 
-  verify_no_redo();
-
   // Let the result be in eax (encoding 0).
   result.set_register(RegisterAllocator::allocate(eax));
 }
@@ -975,8 +973,6 @@ void CodeGenerator::new_object_array(Value& result, JavaClass* element_class,
 
   // Call the allocation routine.
   call_from_compiled_code((address)compiler_new_obj_array JVM_CHECK);
-
-  verify_no_redo();
 
   // Remove length from stack.
   frame()->pop(T_INT);
@@ -1018,8 +1014,6 @@ void CodeGenerator::new_basic_array(Value& result, BasicType type,
   // Call the allocation routine.
   call_from_compiled_code((address)compiler_new_type_array JVM_CHECK);
 
-  verify_no_redo();
-
   // Remove length from stack.
   frame()->pop(T_INT);
   length.destroy();
@@ -1034,8 +1028,6 @@ void CodeGenerator::new_multi_array(Value& result JVM_TRAPS) {
 
   // Call the runtime system.
   call_vm((address) multianewarray, T_ARRAY JVM_CHECK);
-
-  verify_no_redo();
 
   // Let the result be in eax (encoding 0).
   result.set_register(RegisterAllocator::allocate(eax));
@@ -2716,20 +2708,4 @@ void CodeGenerator::init_static_array(Value& array JVM_TRAPS) {
   cmpl(ecx, ebx);
   jcc(less, copy_dword);
 }
-
-#if !defined(PRODUCT)
-void CodeGenerator::verify_no_redo() {
-  Label done;
-  comment("Verify that redo flag is not set");
-  get_thread(ebx);
-  movl(ecx, Address(ebx, Thread::async_redo_offset()));
-  testl(ecx, ecx);
-  jcc(zero, done);
-
-  comment("Allocation redo must be handled in interpreter");
-  breakpoint();
-bind(done);
-}
-#endif
-
 #endif

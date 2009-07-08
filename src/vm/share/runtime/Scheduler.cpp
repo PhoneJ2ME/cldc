@@ -355,7 +355,8 @@ void Scheduler::suspend_threads(int task_id) {
         queue_thread = next_thread;
         next_thread = queue_thread().next();
         if (queue_thread().task_id() == task_id) {
-          suspend_thread(&queue_thread);
+          remove_from_active(&queue_thread);
+          add_to_suspend(&queue_thread);
         }
       } while (!queue_thread.equals(&last_thread));
     }
@@ -374,7 +375,8 @@ void Scheduler::resume_threads(int task_id) {
       queue_thread = next_thread;
       next_thread = queue_thread().next();
       if (queue_thread().task_id() == task_id) {
-        resume_thread(&queue_thread);
+        remove_from_suspend(&queue_thread);
+        add_to_active(&queue_thread);
       }
     } while (!queue_thread.equals(&last_thread));
     Scheduler::yield();
@@ -688,7 +690,7 @@ void Scheduler::wake_up_timed_out_sleepers(JVM_SINGLE_ARG_TRAPS) {
   }
 
   // Wake up all sleeping threads that have timed out.
-  jlong time = Os::monotonic_time_millis();
+  jlong time = Os::java_time_millis();
   GUARANTEE(Universe::scheduler_waiting() != NULL, "Sleep queue at front");
   UsingFastOops fast_oops;
   Thread::Fast this_waiting, next_waiting;
@@ -909,7 +911,7 @@ void Scheduler::wait_for(Thread* thread, jlong timeout) {
 
   jlong wakeup = timeout;
   if (wakeup > 0) {
-    jlong os_time = Os::monotonic_time_millis();
+    jlong os_time = Os::java_time_millis();
     wakeup += os_time;
     if (wakeup < os_time) {
       wakeup = max_jlong;
@@ -1165,7 +1167,7 @@ bool Scheduler::wait_for_event_or_timer(bool sleeper_found,
 
     sleep_time = -1;
   } else {
-    sleep_time = (min_wakeup_time - Os::monotonic_time_millis()) + 1;
+    sleep_time = (min_wakeup_time - Os::java_time_millis()) + 1;
     if (sleep_time < 0) {
       // Clock has advanced somewhat, but make sure we're not passing
       // a negative timeout, which means wait forever!
@@ -1189,9 +1191,7 @@ void Scheduler::master_mode_wait_for_event_or_timer(jlong sleep_time) {
   // We do suspend and resume ticks only if we gonna wait for long time
   // (sleep_time < 0) == sleep forever until an event happens.
   if (JavaDebugger::is_debugger_option_on()) {
-    if (sleep_time < 0 || sleep_time > 100) {
-      sleep_time = 100;
-    }
+    sleep_time = 100;
   }
   if (sleep_time < 0 || sleep_time > 500) {
     Os::suspend_ticks();
@@ -1218,7 +1218,7 @@ void Scheduler::slave_mode_wait_for_event_or_timer(jlong sleep_time) {
 void Scheduler::sleep_current_thread(jlong millis) {
   Thread *thread = Thread::current();
   remove_from_active(thread);
-  jlong os_time = Os::monotonic_time_millis();
+  jlong os_time = Os::java_time_millis();
   jlong wakeup = millis + os_time;
   if (wakeup < os_time) {
     wakeup = max_jlong;
@@ -1804,7 +1804,7 @@ void Scheduler::print() {
   tty->cr();
   tty->print_cr("Waiting threads:");
 
-  jlong now = Os::monotonic_time_millis();
+  jlong now = Os::java_time_millis();
   Thread::Raw wt, wt_start;
   Thread::Raw thrd;
   wt_start = wt = Universe::scheduler_waiting();
@@ -2185,7 +2185,7 @@ Thread *Scheduler::get_next_runnable_thread(Thread *starting_thread) {
       // Check to see if this task has used up it's quota.
       // If so go to the next task and continue the do loop.
       task_priority = Task::get_priority(tid);
-      if (Task::more_than_one_task()) {
+      if (Task::get_num_tasks() > 2) {
         if (_task_execute_counts[task_priority] >
             sched_priority[TaskPriorityScale][task_priority]) {
           // This task has used up its 'quota', try to find another
@@ -2291,7 +2291,7 @@ Thread *Scheduler::get_next_runnable_thread(Thread *starting_thread) {
           // move this thread to the head of the queue
           set_last_priority_queue(&thread, priority);
 #if ENABLE_ISOLATES
-          if (TaskFairScheduling && Task::more_than_one_task()) {
+          if (TaskFairScheduling && Task::get_num_tasks() > 2) {
             // bump execution count for this task
             _task_execute_counts[task_priority]++;
           }

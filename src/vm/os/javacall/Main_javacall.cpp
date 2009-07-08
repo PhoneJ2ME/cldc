@@ -38,12 +38,13 @@ extern "C" {
 
 #include "../utilities/JVM_Malloc.hpp"
 
-void JVMSPI_PrintRaw(const char* s, int length) {
+
+void JVMSPI_PrintRaw(const char* s) {
   /* Print the string to the standard output device */
 #if ENABLE_PCSL
-  pcsl_print_chars(s, length);
+  pcsl_print(s);
 #else
-  javacall_print_chars(s, length);
+  javacall_print(s);
 #endif
 }
 

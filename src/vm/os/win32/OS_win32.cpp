@@ -48,32 +48,7 @@ static jlong            _offset     = 0;
 static bool             _compiler_timer_has_ticked = false;
 static jlong            _compiler_timer_start;
 
-static bool  _has_performance_frequency = false;
-static jlong _performance_frequency     = 0;
-
-static inline jlong as_jlong(LARGE_INTEGER x) {
-  return jlong_from_msw_lsw(x.HighPart, x.LowPart);
-}
-
-static inline jlong elapsed_counter() {
-  LARGE_INTEGER count;
-  count.HighPart = count.LowPart = 0;
-  QueryPerformanceCounter(&count);
-  return as_jlong(count);
-}
-
-static inline jlong elapsed_frequency() {
-  if (!_has_performance_frequency) {
-    LARGE_INTEGER freq;
-    freq.HighPart = freq.LowPart = 0;
-    QueryPerformanceFrequency(&freq);
-    _performance_frequency = as_jlong(freq);
-    _has_performance_frequency = true;
-  }
-  return _performance_frequency;
-}
-
-static jlong offset() {
+jlong offset() {
   if (!_has_offset) {
     SYSTEMTIME java_origin;
     java_origin.wYear          = 1970;
@@ -108,12 +83,8 @@ jlong Os::java_time_millis() {
   GetSystemTimeAsFileTime(&wt);
 
   // Convert to Java time.
-  jlong time = jlong_from_msw_lsw(wt.dwHighDateTime, wt.dwLowDateTime);
-  return (time - offset()) / 10000;
-}
-
-jlong Os::monotonic_time_millis() {
-  return elapsed_counter() * 1000ul / elapsed_frequency();
+  jlong a = jlong_from_msw_lsw(wt.dwHighDateTime, wt.dwLowDateTime);
+  return (a - offset()) / 10000;
 }
 
 void Os::sleep(jlong ms) {
@@ -221,13 +192,29 @@ void Os::dispose() {
 }
 
 #if USE_HIGH_RESOLUTION_TIMER
+static bool  _has_performance_frequency = false;
+static jlong _performance_frequency     = 0;
+
+jlong as_jlong(LARGE_INTEGER x) {
+  return jlong_from_msw_lsw(x.HighPart, x.LowPart);
+}
 
 jlong Os::elapsed_counter() {
-  return ::elapsed_counter();
+  LARGE_INTEGER count;
+  count.HighPart = count.LowPart = 0;
+  QueryPerformanceCounter(&count);
+  return as_jlong(count);
 }
 
 jlong Os::elapsed_frequency() {
-  return ::elapsed_frequency();
+  if (!_has_performance_frequency) {
+    LARGE_INTEGER freq;
+    freq.HighPart = freq.LowPart = 0;
+    QueryPerformanceFrequency(&freq);
+    _performance_frequency = as_jlong(freq);
+    _has_performance_frequency = true;
+  }
+  return _performance_frequency;
 }
 
 #endif // USE_HIGH_RESOLUTION_TIMER

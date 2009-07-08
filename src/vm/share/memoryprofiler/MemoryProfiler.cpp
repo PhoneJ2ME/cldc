@@ -156,38 +156,29 @@ void MemoryProfiler::retrieve_all_data(PacketInputStream *in,
   if (_current_object == NULL) {
     _current_object = _heap_start;
 
-    {
-      int execution_stack_count = 0;
-      // count java execution stacks (possibly including unreachable)
-      {
-	GCDisabler no_gc_must_happen_in_this_block;
-	OopDesc* obj_iterator = (OopDesc*)_heap_start;
-	while (obj_iterator < (OopDesc*)_inline_allocation_top) {
-	  Oop::Raw obj = obj_iterator;
-	  if (obj_iterator->is_execution_stack()) {
-	    execution_stack_count++;
-	  }
-	  obj_iterator = 
-	    DERIVED( OopDesc*, obj_iterator, obj().object_size() );
-	}
+    //calculate number of java stacks
+    _stack_count = 0;
+    OopDesc* obj_iterator = (OopDesc*)_heap_start;
+    while (obj_iterator < (OopDesc*)_inline_allocation_top) {
+      Oop::Raw obj = obj_iterator;
+      if (obj_iterator->is_execution_stack()) {
+        _stack_count++;
       }
-      // allocate execution stack array
-      {
-	SETUP_ERROR_CHECKER_ARG;
-	Oop::Raw new_mp_stack_list = 
-	  Universe::new_obj_array(execution_stack_count JVM_NO_CHECK);
-	if (new_mp_stack_list.is_null()) { //oom
-	  SHOULD_NOT_REACH_HERE();
-	  //IMPL_NOTE::how to handle this error????
-	}
-	*Universe::mp_stack_list() = new_mp_stack_list.obj();
-      }
+      obj_iterator = DERIVED( OopDesc*, obj_iterator, obj().object_size() );
     }
-
-    // initialize counter of *reachable* execution stacks
+    if (_stack_count > Universe::mp_stack_list()->length()) {
+      SETUP_ERROR_CHECKER_ARG;
+      Oop::Raw new_mp_stack_list = Universe::new_obj_array(_stack_count JVM_NO_CHECK);
+      if (new_mp_stack_list.is_null()) { //oom
+        SHOULD_NOT_REACH_HERE();
+        //IMPL_NOTE::how to handle this error????
+      }
+      *Universe::mp_stack_list() = new_mp_stack_list.obj();
+    }
     _stack_count = 0;
   }
   _current_out = out;
+  Scheduler::gc_prologue(do_nothing); //we need it to execute oops_do for Frames
   Oop obj;
   int currently_written_words = 0;
   while( _current_object < _inline_allocation_top) {
@@ -225,6 +216,7 @@ void MemoryProfiler::retrieve_all_data(PacketInputStream *in,
     _current_object = NULL;// we finished memory dumping
   }
 
+  Scheduler::gc_epilogue();
   if (_current_object == NULL) {
     out->write_int((juint)-1);    
   } else {
@@ -321,8 +313,6 @@ void MemoryProfiler::suspend_vm(PacketInputStream *in, PacketOutputStream *out)
 
 void MemoryProfiler::resume_vm(PacketInputStream *in, PacketOutputStream *out)
 {
-  Universe::mp_stack_list()->set_null();
-
   (void)in;
   ThreadReferenceImpl::resume_all_threads(-1);  
   out->send_packet();

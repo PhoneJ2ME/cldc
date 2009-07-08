@@ -28,7 +28,7 @@
  * MemoryMonitorMd_linux.hpp:
  */
 
-#if 0 && ENABLE_MEMORY_MONITOR
+#if ENABLE_MEMORY_MONITOR
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,4 +42,3 @@ extern "C" {
 }
 #endif
 
-#endif

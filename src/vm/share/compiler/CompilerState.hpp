@@ -69,12 +69,14 @@ class CompilerState: public CodeGenerator {
   static CompilerState* allocate( const int size JVM_TRAPS ) {
     OopDesc* compiled_method = Universe::new_compiled_method(size JVM_NO_CHECK);
     if( compiled_method ) {
-#if defined(PRODUCT) && !(ARM && USE_COMPILER_COMMENTS)
+#ifdef PRODUCT
       CompilerState* state = COMPILER_OBJECT_ALLOCATE( CompilerState );
+      if( state )
 #else
-      CompilerState* state = new CompilerState;
+      static CompilerState _state;
+      CompilerState* state = &_state;
 #endif
-      if( state ) {
+      {
         _compiler_state = state;
         state->initialize( compiled_method );
         return state;

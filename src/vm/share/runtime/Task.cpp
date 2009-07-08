@@ -176,15 +176,6 @@ bool Task::init_first_task(JVM_SINGLE_ARG_TRAPS) {
   task().set_profile_id(Universe::profile_id());
 #endif
 
-#if ENABLE_JAVA_DEBUGGER
-  {
-    JavaDebuggerContext::Raw context = 
-      JavaDebuggerContext::allocate(JVM_SINGLE_ARG_OZCHECK(context));
-    context().set_debug_mode(JavaDebugger::main_debug_mode());
-    task().set_debugger_context(&context);
-  }
-#endif
-
   return true;
 }
 
@@ -237,7 +228,6 @@ ReturnOop Task::create_task(const int id, IsolateObj* isolate JVM_TRAPS) {
   {
     JavaDebuggerContext::Raw context = 
       JavaDebuggerContext::allocate(JVM_SINGLE_ARG_OZCHECK(context));
-    context().set_debug_mode(isolate->connect_debugger());
     task().set_debugger_context(&context);
   }
 #endif
@@ -491,11 +481,7 @@ void Task::cleanup_terminated_task(int id JVM_TRAPS) {
 #if ENABLE_ISOLATES
   if( ObjectHeap::get_task_memory_usage(id) > BoundaryDesc::allocation_size() ) {
     ObjectHeap::print_task_objects( id );
-#if ENABLE_JAVA_DEBUGGER        
-  if (!_debugger_active){       
     GUARANTEE( 0, "Leftover objects" );
-  }
-#endif //ENABLE_JAVA_DEBUGGER   
   }
 #endif
 #endif
@@ -539,15 +525,13 @@ void Task::terminate_current_isolate(Thread *thread JVM_TRAPS) {
   JarFileParser::flush_caches();
 
 #if ENABLE_JAVA_DEBUGGER
-  {
+  if (_debugger_active) {
     UsingFastOops fastoops;
     Transport::Fast t = transport();
     if (!t.is_null()) {
-      JavaDebugger::close_java_debugger(&t);      
+      JavaDebugger::close_java_debugger(&t);
     }
   }
-
-  JavaDebugger::on_task_termination();
 #endif
 }
 
@@ -997,7 +981,6 @@ bool Task::is_hidden_class(Symbol* checking_name) {
   return false;  
 }
 #endif
-
 #ifndef PRODUCT
 
 void Task::iterate(OopVisitor* visitor) {

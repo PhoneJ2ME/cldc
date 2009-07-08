@@ -198,8 +198,6 @@ private:
 
   void cmp_values(Value& op1, Value& op2, Assembler::Condition cond = al);
 
-  void verify_no_redo() PRODUCT_RETURN;
-
 #if ENABLE_INLINED_ARRAYCOPY
 public:
   class RegisterSetIterator;

@@ -32,14 +32,17 @@
 
 #include "../utilities/JVM_Malloc.hpp"
 
-void JVMSPI_PrintRaw(const char* s, int length) {
-  /* Print the string to the standard output device */
-  fwrite(s, length, 1, stdout);
-  fflush(stdout);
+
+
+void JVMSPI_PrintRaw(const char* s) {
+
+	/* Print the string to the standard output device */
+     printf("%s", s);
+     fflush(stdout);
 }
 
 void JVMSPI_Exit(int code) {
-  /* Terminate the current process */
+	/* Terminate the current process */
   return ;
 }
 
@@ -47,7 +50,7 @@ int main(int argc, char **argv) {
 
   // Call this before any other Jvm_ functions.
     char* theHeap;
-        int   size = 0x00200000;
+	int   size = 0x00200000;
     int   res;
 
     JVM_Initialize();

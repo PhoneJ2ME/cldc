@@ -403,7 +403,7 @@ void OopDispatcher::dispatch() {
 }
 #endif
 
-#if USE_OOP_VISITOR
+#if USE_DEBUG_PRINTING
 class PrintDispatcher : public OopDispatcher {
  public:
   PrintDispatcher(BasicOop* obj, Stream* st) : OopDispatcher(obj) {
@@ -513,7 +513,7 @@ class PrintDispatcher : public OopDispatcher {
 #endif // USE_DEBUG_PRINTING
 
 void BasicOop::print_value_on(Stream* st) {
-#if USE_OOP_VISITOR
+#if USE_DEBUG_PRINTING
   DebugHandleMarker debug_handle_marker;
 
   if (is_null()) {

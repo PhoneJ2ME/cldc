@@ -607,7 +607,7 @@ const int WordsPerLong       = 2;    // Number of stack entries for longs
 const int oopSize            = sizeof(char*);
 const int wordSize           = sizeof(char*);
 const int longSize           = sizeof(jlong);
-const int jintSize           = sizeof(jint);
+const int jintSize         = sizeof(jint);
 
 const int BitsPerJavaInteger = 32;
 
@@ -1700,13 +1700,7 @@ ERROR_MESSAGES_DO(ERROR_MESSAGE_DECLARE)
 // Redefine INTERP_LOG_SIZE in your Makefile to change the size of
 // the interpretation log. (INTERP_LOG_SIZE-1) must be a power of two.
 #ifndef INTERP_LOG_SIZE
-#  if ENABLE_METHOD_EXECUTION_TRACE
-#    define INTERP_LOG_SIZE (1*1024+1)
-#  else
-#    define INTERP_LOG_SIZE (8+1)  // Extra element to make the log NULL-terminated
-#  endif
-#elif INTERP_LOG_SIZE < 1 || ((INTERP_LOG_SIZE-1) | (INTERP_LOG_SIZE-2))
-#  error INTERP_LOG_SIZE must be a power of two + 1
+#define INTERP_LOG_SIZE (8+1)  // Extra element to make the log NULL-terminated
 #endif
 
 enum {
@@ -2297,14 +2291,7 @@ static inline jlong double_bits(jdouble d) {
 }
 
 static inline jfloat float_from_bits(jint bits) {
-  union {
-    jfloat output;
-    jint input;
-  } convert;
- 
-  convert.input = bits;
-
-  return convert.output;
+  return *(jfloat*)&bits;
 }
 
 static inline jdouble double_from_bits(jlong bits) {

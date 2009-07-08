@@ -175,7 +175,7 @@ void ANI_WaitForThreadUnblocking(JVMSPI_BlockedThreadInfo * blocked_threads,
           SNI_UnblockThread(info->thread_id);
           waiter_count --;
           free_count --;
-          JVMSPI_PrintRaw(".", 1);
+          JVMSPI_PrintRaw(".");
         }
       }
       if (free_count <= 0) {
