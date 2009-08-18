@@ -101,19 +101,21 @@ public:
   }
 
   virtual void handle_matching_method(Method *m JVM_TRAPS) {
-    if( TaggedJavaStack
-        || !UseQuickNativeMethods
-        || m->is_quick_native()
-        || !m->is_native()
-        || m->uses_monitors() ) {
+    if (m->is_quick_native()) {
       return;
     }
+    if (!m->is_native()) {
+      return;
+    }
+    if (m->uses_monitors()) {
+      // Synchronized method must use interpreter method entry.
+      return;
+    }
+    address quick_entry = NULL;
 
-    address quick_entry;
-    Signature::Raw signature = m->signature();
-    switch (signature().return_type()) {
-      default:
-        return;
+    if (!TaggedJavaStack && UseQuickNativeMethods) {
+      Signature::Raw signature = m->signature();
+      switch (signature().return_type()) {
       case T_VOID:
         quick_entry = (address)quick_void_native_method_entry;
         break;
@@ -127,15 +129,19 @@ public:
       case T_OBJECT:
         quick_entry = (address)quick_obj_native_method_entry;
         break;
+      }
     }
-    m->set_quick_native_code(m->get_native_code());
-    m->set_fixed_entry(quick_entry);
 
-    const jint old_size = m->object_size();
-    m->set_code_size((jushort)0);
-    const jint new_size = m->object_size();
-    ROMTools::shrink_object(m, old_size, old_size - new_size);
-    _log_vector->add_element(m JVM_CHECK);
+    if (quick_entry != NULL) {
+      m->set_quick_native_code(m->get_native_code());
+      m->set_fixed_entry(quick_entry);
+
+      jint old_size = m->object_size();
+      m->set_code_size((jushort)0);
+      jint new_size = m->object_size();
+      ROMTools::shrink_object(m, old_size, old_size - new_size);
+      _log_vector->add_element(m JVM_CHECK);
+    }
   }
 };
 
@@ -154,147 +160,6 @@ int ROMOptimizer::get_max_alternate_constant_pool_count() {
     }
   }
   return max;
-}
-
-#if ENABLE_MULTIPLE_PROFILES_SUPPORT
-inline void ROMOptimizer::optimize_package_lists(JVM_SINGLE_ARG_TRAPS) {
-  ROMVector* rom_profiles = profiles_vector();
-  GUARANTEE(rom_profiles != NULL, "Sanity");
-
-  const int profiles_count = rom_profiles->size();
-
-  {
-    UsingFastOops fast_oops;
-    ROMProfile::Fast current_profile;
-    ROMVector::Fast current_packages;
-    Symbol::Fast current_package;
-
-    for( int current_id = 0; current_id < profiles_count; current_id++ ) {
-      current_profile = rom_profiles->element_at(current_id);
-      {
-        current_packages = current_profile().restricted_packages();
-        const int len = current_packages().size();
-        for( int i = 0; i < len; i++ ) {
-          current_package = current_packages().element_at(i);
-          int other_id;
-          for( other_id = 0; other_id < profiles_count; other_id++ ) {
-            if( other_id != current_id ) {
-              ROMProfile::Raw other_profile = rom_profiles->element_at(other_id);
-              ROMVector::Raw other_packages = other_profile().restricted_packages();
-              if( !name_matches_pattern( &current_package, &other_packages ) ) {
-                break;
-              }
-            }
-          }
-          if( other_id == profiles_count ) {
-            add_package_to_list(restricted_packages(), &current_package JVM_CHECK);
-          }
-        }
-      }
-      { // IMPL_NOTE: Tables of hidden packages are not written to ROM image.
-        // This optimization can only speed up searching for hidden packages.
-        // Consider marking classes as hidden earlier to eliminate the need for
-        // this optimization and to make the search even faster.
-        current_packages = current_profile().hidden_packages();
-        const int len = current_packages().size();
-        for( int i = 0; i < len; i++ ) {
-          current_package = current_packages().element_at(i);
-          int other_id;
-          for( other_id = 0; other_id < profiles_count; other_id++ ) {
-            if( other_id != current_id ) {
-              ROMProfile::Raw other_profile = rom_profiles->element_at(other_id);
-              ROMVector::Raw other_packages = other_profile().hidden_packages();
-              if( !name_matches_pattern( &current_package, &other_packages ) ) {
-                break;
-              }
-            }
-          }
-          if( other_id == profiles_count ) {
-            add_package_to_list(hidden_packages(), &current_package JVM_CHECK);
-          }
-        }
-      }
-      { // IMPL_NOTE: Tables of hidden classes are not written to ROM image.
-        // This optimization can only speed up searching for hidden classes.
-        // Consider marking classes as hidden earlier to eliminate the need for
-        // this optimization and to make the search even faster.
-        current_packages = current_profile().hidden_classes();
-        const int len = current_packages().size();
-        for( int i = 0; i < len; i++ ) {
-          current_package = current_packages().element_at(i);
-          int other_id;
-          for( other_id = 0; other_id < profiles_count; other_id++ ) {
-            if( other_id != current_id ) {
-              ROMProfile::Raw other_profile = rom_profiles->element_at(other_id);
-              ROMVector::Raw other_packages = other_profile().hidden_classes();
-              if( !name_matches_pattern( &current_package, &other_packages ) ) {
-                break;
-              }
-            }
-          }
-          if( other_id == profiles_count ) {
-            add_package_to_list(hidden_classes(), &current_package JVM_CHECK);
-          }
-        }
-      }
-    }
-  }
-  {
-    for( int profile_id = 0; profile_id < profiles_count; profile_id++ ) {
-      ROMProfile::Raw profile = rom_profiles->element_at(profile_id);
-      remove_packages( profile().restricted_packages(), restricted_packages() );
-      remove_packages( profile().hidden_packages(),     hidden_packages()     );
-      remove_packages( profile().hidden_classes(),      hidden_classes()      );
-    }
-  }
-}
-#endif // ENABLE_MULTIPLE_PROFILES_SUPPORT
-
-bool ROMOptimizer::is_in_restricted_package( InstanceClass* klass ) const {
-#if ENABLE_MULTIPLE_PROFILES_SUPPORT
-  if( !class_matches_packages_list(klass, restricted_packages()) ) {
-    ROMVector* rom_profiles = profiles_vector();
-    const int profiles_count = rom_profiles->size();
-    for( int i = 0; i < profiles_count; i++ ) {
-      ROMProfile::Raw profile = rom_profiles->element_at(i);
-      ROMVector::Raw restricted_packages = profile().restricted_packages();
-      if( !class_matches_packages_list(klass, &restricted_packages) ) {
-        return false;
-      } 
-    }
-  }
-  return true;
-#else
-  return class_matches_packages_list(klass, restricted_packages());
-#endif  
-}
-
-bool ROMOptimizer::is_in_hidden_package( InstanceClass* klass ) const {
-#if ENABLE_MULTIPLE_PROFILES_SUPPORT
-  if( !class_matches_classes_list(klass, hidden_classes()) &&
-      !class_matches_packages_list(klass, hidden_packages()) ) {
-    ROMVector* rom_profiles = profiles_vector();
-    const int profiles_count = rom_profiles->size();
-    for( int i = 0; i < profiles_count; i++ ) {
-      ROMProfile::Raw profile = rom_profiles->element_at(i);
-      ROMVector::Raw hidden_packages = profile().hidden_packages();
-      ROMVector::Raw hidden_classes = profile().hidden_classes();
-      if( !class_matches_classes_list (klass, &hidden_classes) &&
-          !class_matches_packages_list(klass, &hidden_packages) ) {
-        return false;
-      } 
-    }
-  }
-  return true;
-#else
-  return class_matches_classes_list (klass, hidden_classes() ) ||
-         class_matches_packages_list(klass, hidden_packages());
-#endif
-}
-
-bool ROMOptimizer::is_hidden( InstanceClass* klass ) const {
-  return is_in_hidden_package(klass) ||
-         ( !klass->is_public() && is_in_restricted_package(klass) );
 }
 
 void ROMOptimizer::read_config_file(JVM_SINGLE_ARG_TRAPS) {
@@ -329,16 +194,10 @@ void ROMOptimizer::read_config_file(JVM_SINGLE_ARG_TRAPS) {
   if (config_file == NULL) {
     return;
   }
-
-  reset_false_if_level();
+  
   read_hardcoded_config(JVM_SINGLE_ARG_CHECK);
 
-  reset_false_if_level();
   read_config_file(config_file JVM_CHECK);
-
-#if ENABLE_MULTIPLE_PROFILES_SUPPORT
-  optimize_package_lists(JVM_SINGLE_ARG_CHECK);
-#endif
 
 #if USE_ROM_LOGGING
   write_disable_compilation_log();
@@ -361,25 +220,23 @@ void ROMOptimizer::read_config_file(const JvmPathChar * config_file JVM_TRAPS)
   OsFile_Handle f = OsFile_open(config_file, "r");
   if (f == NULL) {
     tty->print_cr("Error: ROM configuration file not found: %s", config_file);
-    abort();
+    JVM::exit(0);
   }
 #if USE_ROM_LOGGING
   _log_stream->print_cr("Reading ROM configuration file %s", config_file);
 #endif
 
-  // Save file name, line number and conditional state
-  const JvmPathChar* const old_config_file = config_parsing_file();
-  const int old_config_line = config_parsing_line_number();
-  const int old_if_level = if_level_save();
+  char * s;
 
   // Initialize the config parsing context.
   set_config_parsing_file(config_file);
   set_config_parsing_line_number(0);
-  
+  set_config_parsing_active(true);
+#if ENABLE_MULTIPLE_PROFILES_SUPPORT
+  set_config_parsing_in_profile(false);
+#endif // ENABLE_MULTIPLE_PROFILES_SUPPORT
 
-  set_global_profile();
-
-  for (char* s;;) {
+  for (;;) {
     // Read a single line from the file, up to 1024 bytes. We don't have
     // fgets() in the OsFile API, so let's roll one on our own. Efficiency is
     // not an issue here because this code is only used by the romizer, 
@@ -405,26 +262,24 @@ void ROMOptimizer::read_config_file(const JvmPathChar * config_file JVM_TRAPS)
 
     process_config_line(s JVM_NO_CHECK);
     if(CURRENT_HAS_PENDING_EXCEPTION){
-      goto LoopExit;
+      break;
     }
   }
 
-  if( is_in_profile() ) {
-    config_error( "EndProfile expected" );
-  }
-  if_level_restore(old_if_level);
-
-LoopExit:
-  // Restore file name and line number
-  set_config_parsing_file(old_config_file);
-  set_config_parsing_line_number(old_config_line);
+  // Reset the config parsing context.
+  set_config_parsing_file(NULL);
+  set_config_parsing_line_number(0);
+  set_config_parsing_active(true);
+#if ENABLE_MULTIPLE_PROFILES_SUPPORT
+  set_config_parsing_in_profile(false);
+#endif // ENABLE_MULTIPLE_PROFILES_SUPPORT
 
   OsFile_close(f);
   JVM_DELAYED_CHECK;
 #endif
 }
 
-static const char* const hardcoded_rom_config[] = {
+static const char * const hardcoded_rom_config[] = {
   "DontCompile = com.sun.cldchi.jvm.JVM.*",
 };
 
@@ -440,7 +295,10 @@ void ROMOptimizer::read_hardcoded_config(JVM_SINGLE_ARG_TRAPS) {
   // Initialize the config parsing context.
   set_config_parsing_file(hardcoded_configuration);
   set_config_parsing_line_number(0);
-  set_global_profile();
+  set_config_parsing_active(true);
+#if ENABLE_MULTIPLE_PROFILES_SUPPORT
+  set_config_parsing_in_profile(false);
+#endif // ENABLE_MULTIPLE_PROFILES_SUPPORT
 
   for (int index = 0; index < ARRAY_SIZE(hardcoded_rom_config); index++) {
     // Make a copy to avoid modification of the source.
@@ -451,6 +309,10 @@ void ROMOptimizer::read_hardcoded_config(JVM_SINGLE_ARG_TRAPS) {
   // Reset the config parsing context.
   set_config_parsing_file(NULL);
   set_config_parsing_line_number(0);
+  set_config_parsing_active(true);
+#if ENABLE_MULTIPLE_PROFILES_SUPPORT
+  set_config_parsing_in_profile(false);
+#endif // ENABLE_MULTIPLE_PROFILES_SUPPORT
 }
 
 #if ENABLE_MULTIPLE_PROFILES_SUPPORT
@@ -463,246 +325,167 @@ int ROMOptimizer::find_profile(const char name[] ) {
       return p;
     }
   }
-  return Universe::UNKNOWN_PROFILE_ID;
+  return Universe::DEFAULT_PROFILE_ID;
 }
 #endif // ENABLE_MULTIPLE_PROFILES_SUPPORT
 
-inline char ROMOptimizer::parse_config(char* p, const char*& name, const char*& value) {
-  char c;
-  for(; c = *p, isspace(c); p++) {
-  }
-
-  if( c == '#' ) {
-    *p = 0;
-  }
-
-  name = p;
-
-  while( isalnum(c) ) {
-    c = *++p;
-  }
-  *p = 0;
-
-  while( c == '=' || isspace(c) ) {
-    c = *++p;
-  }
-
-  value = p;
-  while( c && !isspace(c) ) {
-    c = *++p;
-  }
-  *p = 0;
-
-  return *name;
-}
-
-void ROMOptimizer::abort(void) {
-  JVM::exit(-1);
-}
-
-void
-ROMOptimizer::config_message( const char category[], const char msg[] ) const {
-  tty->cr();
-  tty->print_raw( category );
-  tty->sp();
-  tty->print_raw( config_parsing_file() );
-  tty->print_cr( "(%d):\n      %s", config_parsing_line_number(), msg );
-}
-
-inline void ROMOptimizer::config_warning( const char msg[] ) const {
-  config_message( "Warning", msg );
-}
-
-void ROMOptimizer::config_error( const char msg[] ) const {
-  config_message( "Error", msg );
-  abort();
-}
-
-bool ROMOptimizer::validate_pattern( const char pattern[] ) const {
-  const int len = jvm_strlen(pattern);
-  if( !len ) {
-    config_warning( "Class or package name or pattern not specified" );
-    return false;
-  }
-  for( int i = 0; i < len; i++ ) {
-    switch( pattern[i] ) {
-      case '*': if( i == 0 || i != (len-1) || pattern[i-1] != '.' )
-      case '?': config_error( "Only patterns with .* at the end are supported" );
-    }
-  }
-  return true;
-}
-
-
 // Parse and process the config line.
-void ROMOptimizer::process_config_line(char* s JVM_TRAPS) {
+void ROMOptimizer::process_config_line(char * s JVM_TRAPS) {
   set_config_parsing_line_number(config_parsing_line_number() + 1);
-
   const char *name, *value;
-  if (!parse_config(s, name, value) ) {
-    return;
-  }
+  if (parse_config(s, &name, &value)) {
 
-  if (jvm_strcmp(name, "If") == 0) {
-    const int level = if_level() + 1;
-    set_if_level(level);
-
-    if (level > false_if_level()) {
+    if (jvm_strcmp(name, "If") == 0) {
+      if (jvm_strcmp(value, "CLDC_11") == 0) {
+        if (!ENABLE_CLDC_11) {
+          set_config_parsing_active(false);
+        }
+      } else if (jvm_strcmp(value, "ISOLATES") == 0) {
+        if (!ENABLE_ISOLATES) {
+          set_config_parsing_active(false);
+        }
+      } else if (jvm_strcmp(value, "MULTIPLE_PROFILES_SUPPORT") == 0) {
+        if (!ENABLE_MULTIPLE_PROFILES_SUPPORT) {
+          set_config_parsing_active(false);
+        }
+      } else {
+        tty->print_cr("Error: line %d in %s", config_parsing_line_number(), 
+                      config_parsing_file());
+        tty->print_cr("       Only \"If CLDC_11\" and \"If ISOLATES\" "
+                      "       and \"MULTIPLE_PROFILES_SUPPORT\" "
+                      "are allowed");
+        JVM::exit(0);
+      }
+      return;
+    }
+    if (jvm_strcmp(name, "EndIf") == 0) {
+      set_config_parsing_active(true);
       return;
     }
 
-    int condition;
-    if (jvm_strcmp(value, "CLDC_11") == 0) {
-      condition = ENABLE_CLDC_11;
-    } else if (jvm_strcmp(value, "ISOLATES") == 0) {
-      condition = ENABLE_ISOLATES;
-    } else if (jvm_strcmp(value, "MULTIPLE_PROFILES_SUPPORT") == 0) {
-      condition = ENABLE_MULTIPLE_PROFILES_SUPPORT;
-    } else {
-      config_error( "Only CLDC_11, ISOLATES and MULTIPLE_PROFILES_SUPPORT"
-                          "are allowed");
-      condition = 0;
+    if (!config_parsing_active()) {
+      // We're in an "If XXX" block but CLDC 1.1 is disabled
+      return;
     }
-
-    if (!condition) {
-      set_false_if_level(level);
-    }
-    return;
-  }
-  if (jvm_strcmp(name, "EndIf") == 0) {
-    const int level = if_level();
-    if (level <= 0) {
-      config_error( "EndIf without matching If");
-    }
-    set_if_level(level-1);
-
-    if (level == false_if_level()) {
-      reset_false_if_level();
-    }
-    return;
-  }
-
-  if (if_level() >= false_if_level()) {
-    // We're in an "If XXX" block but XXX is false
-    return;
-  }
 
 #if ENABLE_MULTIPLE_PROFILES_SUPPORT       
-  if (jvm_strcmp(name, "BeginProfile") == 0) {      
-    if (is_in_profile()) {
-      config_error("Nested profiles are not allowed");
+    if (jvm_strcmp(name, "BeginProfile") == 0) {      
+      set_config_parsing_in_profile(true);      
+      const int profile_ind = find_profile(value);
+      if (profile_ind == Universe::DEFAULT_PROFILE_ID) {
+        current_profile()->initialize(value JVM_CHECK);
+        profiles_vector()->add_element(current_profile() JVM_CHECK);
+      } else {
+        ROMProfile::Raw existing_profile = 
+          profiles_vector()->element_at(profile_ind);
+        set_current_profile(&existing_profile);
+      }
     }
-    
-    set_profile_if_level( if_level_save() );
-
-    const int profile_ind = find_profile(value);
-    OopDesc* profile;
-    if (profile_ind == Universe::UNKNOWN_PROFILE_ID) {
-      profile = ROMProfile::create(value JVM_CHECK);
-    } else {
-      profile = profiles_vector()->element_at(profile_ind);
+    else if (jvm_strcmp(name, "HiddenClass") == 0) {
+      if (!config_parsing_in_profile()) {
+        tty->print_cr("Error: line %d in %s", 
+                      config_parsing_line_number(), config_parsing_file());
+        tty->print_cr("       HiddenClass only in BeginProfile-EndProfile "
+                      "scope is allowed");
+        JVM::exit(0);
+      }
+      UsingFastOops fastOops;
+      Symbol::Fast class_pattern = SymbolTable::slashified_symbol_for(value JVM_CHECK);
+      ROMVector::Fast this_profile_hidden_classes = 
+        current_profile()->hidden_classes();
+      this_profile_hidden_classes().add_element(&class_pattern JVM_CHECK);
+      GUARANTEE(this_profile_hidden_classes().contains(&class_pattern), "Sanity");
     }
-    set_profile(profile);
-    return;
-  }
-  if (jvm_strcmp(name, "EndProfile") == 0) {
-    if (!is_in_profile()) {
-      config_error("EndProfile without matching BeginProfile");
-    }
-    if_level_restore( profile_if_level() );
-    set_global_profile();
-    return;
-  }
+    else if (jvm_strcmp(name, "EndProfile") == 0) {
+      set_config_parsing_in_profile(false);
+    } else 
 #endif // ENABLE_MULTIPLE_PROFILES_SUPPORT      
-  if (jvm_strcmp(name, "HiddenClass") == 0) {
-    if( !validate_pattern(value) ) return;
-
-    UsingFastOops fastOops;
-    Symbol::Fast class_pattern =
-      SymbolTable::slashified_symbol_for(value JVM_CHECK);
-    hidden_classes()->add_element(&class_pattern JVM_CHECK);
-    GUARANTEE(hidden_classes()->contains(&class_pattern), "Sanity");
-    return;
-  }
-  if (jvm_strcmp(name, "Include") == 0) {
-    if (is_in_profile()) {
-      config_error("Include inside profile is not allowed");
+    if (jvm_strcmp(name, "Include") == 0) {
+      include_config_file(value JVM_CHECK);
     }
-    include_config_file(value JVM_CHECK);
-    return;
-  }
-  if (jvm_strcmp(name, "InitAtBuild") == 0) {
-    if( !validate_pattern(value) ) return;
-    add_class_to_list(init_at_build_classes(), name, value JVM_CHECK);
-    return;
-  }
-  if (jvm_strcmp(name, "InitAtLoad") == 0) {
-    if( !validate_pattern(value) ) return;
-    add_class_to_list(init_at_load_classes(), name, value JVM_CHECK);
-    return;
-  }
-  if (jvm_strcmp(name, "DontRenameClass") == 0) {
-    if( !validate_pattern(value) ) return;
-    add_class_to_list(dont_rename_classes(), name, value JVM_CHECK);
-    return;
-  }
-  if (jvm_strcmp(name, "DontRenameNonPublicFields") == 0) {
-    if( !validate_pattern(value) ) return;
-    add_class_to_list(dont_rename_fields_classes(), name, value JVM_CHECK);
-    return;
-  }
-  if (jvm_strcmp(name, "DontRenameNonPublicMethods") == 0) {
-    if( !validate_pattern(value) ) return;
-    add_class_to_list(dont_rename_methods_classes(), name,value JVM_CHECK);
-    return;
-  }
-  if (jvm_strcmp(name, "HiddenPackage") == 0) {
-    if( !validate_pattern(value) ) return;
-
-    // Hidden packages are also restricted.
-    add_package_to_list(hidden_packages(), value JVM_CHECK);
-    add_package_to_list(restricted_packages(), value JVM_CHECK);
-    return;
-  }
-  if (jvm_strcmp(name, "ReservedWord") == 0) {
-    UsingFastOops fastOops;
-    Symbol::Fast word =
-      SymbolTable::slashified_symbol_for(value JVM_ZCHECK(word));
-    if (!reserved_words()->contains(&word)) {
-      reserved_words()->add_element(&word JVM_CHECK);
+    else if (jvm_strcmp(name, "InitAtBuild") == 0) {
+      add_class_to_list(init_at_build_classes(), name, value JVM_CHECK);
     }
-    return;
-  }
-  if (jvm_strcmp(name, "RestrictedPackage") == 0) {
-    if( !validate_pattern(value) ) return;
-    add_package_to_list(restricted_packages(), value JVM_CHECK);
-    return;
-  }
-  if (jvm_strcmp(name, "DontCompile") == 0) {
-    disable_compilation(value JVM_CHECK);
-    return;
-  }
-  if (jvm_strcmp(name, "KvmNative") == 0) {
-    enable_kvm_natives(value JVM_CHECK);
-    return;
-  }
-  if (jvm_strcmp(name, "QuickNative") == 0) {
-    enable_quick_natives(value JVM_CHECK);
-    return;
-  }
-  if (jvm_strcmp(name, "Precompile") == 0) {
+    else if (jvm_strcmp(name, "InitAtLoad") == 0) {
+      add_class_to_list(init_at_load_classes(), name, value JVM_CHECK);
+    }
+    else if (jvm_strcmp(name, "DontRenameClass") == 0) {
+      add_class_to_list(dont_rename_classes(), name, value JVM_CHECK);
+    }
+    else if (jvm_strcmp(name, "DontRenameNonPublicFields") == 0) {
+      add_class_to_list(dont_rename_fields_classes(), name, value JVM_CHECK);
+    }
+    else if (jvm_strcmp(name, "DontRenameNonPublicMethods") == 0) {
+      add_class_to_list(dont_rename_methods_classes(), name,value JVM_CHECK);
+    }
+    else if (jvm_strcmp(name, "HiddenPackage") == 0) {
+      UsingFastOops fastOops;
+      ROMVector::Fast hidden_list;
+      ROMVector::Fast restricted_list;
+#if ENABLE_MULTIPLE_PROFILES_SUPPORT
+      if (config_parsing_in_profile()) {        
+        hidden_list = current_profile()->hidden_packages();        
+        restricted_list = current_profile()->restricted_packages();
+      } else 
+#endif // ENABLE_MULTIPLE_PROFILES_SUPPORT
+      {
+        hidden_list = hidden_packages();
+        restricted_list = restricted_packages();
+      }
+
+      // Hidden packages are also restricted.
+      add_package_to_list(&hidden_list, value JVM_CHECK);
+      add_package_to_list(&restricted_list, value JVM_CHECK);
+    }
+    else if (jvm_strcmp(name, "ReservedWord") == 0) {
+      UsingFastOops fastOops;
+      ROMVector::Fast reserved_words_list = reserved_words();
+
+      Symbol::Fast word = 
+                 SymbolTable::slashified_symbol_for(value JVM_CHECK);      
+      if (!reserved_words_list().contains(&word)) {
+        reserved_words_list().add_element(&word JVM_CHECK);
+      }
+    }
+    else if (jvm_strcmp(name, "RestrictedPackage") == 0) {
+      UsingFastOops fastOops;
+      ROMVector::Fast packages_list;
+#if ENABLE_MULTIPLE_PROFILES_SUPPORT
+      if (config_parsing_in_profile()) {
+        packages_list = current_profile()->restricted_packages();
+      } else 
+#endif // ENABLE_MULTIPLE_PROFILES_SUPPORT
+      {
+        packages_list = restricted_packages();        
+      }
+
+      add_package_to_list(&packages_list, value JVM_CHECK);
+    }
+    else if (jvm_strcmp(name, "DontCompile") == 0) {
+      disable_compilation(value JVM_CHECK);
+    }
+    else if (jvm_strcmp(name, "KvmNative") == 0) {
+      enable_kvm_natives(value JVM_CHECK);
+    }
+    else if (jvm_strcmp(name, "QuickNative") == 0) {
+      enable_quick_natives(value JVM_CHECK);
+    }
+    else if (jvm_strcmp(name, "Precompile") == 0) {
 #if USE_AOT_COMPILATION
-    enable_precompile(value JVM_CHECK);
+      enable_precompile(value JVM_CHECK);
 #endif
-    return;
-  }
-  if (jvm_strcmp(name, "JniNative") == 0) {
-    enable_jni_natives(value JVM_CHECK);
-    return;
-  }
+    }
+    else if (jvm_strcmp(name, "JniNative") == 0) {
+      enable_jni_natives(value JVM_CHECK);
+    }
 
-  config_error( "Unknown command\n"
-                "Note: ROM configuration commands are case sensitive");
+    else {
+      tty->print_cr("Unknown command \"%s\" on line %d of %s", name, 
+                    config_parsing_line_number, config_parsing_file());
+      tty->print_cr("Note: ROM configuration commands are case sensitive.");
+      JVM::exit(0);
+    }
+  }
 }
 
 void ROMOptimizer::include_config_file(const char *config_file JVM_TRAPS) {
@@ -748,8 +531,44 @@ void ROMOptimizer::include_config_file(const char *config_file JVM_TRAPS) {
   tty->print_cr("Error: Cannot find included ROM configuration file: %s",
                 config_file);
   tty->print_cr("Please check you -romincludepath arguments");
-  abort();
+  JVM::exit(0);
 #endif
+}
+
+bool ROMOptimizer::parse_config(char *line, const char**name, const char**value) {
+  if (*line == '#') {
+    return false;
+  }
+
+  char * p;
+
+  *name = "";
+  *value = "";
+
+  for (p = line; *p && isspace(*p);) {
+    p++;
+  }
+  if (*p == 0) {
+      return false; // empty line
+  } else {
+    *name = p;
+  }
+
+  for (; *p && *p != '=' && !isspace(*p);) {
+    p++;
+  }
+
+  for (; *p && ((*p == '=') || isspace(*p));) {
+    *p = 0;
+    p ++;
+  }
+  *value = p;
+  for (; *p && !isspace(*p);) {
+    p++;
+  }
+  *p = 0;
+
+  return true;
 }
 
 void ROMOptimizer::add_class_to_list(ObjArray *list, const char *flag, 
@@ -780,125 +599,106 @@ void ROMOptimizer::add_class_to_list(ObjArray *list, const char *flag,
   SHOULD_NOT_REACH_HERE();
 }
 
-bool
-ROMOptimizer::name_matches_pattern(const char name[], const int name_len,
-                                    ROMVector* patterns) {
-  GUARANTEE(patterns != NULL, "Sanity");
-  const int list_len = patterns->size();
-  for( int i = 0; i < list_len; i++ ) {
-    Symbol::Raw pattern = patterns->element_at(i);
-    if( Universe::name_matches_pattern(name, name_len,
-          pattern().utf8_data(), pattern().length()) ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-inline bool
-ROMOptimizer::name_matches_pattern(Symbol* s, ROMVector* patterns) {
-  return name_matches_pattern( s->utf8_data(), s->length(), patterns );
-}
-
-bool ROMOptimizer::class_list_contains(ObjArray *list, InstanceClass *klass) {
-  for (int i=0; i<list->length(); i++) {
-    Oop::Raw oop = list->obj_at(i);
-    if (oop.is_null()) {
-      // reached end of list
-      break;
-    }
-    if (oop.equals(klass)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-bool ROMOptimizer::class_matches_classes_list(InstanceClass* klass, 
-                                              ROMVector* patterns) {
-  Symbol::Raw name = klass->original_name();
-  return name_matches_pattern(&name, patterns);
-}
-
-bool ROMOptimizer::class_matches_packages_list(InstanceClass* klass,
-                                               ROMVector* patterns) {
-  Symbol::Raw name = klass->original_name();
-  int len = name().strrchr('/');
-  if( len <= 0 ) {
-    len = name().length();
-  }
-  return name_matches_pattern(name().utf8_data(), len, patterns);
-}
-
-void ROMOptimizer::remove_packages(ROMVector* vector, Symbol* pattern) {
-  GUARANTEE(vector != NULL, "Sanity");
-
-  const char* name = pattern->utf8_data();
-  const int name_len = pattern->length();
-
-  int list_len = vector->size();
-  for( int i = 0; i < list_len; ) {
-    Symbol::Raw current = vector->element_at(i);
-
-    const char* current_name = current().utf8_data();
-    const int current_len = current().length();
-    if( Universe::name_matches_pattern( current_name, current_len,
-                                        name, name_len ) ) {
-      vector->remove_element_at(i);
-      list_len--;
-    } else {
-      i++;
-    }
-  }
-}
-
-void ROMOptimizer::remove_packages(OopDesc* from_vector, ROMVector* patterns) {
-  ROMVector::Raw from( from_vector );
-  const int len = patterns->size();
-  for( int i = 0; i < len; i++ ) {
-    Symbol::Raw pattern = patterns->element_at(i);
-    remove_packages( &from, &pattern );
-  }
-}
-
-void ROMOptimizer::add_package_to_list(ROMVector* vector, Symbol* package
+// IMPL_NOTE: Make list ROMVector, not ObjArray. Here and everywhere!!!
+void ROMOptimizer::add_package_to_list(ROMVector *vector, const char *pkgname 
                                        JVM_TRAPS) {
-  if( name_matches_pattern( package, vector ) ) {
-    return;
-  }
-  remove_packages(vector, package);
-  vector->add_element(package JVM_NO_CHECK_AT_BOTTOM);
-}
-
-void ROMOptimizer::add_package_to_list(ROMVector* vector, const char* pkgname
-                                       JVM_TRAPS) {
-  {
-    const int len = jvm_strlen(pkgname) + 1;
-    if (len > 255) {
-      tty->print_cr("error: restricted or hidden package name may not exceed "
-                    "255 bytes");
-      tty->print_cr("(%s)", pkgname);
-      Throw::array_index_out_of_bounds_exception(empty_message JVM_THROW);
-    }
+  int len = jvm_strlen(pkgname) + 1;
+  if (len > 255) {
+    tty->print_cr("error: restricted or hidden package name may not exceed "
+                  "255 bytes");
+    tty->print_cr("(%s)", pkgname);
+    Throw::array_index_out_of_bounds_exception(empty_message JVM_THROW);
   }
 
   UsingFastOops fast_oops;
   Symbol::Fast package = SymbolTable::slashified_symbol_for(pkgname JVM_CHECK);
-  add_package_to_list(vector, &package JVM_NO_CHECK_AT_BOTTOM);
+  if (!vector->contains(&package)) {
+    vector->add_element(&package JVM_CHECK);
+  }
 }
 
-bool ROMOptimizer::is_init_at_build(InstanceClass* klass) {
-  const int len = init_at_build_classes()->length();
-  for( int i = 0; i < len; i++ ) {
-    InstanceClass::Raw init_at_build = init_at_build_classes()->obj_at(i);
-    if( init_at_build.is_null() ) {
-      break;
+
+bool ROMOptimizer::class_list_contains(ObjArray *list, InstanceClass *klass) {
+  Oop::Raw oop;
+  for (int i=0; i<list->length(); i++) {
+    oop = list->obj_at(i);
+    if (oop.is_null()) {
+      // reached end of list
+      return false;
+    } else if (oop.equals(klass)) {
+      return true;
+    } else {
+      continue;
     }
-    if( init_at_build.equals(klass) ) {
+  }
+  return false;
+}
+
+bool 
+ROMOptimizer::class_matches_classes_list(InstanceClass *klass, 
+                                        ROMVector *patterns) {
+  Symbol::Raw class_name = klass->name();
+  return name_matches_patterns_list(&class_name, patterns);
+}
+
+bool 
+ROMOptimizer::class_matches_packages_list(InstanceClass *klass, 
+                                        ROMVector *patterns JVM_TRAPS) {
+  Symbol::Raw package_name = klass->package_name(JVM_SINGLE_ARG_CHECK_0);
+  return name_matches_patterns_list(&package_name, patterns);
+}
+
+bool
+ROMOptimizer::name_matches_patterns_list(Symbol* checking_name, ROMVector *patterns_list) {
+  GUARANTEE(patterns_list != NULL, "Sanity");
+
+  if (patterns_list->is_null()) {
+    // Do nothing for null patterns lists.
+    return false;
+  }
+
+  const int list_len = patterns_list->size();
+  Symbol pattern;
+  for (int i=0; i<list_len; i++) {
+    pattern = patterns_list->element_at(i);
+    if (pattern.is_null()) { // end of list
+      return false;
+    }    
+
+    const int pattern_len = pattern.length();
+    const int name_len = checking_name->length();
+
+    if (pattern_len == 0) {
+      continue;
+    }
+    utf8 c_name = checking_name->utf8_data();    
+    utf8 p_name = pattern.utf8_data();
+
+    const bool name_matches_pattern = 
+      Universe::name_matches_pattern(c_name, name_len, p_name, pattern_len);
+    if (name_matches_pattern) {
       return true;
     }
   }
   return false;
+}
+
+
+bool ROMOptimizer::is_init_at_build(InstanceClass *klass) {
+  int len = init_at_build_classes()->length();
+  bool in_list = false;
+
+  for (int i=0; i<len; i++) {
+    InstanceClass::Raw init_at_build = init_at_build_classes()->obj_at(i);
+    if (init_at_build.is_null()) {
+        break;
+    } else if (init_at_build.equals(klass)) {
+      in_list = true;
+      break;
+    }
+  }
+  
+  return in_list;
 }
 
 // This optimization is too expensive for binary rom image.
@@ -923,14 +723,13 @@ void ROMOptimizer::merge_string_bodies(JVM_SINGLE_ARG_TRAPS) {
   /*
    * (2) Merge the body of all Strings into a single array.
    */
-  UsingFastOops fast_oops;
-  TypeArray::Fast body =
-    Universe::new_char_array(num_chars JVM_ZCHECK(body));
-  const int new_num_chars = compress_and_merge_strings(&all_strings, &body);
+  UsingFastOops level1;
+  TypeArray::Fast body = Universe::new_char_array(num_chars JVM_CHECK);
+  TypeArray::Fast new_body;
+  int new_num_chars = compress_and_merge_strings(&all_strings, &body);
 
-  if( new_num_chars < num_chars ) {
-    TypeArray::Raw new_body =
-      Universe::new_char_array(new_num_chars JVM_ZCHECK(new_body));
+  if (new_num_chars < num_chars) {
+    new_body = Universe::new_char_array(new_num_chars JVM_CHECK);
     TypeArray::array_copy(&body, 0, &new_body, 0, new_num_chars);
     replace_string_bodies(&all_strings, &new_body);
   }
@@ -985,7 +784,7 @@ jint ROMOptimizer::find_duplicate_chars(jchar *pool, jint pool_size,
   jint num_bytes = num_chars*sizeof(jchar);
 
   for (int i=0; i<=limit; i++) {
-    if (jvm_memcmp(pool, match, num_bytes) == 0) {
+    if (*pool == m1 && jvm_memcmp(pool, match, num_bytes) == 0) {
       return i;
     }
     pool ++;
@@ -1004,7 +803,7 @@ void ROMOptimizer::replace_string_bodies(ROMVector *all_strings,
 
 void ROMOptimizer::record_original_class_info(InstanceClass *klass,
                                               Symbol *name) {
-  const int class_id = klass->class_id();
+  int class_id = klass->class_id();
   romizer_original_class_name_list()->obj_at_put(class_id, name);
 
   _log_stream->print("renamed Class  ");
@@ -1015,14 +814,14 @@ void ROMOptimizer::record_original_class_info(InstanceClass *klass,
 
 void ROMOptimizer::record_original_field_info(InstanceClass *klass,
                                               int name_index JVM_TRAPS) {
+  UsingFastOops fast_oops;
+  ConstantPool::Fast cp = klass->constants();
+  Symbol::Fast name = cp().symbol_at(name_index);
+
   _log_stream->print("renamed Field  ");
   klass->print_name_on(_log_stream);
   _log_stream->print(".");
-  {
-    ConstantPool::Raw cp = klass->constants();
-    Symbol::Raw name = cp().symbol_at(name_index);
-    name().print_symbol_on(_log_stream);
-  }
+  name().print_symbol_on(_log_stream);
   _log_stream->cr();
 
   record_original_fields(klass JVM_CHECK);
@@ -1063,19 +862,29 @@ void ROMOptimizer::record_original_fields(InstanceClass *klass JVM_TRAPS) {
   }
 }
 
-ReturnOop ROMOptimizer::original_fields(InstanceClass* klass, bool& is_orig) {
-  ObjArray::Raw orig_list = romizer_original_fields_list()->obj();
-  if( orig_list.not_null() ) {
-    ClassInfo::Raw info = klass->class_info();
-    ReturnOop orig = orig_list().obj_at(info().class_id());
-    if( orig ) {
-      is_orig = true;
-      return orig;
+ReturnOop ROMOptimizer::original_fields(InstanceClass *klass, bool &is_orig) {
+  is_orig = false;
+  if (romizer_original_fields_list()->is_null()) {
+    if (UseROM) {
+      return klass->original_fields();
+    } else {
+      return klass->fields();
     }
   }
 
-  is_orig = false;
-  return UseROM ? klass->original_fields() : klass->fields();
+  ClassInfo::Raw info = klass->class_info();
+  ObjArray::Raw orig_list = romizer_original_fields_list()->obj();
+  ReturnOop orig = orig_list().obj_at(info().class_id());
+  if (orig != NULL) {
+    is_orig = true;
+    return orig;
+  } else {
+    if (UseROM) {
+      return klass->original_fields();
+    } else {
+      return klass->fields();
+    }
+  }
 }
 
 jushort
@@ -1105,11 +914,11 @@ ROMOptimizer::get_index_from_alternate_constant_pool(InstanceClass *klass,
 
 
 void ROMOptimizer::record_original_method_info(Method *method JVM_TRAPS) {
-  ObjArray::Raw info = Universe::new_obj_array(3 JVM_ZCHECK(info));
-  const int class_id = method->holder_id();
-
-  ObjArray::Raw old  = romizer_original_method_info()->obj_at(class_id);
-  Symbol::Raw name = method->name();
+  int class_id = method->holder_id();
+  UsingFastOops level1;
+  ObjArray::Fast old  = romizer_original_method_info()->obj_at(class_id);
+  ObjArray::Fast info = Universe::new_obj_array(3 JVM_CHECK);
+  Symbol::Fast name = method->name();
 
   info().obj_at_put(ROM::INFO_OFFSET_METHOD,    method);
   info().obj_at_put(ROM::INFO_OFFSET_NAME,      &name);
@@ -1136,8 +945,8 @@ void ROMOptimizer::enable_quick_natives(const char * pattern JVM_TRAPS) {
 }
 
 #if USE_ROM_LOGGING
-void ROMOptimizer::write_quick_natives_log( void ) {
-  const int size = _quick_natives_log->size();
+void ROMOptimizer::write_quick_natives_log() {
+  int size = _quick_natives_log->size();
   _quick_natives_log->sort();
 
   _log_stream->cr();
@@ -1204,7 +1013,7 @@ void ROMOptimizer::enable_kvm_natives(const char * pattern JVM_TRAPS) {
 
 void ROMOptimizer::write_kvm_natives_log() {
 #if USE_ROM_LOGGING
-  const int size = _kvm_natives_log->size();
+  int size = _kvm_natives_log->size();
   _kvm_natives_log->sort();
 
   _log_stream->cr();
@@ -1222,7 +1031,7 @@ void ROMOptimizer::write_kvm_natives_log() {
 
 ReturnOop ROMOptimizer::build_method_table(const ROMVector * methods
                                            JVM_TRAPS) {
-  const int size = methods->size();
+  int size = methods->size();
   ObjArray::Raw table = Universe::new_obj_array(size * 3 JVM_CHECK_(0));
 
   for (int i=0; i<size; i++) {
@@ -1291,9 +1100,10 @@ void ROMOptimizer::write_jni_natives_log() {
 // compact_field_tables() compacts the InstanceClass::fields() table.
 void ROMOptimizer::remove_unused_static_fields(JVM_SINGLE_ARG_TRAPS) {
   UsingFastOops fast_oops;
-  const int num_classes = Universe::number_of_java_classes();
+  int num_classes = Universe::number_of_java_classes();
   ObjArray::Fast directory = Universe::new_obj_array(num_classes JVM_CHECK);
   InstanceClass::Fast klass;
+  TypeArray::Fast reloc_info;
 
   if (VerifyGC) {
     ObjectHeap::verify();
@@ -1305,10 +1115,9 @@ void ROMOptimizer::remove_unused_static_fields(JVM_SINGLE_ARG_TRAPS) {
   {
     for (SystemClassStream st; st.has_next_optimizable();) {
       klass = st.next();
-      const int nbytes = klass().static_field_size();
+      int nbytes = klass().static_field_size();
       if (nbytes > 0 && !dont_rename_fields_in_class(&klass)) {
-        TypeArray::Raw reloc_info =
-          Universe::new_int_array(nbytes / BytesPerWord JVM_CHECK);
+        reloc_info = Universe::new_int_array(nbytes / BytesPerWord JVM_CHECK);
         directory().obj_at_put(klass().class_id(), &reloc_info);
       }
     }
@@ -1319,7 +1128,7 @@ void ROMOptimizer::remove_unused_static_fields(JVM_SINGLE_ARG_TRAPS) {
   //     getstatic/putstatic bytecodes), or if the field is accessible
   //     by applications.
   mark_static_fieldrefs(&directory);
-  mark_unremoveable_static_fields(&directory);
+  mark_unremoveable_static_fields(&directory JVM_CHECK);
 
   {
     // Inside this block the heap may be in inconsistent state
@@ -1346,8 +1155,12 @@ void ROMOptimizer::mark_static_fieldrefs(ObjArray *directory) {
   for (SystemClassStream st; st.has_next_optimizable();) {
     InstanceClass::Raw klass = st.next();
     ConstantPool::Raw cp = klass().constants();
-    const int n = cp().length();
-    for( int i = 0; i < n; i++ ) {
+    TypeArray::Raw reloc_info;
+    int n = cp().length();
+    int offset, class_id, idx;
+    BasicType type;
+
+    for (int i=0; i<n; i++) {
       ConstantTag tag = cp().tag_at(i);
       switch (tag.value()) {
       case JVM_CONSTANT_ResolvedStaticBooleanFieldref:
@@ -1359,19 +1172,18 @@ void ROMOptimizer::mark_static_fieldrefs(ObjArray *directory) {
       case JVM_CONSTANT_ResolvedStaticIntFieldref:
       case JVM_CONSTANT_ResolvedStaticLongFieldref:
       case JVM_CONSTANT_ResolvedStaticObjectFieldref:
-      case JVM_CONSTANT_ResolvedStaticArrayFieldref: {
+      case JVM_CONSTANT_ResolvedStaticArrayFieldref:
         // Note: field offset starts from beginning of InstanceClass/TaskMirror
-        int offset, class_id;
-        BasicType type = cp().resolved_field_type_at(i, offset, class_id);
-        TypeArray::Raw reloc_info = directory->obj_at(class_id);
-        if( reloc_info().not_null() ) {
-          int idx = (offset - JavaClass::static_field_start()) / BytesPerWord;
+        type = cp().resolved_field_type_at(i, offset, class_id);
+        reloc_info = directory->obj_at(class_id);
+        idx = (offset - JavaClass::static_field_start()) / BytesPerWord;
+        if (reloc_info().not_null()) {
           reloc_info().int_at_put(idx, 1); // Mark the field at this offset
           if (is_two_word(type)) {
             reloc_info().int_at_put(idx+1, 1);
           }
         }
-      } break;
+        break;
       case JVM_CONSTANT_Fieldref:
         // This looks like unused Fieldref
         break;
@@ -1421,21 +1233,30 @@ void ROMOptimizer::fix_static_fieldrefs(ObjArray *directory) {
   }
 }
 
-void ROMOptimizer::mark_unremoveable_static_fields(ObjArray* directory) {
-  for( SystemClassStream st; st.has_next_optimizable(); ) {
-    InstanceClass::Raw klass = st.next();
-    TypeArray::Raw reloc_info = directory->obj_at(klass().class_id());
-    if( reloc_info.is_null() ) {
-      continue;
-    }
-    GUARANTEE(!dont_rename_fields_in_class(&klass), "sanity");
+void ROMOptimizer::mark_unremoveable_static_fields(ObjArray *directory JVM_TRAPS) {
+  UsingFastOops fast_oops;
+  InstanceClass::Fast klass;
+  TypeArray::Fast fields;
+  TypeArray::Fast reloc_info;
 
-    TypeArray::Raw fields = klass().fields();
+  for (SystemClassStream st; st.has_next_optimizable();) {
+    klass = st.next();
+    fields = klass().fields();
+    int id = klass().class_id();
+
+    reloc_info = directory->obj_at(klass().class_id());
+    if (reloc_info.is_null()) {
+      continue;
+    } else {
+      GUARANTEE(!dont_rename_fields_in_class(&klass), "sanity");
+    }
+
     for (int i = 0; i < fields().length(); i += Field::NUMBER_OF_SLOTS) {
       Field f(&klass, i);
-      if (f.is_static() && !is_field_removable(&klass, i, false)) {
-        const int offset = f.offset();
-        const BasicType type = f.type();
+      bool removable = is_field_removable(&klass, i, false JVM_CHECK);
+      if (f.is_static() && !removable) {
+        int offset = f.offset();
+        BasicType type = f.type();
         int idx = (offset - JavaClass::static_field_start()) / BytesPerWord;
         reloc_info().int_at_put(idx, 1); // Mark the field at this offset
         if (is_two_word(type)) {
@@ -1457,16 +1278,25 @@ void ROMOptimizer::compact_static_field_containers(ObjArray *directory) {
   // GC should not happen in the middle.
   GCDisabler no_gc_must_happen_in_this_function;
 
+  UsingFastOops fast_oops;
+  InstanceClass::Fast klass;
+  TypeArray::Fast reloc_info;
+  TypeArray::Fast fields;
+  Oop::Fast holder;
   const int static_field_start = JavaClass::static_field_start();
 
   for (SystemClassStream st; st.has_next_optimizable();) {
-    InstanceClass::Raw klass = st.next();
-    TypeArray::Raw reloc_info = directory->obj_at(klass().class_id());
+    klass = st.next();
+    fields = klass().fields();
+
+    int fields_shrink_size = 0;
+    size_t old_klass_size = klass().object_size();
+
+    reloc_info = directory->obj_at(klass().class_id());
     if (reloc_info.is_null()) {
       // nothing to compact for this class.
       continue;
     }
-
 #if ENABLE_ISOLATES
     // We have only one task_mirror to fix, since romization runs in
     // single-task mode.
@@ -1474,15 +1304,12 @@ void ROMOptimizer::compact_static_field_containers(ObjArray *directory) {
       directory->obj_at_clear(klass().class_id());
       continue;
     }
-    Oop::Raw holder = klass().task_mirror();
+    holder = klass().task_mirror();
 #else
-    Oop::Raw holder = klass.obj();
+    holder = klass.obj();
 #endif
 
-    int fields_shrink_size = 0;
-    size_t old_klass_size = klass().object_size();
     const size_t old_static_field_size = klass().static_field_size();
-
 #if USE_EMBEDDED_VTABLE_BITMAP
     const size_t old_vtable_bitmap_start = klass().vtable_bitmap_start();    
 #endif
@@ -1582,9 +1409,7 @@ void ROMOptimizer::compact_static_field_containers(ObjArray *directory) {
                         klass().nonstatic_map_size();
       jubyte *map_start = map_ptr;
 
-      TypeArray::Raw fields = klass().fields();
-      const int fields_len = fields().length();
-      for (int i = 0; i < fields_len; i += 5) {
+      for (int i = 0; i < fields().length(); i += 5) {
         Field f(&klass, i);
         if (f.is_static()) {
           GUARANTEE((f.offset() > offset), 
@@ -1695,25 +1520,29 @@ void ROMOptimizer::compact_static_field_containers(ObjArray *directory) {
 }
 
 void
-ROMOptimizer::fix_field_tables_after_static_field_removal(ObjArray* directory) {
+ROMOptimizer::fix_field_tables_after_static_field_removal(ObjArray *directory)
+{
+  UsingFastOops fast_oops;
+  InstanceClass::Fast klass;
+  TypeArray::Fast reloc_info;
+  TypeArray::Fast fields;
+
   for (SystemClassStream st; st.has_next_optimizable();) {
-    InstanceClass::Raw klass = st.next();
-    TypeArray::Raw reloc_info = directory->obj_at(klass().class_id());
+    klass = st.next();
+    fields = klass().fields();
+
+    reloc_info = directory->obj_at(klass().class_id());
     if (reloc_info.is_null()) {
       // nothing to compact for this class.
       continue;
-    }
-    {
-      TypeArray::Raw fields = klass().fields();
+    }    
+    fix_one_field_table(&klass, &fields, &reloc_info);
+
+    bool is_orig;
+    fields = original_fields(&klass, is_orig);
+    if (is_orig) {
+      // This class also has an original fields table. Fix that one as well
       fix_one_field_table(&klass, &fields, &reloc_info);
-    }
-    {
-      bool is_orig;
-      TypeArray::Raw fields = original_fields(&klass, is_orig);
-      if (is_orig) {
-        // This class also has an original fields table. Fix that one as well
-        fix_one_field_table(&klass, &fields, &reloc_info);
-      }
     }
   }
 }

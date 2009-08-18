@@ -1080,13 +1080,11 @@ extern "C" int JVM_SetProfile(char *profile_name) {
   if (JVM::is_started()) {
     TTY_TRACE_CR(("JVM_SetProfile must be called when the VM is "
                   "not executing"));
-    return Universe::UNKNOWN_PROFILE_ID;
+    return -1;
   }
 
   const int profile_id = Universe::profile_id_by_name(profile_name);
-  if (profile_id != Universe::UNKNOWN_PROFILE_ID) {
-    Universe::set_profile_id(profile_id);
-  }
+  Universe::set_profile_id(profile_id);
   return profile_id;
 }
 #endif // ENABLE_MULTIPLE_PROFILES_SUPPORT

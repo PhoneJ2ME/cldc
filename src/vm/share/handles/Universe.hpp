@@ -298,7 +298,7 @@ private:
 
 #if ENABLE_MULTIPLE_PROFILES_SUPPORT
   static void set_profile_id(const int id); 
-  static int profile_id_by_name(const char* profile);
+  static int profile_id_by_name(const char * profile);
 
   static int current_profile_id();
 
@@ -470,8 +470,7 @@ private:
 
 #if ENABLE_MULTIPLE_PROFILES_SUPPORT
   enum {
-    UNKNOWN_PROFILE_ID = -1,
-    DEFAULT_PROFILE_ID = 0
+    DEFAULT_PROFILE_ID = -1
   };
 #endif // ENABLE_MULTIPLE_PROFILES_SUPPORT
 

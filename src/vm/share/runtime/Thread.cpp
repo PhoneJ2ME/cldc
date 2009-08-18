@@ -42,15 +42,15 @@ static int _thread_creation_count;
 HANDLE_CHECK(Thread, is_jvm_thread())
 
 void Thread::append_pending_entry(EntryActivation* entry) {
-  OopDesc* next = pending_entries();
-  if (!next) {
+  EntryActivation::Raw current = pending_entries();
+  if (current.is_null()) {
     set_pending_entries(entry);
   } else {
-    EntryActivation::Raw current;
-    do {
+    EntryActivation::Raw next = current().next();
+    while (!next.is_null()) {
       current = next;
-      next = current().next();
-    } while (next);
+      next    = current().next();
+    }
     current().set_next(entry);
   }
 }
@@ -299,7 +299,7 @@ void Thread::lightweight_thread_exit() {
   if (!Scheduler::get_next_runnable_thread()->is_null()) {
     // Another thread will run, cleanup the task that may have just
     // terminated.
-    int thread_count;
+    int thread_count = 0;
     {
       Task::Raw task = Task::get_task(tid);
       thread_count = task().thread_count();

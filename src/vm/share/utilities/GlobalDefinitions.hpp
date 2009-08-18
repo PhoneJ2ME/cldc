@@ -65,7 +65,6 @@
 #define BinaryLabel  JVMBinaryLabel
 #define BinaryObjectWriter  JVMBinaryObjectWriter
 #define BinaryROMWriter  JVMBinaryROMWriter
-#define Bits  JVMBits
 #define Bitset  JVMBitset
 #define BlockTypeFinder  JVMBlockTypeFinder
 #define BlockedThread  JVMBlockedThread
@@ -323,7 +322,6 @@
 #define QuickCatchStub  JVMQuickCatchStub
 #define QuickNativesMatcher  JVMQuickNativesMatcher
 #define ROM  JVMROM
-#define ROMBitSet  JVMROMBitSet
 #define ROMBundle  JVMROMBundle
 #define ROMHashtableManager  JVMROMHashtableManager
 #define ROMImage  JVMROMImage
@@ -609,7 +607,7 @@ const int WordsPerLong       = 2;    // Number of stack entries for longs
 const int oopSize            = sizeof(char*);
 const int wordSize           = sizeof(char*);
 const int longSize           = sizeof(jlong);
-const int jintSize           = sizeof(jint);
+const int jintSize         = sizeof(jint);
 
 const int BitsPerJavaInteger = 32;
 

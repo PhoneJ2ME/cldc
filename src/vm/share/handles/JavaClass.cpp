@@ -352,25 +352,6 @@ bool JavaClass::is_subclass_of(JavaClass* other_class) {
   return false;
 }
 
-bool JavaClass::is_strict_subclass_of(JavaClass* other_class) {
-  // This is a hot loop, so we're using raw pointers here to help C++
-  // compiler generate better code. If a GC happens we're
-  // in deep trouble!
-
-  AllocationDisabler raw_pointers_used_in_this_function;
-
-  JavaClassDesc* current = (JavaClassDesc*)this->obj();
-  JavaClassDesc* other   = (JavaClassDesc*)other_class->obj();
-
-  while( (current = (JavaClassDesc*)current->_super) != NULL ) {
-    if (other == current) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 bool JavaClass::compute_is_subtype_of(JavaClass* other_class) {
   if (equals(other_class)) {
     return true;
@@ -555,6 +536,12 @@ int JavaClass::generate_fieldmap(TypeArray* field_map) {
   return map_index;
 }
 #endif /* #if ENABLE_ROM_GENERATOR */
+
+#if ENABLE_MULTIPLE_PROFILES_SUPPORT
+bool JavaClass::is_hidden_in_profile() const {
+  return ROM::class_is_hidden_in_profile(this);
+}
+#endif // ENABLE_MULTIPLE_PROFILES_SUPPORT
 
 #if ENABLE_COMPILER_TYPE_INFO
 // Returns true if this class doesn't have any subtypes except for itself
